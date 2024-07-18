@@ -85,10 +85,14 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return element.getChildren?.();
 		}
 
-		const items: Module[] = [];
+		const items: GoTestItem[] = [];
 		for (const ws of this.#workspace.workspaceFolders || []) {
-			const { Modules = [] } = await this.#commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
-			items.push(...Modules.map((x) => new Module(this.#commands, x)));
+			const { Modules } = await this.#commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
+			if (Modules?.length) {
+				items.push(...Modules.map((x) => new Module(this.#commands, x)));
+			} else {
+				items.push(new WorkspaceItem(this.#commands, ws.uri, ws.name));
+			}
 		}
 		return items;
 	}
@@ -125,11 +129,46 @@ class Module implements GoTestItem {
 	}
 
 	async getChildren(): Promise<GoTestItem[]> {
-		const { Packages = [] } = await this.#commands.packages({
-			Files: [Uri.joinPath(this.uri, '..').toString()],
-			Mode: 1,
-			Recursive: true
-		});
+		return await Package.resolve(
+			this,
+			this.#commands.packages({
+				Files: [Uri.joinPath(this.uri, '..').toString()],
+				Mode: 1,
+				Recursive: true
+			})
+		);
+	}
+}
+
+class WorkspaceItem implements GoTestItem {
+	readonly uri: Uri;
+	readonly label: string;
+	readonly kind = 'module';
+	readonly hasChildren = true;
+
+	readonly #commands: Commands;
+
+	constructor(commands: Commands, uri: Uri, label: string) {
+		this.uri = uri;
+		this.label = label;
+		this.#commands = commands;
+	}
+
+	async getChildren(): Promise<GoTestItem[]> {
+		return await Package.resolve(
+			this,
+			this.#commands.packages({
+				Files: [this.uri.toString()],
+				Mode: 1,
+				Recursive: true
+			})
+		);
+	}
+}
+
+class Package implements GoTestItem {
+	static async resolve(parent: Module | WorkspaceItem, p: Thenable<Commands.PacakgesResults>) {
+		const { Packages = [] } = await p;
 
 		// Consolidate `foo` and `foo_test` into a single Package
 		const paths = new Set(Packages.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
@@ -142,23 +181,24 @@ class Module implements GoTestItem {
 				continue;
 			}
 
-			children.push(new Package(this, path, files));
+			children.push(new Package(parent, path, files));
 		}
 		return children;
 	}
-}
 
-class Package implements GoTestItem {
-	readonly module: Module;
+	readonly parent: Module | WorkspaceItem;
 	readonly uri: Uri;
 	readonly label: string;
 	readonly kind = 'package';
 	readonly hasChildren = true;
 	readonly files: TestFile[];
 
-	constructor(mod: Module, path: string, files: Commands.TestFile[]) {
-		this.module = mod;
-		this.label = path.startsWith(`${mod.path}/`) ? path.substring(mod.path.length + 1) : path;
+	constructor(parent: Module | WorkspaceItem, path: string, files: Commands.TestFile[]) {
+		this.parent = parent;
+		this.label =
+			parent instanceof Module && path.startsWith(`${parent.path}/`)
+				? path.substring(parent.path.length + 1)
+				: path;
 		this.uri = Uri.joinPath(Uri.parse(files[0].URI), '..');
 		this.files = files.filter((x) => x.Tests.length).map((x) => new TestFile(this, x));
 	}
