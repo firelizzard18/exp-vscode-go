@@ -1,0 +1,224 @@
+/* eslint-disable @typescript-eslint/no-namespace */
+import { MarkdownString, Range, Uri } from 'vscode';
+import { TestItemData, TestItemProvider } from './TestItemResolver';
+import { Commands, Workspace } from './testSupport';
+import path from 'path';
+
+export namespace GoTestItem {
+	/**
+	 * Indicates the Go construct represented by a test item.
+	 *
+	 * - A 'module' is a folder that contains a go.mod file
+	 * - A 'workspace' is a VSCode workspace folder that contains .go files outside
+	 *   of a module
+	 * - A 'package' is a folder that contains .go files (and is not a module)
+	 * - A 'file' is a file ending with _test.go
+	 * - A 'test' is a Go test, e.g. func TestXxx(t *testing.T)
+	 * - A 'benchmark' is a Go benchmark, e.g. func BenchmarkXxx(t *testing.B)
+	 * - A 'fuzz' is a Fuzz test, e.g., func TestFuzz(f *testing.F)
+	 * - An 'example' is a Go example, e.g. func ExampleXxx()
+	 *
+	 * The top-level test item for a workspace folder is always either a module or a
+	 * workspace. If the user opens a file (containing tests) that is not contained
+	 * within any workspace folder, a top-level package will be created as a parent
+	 * of that file.
+	 */
+	export type Kind = 'module' | 'workspace' | 'package' | 'file' | 'test' | 'benchmark' | 'fuzz' | 'example';
+
+	/**
+	 * Constructs an ID for an item. The ID of a test item consists of the URI
+	 * for the relevant file or folder with the URI query set to the test item
+	 * kind (see Kind) and the URI fragment set to the function name, if the
+	 * item represents a test, benchmark, or example function.
+	 *
+	 * - Module:    file:///path/to/mod?module
+	 * - Workspace: file:///path/to/src?workspace
+	 * - Package:   file:///path/to/mod/pkg?package
+	 * - File:      file:///path/to/mod/file.go?file
+	 * - Test:      file:///path/to/mod/file.go?test#TestXxx
+	 * - Benchmark: file:///path/to/mod/file.go?benchmark#BenchmarkXxx
+	 * - Fuzz:      file:///path/to/mod/file.go?test#FuzzXxx
+	 * - Example:   file:///path/to/mod/file.go?example#ExampleXxx
+	 */
+	export function id(uri: Uri, kind: Kind, name?: string): string {
+		uri = uri.with({ query: kind });
+		if (name) uri = uri.with({ fragment: name });
+		return uri.toString();
+	}
+
+	/**
+	 * Parses the ID as a URI and extracts the kind and name.
+	 *
+	 * The URI of the relevant file or folder should be retrieved wil
+	 * TestItem.uri.
+	 */
+	export function parseId(id: string): { kind: Kind; name?: string } {
+		const u = Uri.parse(id);
+		const kind = u.query as Kind;
+		const name = u.fragment;
+		return { kind, name };
+	}
+}
+
+export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
+	readonly #workspace: Workspace;
+	readonly #commands: Commands;
+
+	constructor(workspace: Workspace, commands: Commands) {
+		this.#workspace = workspace;
+		this.#commands = commands;
+	}
+
+	getTestItem(element: GoTestItem): TestItemData | Thenable<TestItemData> {
+		return {
+			id: GoTestItem.id(element.uri, element.kind, element.name),
+			label: element.label,
+			uri: element.uri,
+			hasChildren: element.hasChildren,
+			range: element.range,
+			error: element.error
+		};
+	}
+
+	async getChildren(element?: GoTestItem | undefined): Promise<GoTestItem[] | undefined> {
+		if (element) {
+			return element.getChildren?.();
+		}
+
+		const items: Module[] = [];
+		for (const ws of this.#workspace.workspaceFolders || []) {
+			const { Modules = [] } = await this.#commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
+			items.push(...Modules.map((x) => new Module(this.#commands, x)));
+		}
+		return items;
+	}
+}
+
+export interface GoTestItem {
+	readonly uri: Uri;
+	readonly kind: GoTestItem.Kind;
+	readonly label: string;
+	readonly name?: string;
+	readonly range?: Range;
+	hasChildren: boolean;
+	error?: string | MarkdownString;
+
+	getChildren(): GoTestItem[] | Thenable<GoTestItem[]>;
+}
+
+class Module implements GoTestItem {
+	readonly uri: Uri;
+	readonly path: string;
+	readonly kind = 'module';
+	readonly hasChildren = true;
+
+	readonly #commands: Commands;
+
+	constructor(commands: Commands, mod: Commands.Module) {
+		this.uri = Uri.parse(mod.GoMod);
+		this.path = mod.Path;
+		this.#commands = commands;
+	}
+
+	get label() {
+		return this.path;
+	}
+
+	async getChildren(): Promise<GoTestItem[]> {
+		const { Packages = [] } = await this.#commands.packages({
+			Files: [Uri.joinPath(this.uri, '..').toString()],
+			Mode: 1,
+			Recursive: true
+		});
+
+		// Consolidate `foo` and `foo_test` into a single Package
+		const nonTest = new Map(Packages.filter((x) => !x.ForTest).map((x) => [x.ForTest, x]));
+		const forTest = new Map(Packages.filter((x) => x.ForTest).map((x) => [x.ForTest, x]));
+
+		const children: Package[] = [];
+		const seen = new Set();
+		for (const pkg of Packages) {
+			const A = !pkg.ForTest ? pkg : nonTest.get(pkg.ForTest);
+			const B = pkg.ForTest ? pkg : forTest.get(pkg.Path);
+			const path = A?.Path || B!.ForTest;
+			const files = [...(A?.TestFiles || []), ...(B?.TestFiles || [])];
+			if (!files.length || seen.has(path)) {
+				continue;
+			}
+
+			seen.add(path);
+			children.push(new Package(this, path, files));
+		}
+		return children;
+	}
+}
+
+class Package implements GoTestItem {
+	readonly module: Module;
+	readonly uri: Uri;
+	readonly label: string;
+	readonly kind = 'package';
+	readonly hasChildren = true;
+	readonly files: TestFile[];
+
+	constructor(mod: Module, path: string, files: Commands.TestFile[]) {
+		this.module = mod;
+		this.label = path.startsWith(`${mod.path}/`) ? path.substring(mod.path.length + 1) : path;
+		this.uri = Uri.joinPath(Uri.parse(files[0].URI), '..');
+		this.files = files.filter((x) => x.Tests.length).map((x) => new TestFile(this, x));
+	}
+
+	getChildren(): GoTestItem[] {
+		return this.files;
+	}
+}
+
+class TestFile implements GoTestItem {
+	readonly package: Package;
+	readonly uri: Uri;
+	readonly kind = 'file';
+	readonly hasChildren = true;
+	readonly tests: TestCase[];
+
+	constructor(pkg: Package, file: Commands.TestFile) {
+		this.package = pkg;
+		this.uri = Uri.parse(file.URI);
+		this.tests = file.Tests.map((x) => new TestCase(this, x));
+	}
+
+	get label() {
+		return path.basename(this.uri.fsPath);
+	}
+
+	getChildren(): GoTestItem[] {
+		return this.tests;
+	}
+}
+
+class TestCase implements GoTestItem {
+	readonly file: TestFile;
+	readonly uri: Uri;
+	readonly kind: GoTestItem.Kind;
+	readonly name: string;
+	readonly range: Range | undefined;
+	readonly hasChildren = false;
+	// TODO: subtests
+
+	constructor(file: TestFile, test: Commands.TestCase) {
+		this.file = file;
+		this.uri = Uri.parse(test.Loc.uri);
+		this.name = test.Name;
+		this.kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
+
+		const { start, end } = test.Loc.range;
+		this.range = new Range(start.line, start.character, end.line, end.character);
+	}
+
+	get label() {
+		return this.name;
+	}
+
+	getChildren(): GoTestItem[] {
+		return [];
+	}
+}
