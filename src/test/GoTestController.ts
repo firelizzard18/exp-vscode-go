@@ -1,6 +1,7 @@
 import {
 	commands,
 	ConfigurationChangeEvent,
+	Disposable,
 	ExtensionContext,
 	ExtensionMode,
 	TestController,
@@ -16,7 +17,7 @@ import { Commands, SetupArgs, Workspace } from './testSupport';
 import { TestItemResolver } from './TestItemResolver';
 import { GoTestItemProvider } from './GoTestItem';
 
-const outputChannel = window.createOutputChannel('Go Tests', { log: true });
+const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
 
 export class GoTestController {
 	static register(ctx: ExtensionContext): GoTestController {
@@ -126,12 +127,11 @@ export class GoTestController {
 		return ctrl;
 	}
 
-	readonly #workspace: Workspace;
-	readonly #commands: Commands;
+	readonly #provider: GoTestItemProvider;
+	readonly #disposable: Disposable[] = [];
 
 	constructor(workspace: Workspace, commands: Commands) {
-		this.#workspace = workspace;
-		this.#commands = commands;
+		this.#provider = new GoTestItemProvider(workspace, commands);
 	}
 
 	#ctrl?: TestController;
@@ -142,8 +142,8 @@ export class GoTestController {
 
 	setup(args: SetupArgs) {
 		this.#ctrl = args.createController('goExp', 'Go (experimental)');
-		const provider = new GoTestItemProvider(this.#workspace, this.#commands);
-		const resolver = new TestItemResolver(this.#ctrl, provider);
+		const resolver = new TestItemResolver(this.#ctrl, this.#provider);
+		this.#disposable.push(this.#ctrl, resolver);
 
 		this.#ctrl.refreshHandler = async () => {
 			try {
@@ -167,18 +167,21 @@ export class GoTestController {
 	}
 
 	dispose() {
-		if (!this.#ctrl) {
-			return;
-		}
-		this.#ctrl.dispose();
+		this.#disposable.forEach((x) => x.dispose());
+		this.#disposable.splice(0, this.#disposable.length);
+		this.#ctrl = undefined;
 	}
 
 	#didOpenDocument(editor: TextDocument) {
-		console.log(editor);
+		if (editor.uri.path.endsWith('.go')) {
+			this.#provider.reloadPackages(editor.uri);
+		}
 	}
 
 	#didCreateFile(uri: Uri) {
-		console.log(uri);
+		if (uri.path.endsWith('.go')) {
+			this.#provider.reloadPackages(uri);
+		}
 	}
 
 	#didDeleteFile(uri: Uri) {
@@ -186,7 +189,9 @@ export class GoTestController {
 	}
 
 	#didChangeDocument(event: TextDocumentChangeEvent) {
-		console.log(event);
+		if (event.document.uri.path.endsWith('.go')) {
+			this.#provider.reloadPackages(event.document.uri);
+		}
 	}
 
 	#didChangeWorkspace(event: WorkspaceFoldersChangeEvent) {

@@ -1,4 +1,6 @@
 import {
+	Disposable,
+	Event,
 	MarkdownString,
 	ProviderResult,
 	Range,
@@ -13,14 +15,27 @@ import {
  * Translates between VSCode's test resolver interface and a more typical tree
  * data style provider.
  */
-export class TestItemResolver<T> {
+export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 	readonly #ctrl: TestController;
 	readonly #provider: TestItemProvider<T>;
 	readonly #items = new Map<string, T>();
+	readonly #disposable: Disposable[] = [];
 
 	constructor(ctrl: TestController, provider: TestItemProvider<T>) {
 		this.#ctrl = ctrl;
 		this.#provider = provider;
+
+		this.#disposable.push(
+			provider.onDidChangeTestItem((e) => {
+				if (!e) this.#didChangeTestItem();
+				else if (e instanceof Array) this.#didChangeTestItem(e);
+				else this.#didChangeTestItem([e]);
+			})
+		);
+	}
+
+	dispose() {
+		this.#disposable.forEach((x) => x.dispose());
 	}
 
 	async resolve(item?: TestItem) {
@@ -34,38 +49,58 @@ export class TestItemResolver<T> {
 			}
 
 			const childItems = item ? item.children : this.#ctrl.items;
-			const newChildren = await Promise.all(
-				((await this.#provider.getChildren(providerItem)) || []).map(async (providerChild) => {
-					const data = await this.#provider.getTestItem(providerChild);
-					const childItem = this.#getOrCreate(childItems, data);
-					this.#items.set(data.id, providerChild);
+			const providerChildren = await this.#provider.getChildren(providerItem);
+			if (!providerChildren) {
+				return;
+			}
 
-					childItem.description = data.description;
-					childItem.sortText = data.sortText;
-					childItem.tags = data.tags || [];
-					childItem.canResolveChildren = data.hasChildren || false;
-					childItem.range = data.range;
-					childItem.error = data.error;
-					return childItem;
-				})
+			childItems.replace(
+				await Promise.all(
+					providerChildren.map(async (providerChild) => {
+						return this.#getOrCreate(providerChild, false, childItems);
+					})
+				)
 			);
-			childItems.replace(newChildren);
 		} finally {
 			if (item) item.busy = false;
 		}
 	}
 
-	#getOrCreate(children: TestItemCollection, data: TestItemData) {
-		const existing = children.get(data.id);
-		if (existing) {
-			return existing;
+	#didChangeTestItem(items?: T[]) {
+		if (!items) {
+			return this.resolve();
 		}
 
-		return this.#ctrl.createTestItem(data.id, data.label, data.uri);
+		return Promise.all(items.map((x) => this.#getOrCreate(x)));
+	}
+
+	async #getOrCreate(providerItem: T, add = true, children?: TestItemCollection): Promise<TestItem> {
+		if (!children) {
+			if (!providerItem.parent) {
+				children = this.#ctrl.items;
+			} else {
+				const parent = await this.#getOrCreate(providerItem.parent);
+				children = parent.children;
+			}
+		}
+
+		const data = await this.#provider.getTestItem(providerItem);
+		this.#items.set(data.id, providerItem);
+
+		const item = children.get(data.id) || this.#ctrl.createTestItem(data.id, data.label, data.uri);
+		item.description = data.description;
+		item.sortText = data.sortText;
+		item.tags = data.tags || [];
+		item.canResolveChildren = data.hasChildren || false;
+		item.range = data.range;
+		item.error = data.error;
+		if (add) children.add(item);
+		return item;
 	}
 }
 
 export interface TestItemProvider<T> {
+	onDidChangeTestItem: Event<T | T[] | null | undefined | void>;
 	getTestItem(element: T): TestItemData | Thenable<TestItemData>;
 	getChildren(element?: T): ProviderResult<T[]>;
 }

@@ -18,6 +18,8 @@ export interface Workspace
 
 	// only include one overload
 	openTextDocument(uri: vscode.Uri): Thenable<vscode.TextDocument>;
+
+	getConfiguration(section?: string, scope?: vscode.ConfigurationScope | null): vscode.WorkspaceConfiguration;
 }
 
 // Arguments for GoTestController.setup

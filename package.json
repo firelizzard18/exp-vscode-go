@@ -22,6 +22,16 @@
           "default": true,
           "scope": "window",
           "description": "Enable the Go test explorer"
+        },
+        "goExp.testExplorer.discovery": {
+          "type": "string",
+          "default": "on",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "scope": "window",
+          "description": "Control automatic discovery of tests"
         }
       }
     }
