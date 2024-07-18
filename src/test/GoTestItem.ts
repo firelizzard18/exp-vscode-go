@@ -132,21 +132,16 @@ class Module implements GoTestItem {
 		});
 
 		// Consolidate `foo` and `foo_test` into a single Package
-		const nonTest = new Map(Packages.filter((x) => !x.ForTest).map((x) => [x.ForTest, x]));
-		const forTest = new Map(Packages.filter((x) => x.ForTest).map((x) => [x.ForTest, x]));
-
+		const paths = new Set(Packages.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
 		const children: Package[] = [];
-		const seen = new Set();
-		for (const pkg of Packages) {
-			const A = !pkg.ForTest ? pkg : nonTest.get(pkg.ForTest);
-			const B = pkg.ForTest ? pkg : forTest.get(pkg.Path);
-			const path = A?.Path || B!.ForTest;
-			const files = [...(A?.TestFiles || []), ...(B?.TestFiles || [])];
-			if (!files.length || seen.has(path)) {
+		for (const path of paths) {
+			const files = Packages.filter((x) => x.Path === path || x.ForTest === path).flatMap(
+				(x) => x.TestFiles || []
+			);
+			if (!files.length) {
 				continue;
 			}
 
-			seen.add(path);
 			children.push(new Package(this, path, files));
 		}
 		return children;
