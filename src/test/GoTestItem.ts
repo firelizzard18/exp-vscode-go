@@ -109,11 +109,16 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		});
 	}
 
-	async reloadAll() {
-		this.#didChangeTestItem.fire();
-	}
+	async reload(uri?: Uri) {
+		if (!uri) {
+			this.#didChangeTestItem.fire();
+			return;
+		}
 
-	async reloadPackages(uri: Uri) {
+		if (!uri.path.endsWith('.go')) {
+			return;
+		}
+
 		const ws = this.#workspace.getWorkspaceFolder(uri);
 		if (!ws) {
 			// TODO: Handle tests from external packages?

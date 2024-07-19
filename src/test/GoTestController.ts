@@ -6,12 +6,9 @@ import {
 	ExtensionMode,
 	TestController,
 	tests,
-	TextDocument,
-	TextDocumentChangeEvent,
 	Uri,
 	window,
-	workspace,
-	WorkspaceFoldersChangeEvent
+	workspace
 } from 'vscode';
 import { Commands, SetupArgs, Workspace } from './testSupport';
 import { TestItemResolver } from './TestItemResolver';
@@ -28,6 +25,10 @@ export class GoTestController {
 			modules: (args) => commands.executeCommand('gopls.modules', args),
 			packages: (args) => commands.executeCommand('gopls.packages', args)
 		});
+		const setup = () => {
+			ctrl.setup({ isInTest, createController: tests.createTestController });
+			window.visibleTextEditors.forEach((x) => ctrl.reload(x.document.uri));
+		};
 
 		ctx.subscriptions.push(ctrl);
 
@@ -40,7 +41,7 @@ export class GoTestController {
 						return;
 					}
 					if (enabled) {
-						ctrl.setup({ isInTest, createController: tests.createTestController });
+						setup();
 					} else {
 						ctrl.dispose();
 					}
@@ -54,7 +55,7 @@ export class GoTestController {
 					e.affectsConfiguration('goExp.testExplorer.nestPackages')
 				) {
 					try {
-						await ctrl.#provider.reloadAll();
+						await ctrl.reload();
 					} catch (error) {
 						if (isInTest) throw error;
 						else outputChannel.error(`Error while handling configuration change: ${error}`);
@@ -68,7 +69,7 @@ export class GoTestController {
 			workspace.onDidOpenTextDocument(async (x) => {
 				try {
 					if (ctrl.enabled) {
-						await ctrl.#didOpenDocument(x);
+						await ctrl.reload(x.uri);
 					}
 				} catch (error) {
 					if (isInTest) throw error;
@@ -82,7 +83,7 @@ export class GoTestController {
 			workspace.onDidChangeTextDocument(async (x) => {
 				try {
 					if (ctrl.enabled) {
-						await ctrl.#didChangeDocument(x);
+						await ctrl.reload(x.document.uri);
 					}
 				} catch (error) {
 					if (isInTest) throw error;
@@ -93,10 +94,10 @@ export class GoTestController {
 
 		// [Event] Workspace change
 		ctx.subscriptions.push(
-			workspace.onDidChangeWorkspaceFolders(async (x) => {
+			workspace.onDidChangeWorkspaceFolders(async () => {
 				try {
 					if (ctrl.enabled) {
-						await ctrl.#didChangeWorkspace(x);
+						await ctrl.reload();
 					}
 				} catch (error) {
 					if (isInTest) throw error;
@@ -112,7 +113,7 @@ export class GoTestController {
 			watcher.onDidCreate(async (x) => {
 				try {
 					if (ctrl.enabled) {
-						await ctrl.#didCreateFile(x);
+						await ctrl.reload(x);
 					}
 				} catch (error) {
 					if (isInTest) throw error;
@@ -124,7 +125,7 @@ export class GoTestController {
 			watcher.onDidDelete(async (x) => {
 				try {
 					if (ctrl.enabled) {
-						await ctrl.#didDeleteFile(x);
+						await ctrl.reload(x);
 					}
 				} catch (error) {
 					if (isInTest) throw error;
@@ -135,8 +136,7 @@ export class GoTestController {
 
 		// Setup the controller (if enabled)
 		if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
-			ctrl.setup({ isInTest, createController: tests.createTestController });
-			window.visibleTextEditors.forEach((x) => ctrl.#didOpenDocument(x.document));
+			setup();
 		}
 
 		return ctrl;
@@ -187,29 +187,7 @@ export class GoTestController {
 		this.#ctrl = undefined;
 	}
 
-	#didOpenDocument(editor: TextDocument) {
-		if (editor.uri.path.endsWith('.go')) {
-			this.#provider.reloadPackages(editor.uri);
-		}
-	}
-
-	#didCreateFile(uri: Uri) {
-		if (uri.path.endsWith('.go')) {
-			this.#provider.reloadPackages(uri);
-		}
-	}
-
-	#didDeleteFile(uri: Uri) {
-		console.log(uri);
-	}
-
-	#didChangeDocument(event: TextDocumentChangeEvent) {
-		if (event.document.uri.path.endsWith('.go')) {
-			this.#provider.reloadPackages(event.document.uri);
-		}
-	}
-
-	#didChangeWorkspace(event: WorkspaceFoldersChangeEvent) {
-		console.log(event);
+	reload(uri?: Uri) {
+		this.#provider.reload(uri);
 	}
 }
