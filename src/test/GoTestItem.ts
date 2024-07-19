@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
-import { EventEmitter, MarkdownString, Range, Uri, WorkspaceFolder } from 'vscode';
+import { EventEmitter, MarkdownString, Range, Uri } from 'vscode';
 import { TestItemData, TestItemProvider } from './TestItemResolver';
 import { Commands, Workspace } from './testSupport';
 import path from 'path';
@@ -63,11 +64,13 @@ export namespace GoTestItem {
 type DiscoveryMode = 'on' | 'off';
 
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
-	readonly #didChangeTestItem = new EventEmitter<GoTestItem[]>();
+	readonly #didChangeTestItem = new EventEmitter<GoTestItem[] | void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 
 	readonly #workspace: Workspace;
 	readonly #commands: Commands;
+	readonly #requested = new Map<string, Module | WorkspaceItem>();
+	#roots?: (Module | WorkspaceItem)[];
 
 	constructor(workspace: Workspace, commands: Commands) {
 		this.#workspace = workspace;
@@ -89,19 +92,17 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		if (element) {
 			return element.getChildren?.();
 		}
-		const mode = this.#workspace.getConfiguration('goExp').get<DiscoveryMode>('testExplorer.discovery');
-		switch (mode) {
-			case 'on':
-				break; // Ok
-			default:
-				return;
-		}
 
-		const items: GoTestItem[] = [];
-		for (const ws of this.#workspace.workspaceFolders || []) {
-			items.push(...(await this.#loadWorkspace(ws)));
-		}
-		return items;
+		return (await this.#loadRoots(true)).filter((x) => {
+			// Return a given root if discovery is on or the root (or more
+			// likely one of its children) has been explicitly requested
+			const mode = this.#workspace.getConfiguration('goExp', x.uri).get<DiscoveryMode>('testExplorer.discovery');
+			return mode === 'on' || this.#requested.has(x.uri.toString());
+		});
+	}
+
+	async reloadAll() {
+		this.#didChangeTestItem.fire();
 	}
 
 	async reloadPackages(uri: Uri) {
@@ -111,28 +112,58 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
-		const parent = (await this.#loadWorkspace(ws)).find((x) => x.contains(uri));
-		if (!parent) {
-			return; // TODO?
-		}
-
-		const packages = await Package.resolve(
-			parent,
-			this.#commands.packages({
+		const roots = await this.#loadRoots();
+		const packages = Package.resolve(
+			await this.#commands.packages({
 				Files: [uri.toString()],
 				Mode: 1
 			})
 		);
-		this.#didChangeTestItem.fire(packages);
-	}
 
-	async #loadWorkspace(ws: WorkspaceFolder) {
-		const { Modules } = await this.#commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
-		if (Modules?.length) {
-			return Modules.map((x) => new Module(this.#workspace, this.#commands, x));
+		const items: GoTestItem[] = [];
+		for (const pkg of packages) {
+			const parent =
+				roots.find((x) => x instanceof Module && x.path === pkg.ModulePath) ||
+				roots.find((x) => x instanceof WorkspaceItem && x.uri.toString() === ws.uri.toString());
+			if (!parent) {
+				continue; // TODO?
+			}
+
+			this.#requested.set(parent.uri.toString(), parent);
+			items.push(parent.resolvePackage(pkg));
 		}
 
-		return [new WorkspaceItem(this.#workspace, this.#commands, ws.uri, ws.name)];
+		this.#didChangeTestItem.fire(items);
+	}
+
+	async #loadRoots(force = false) {
+		if (!force && this.#roots) {
+			return this.#roots;
+		}
+		if (!this.#workspace.workspaceFolders) {
+			return [];
+		}
+
+		this.#roots = (
+			await Promise.all(
+				this.#workspace.workspaceFolders.map(async (ws) => {
+					const r = await this.#commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
+					return { ws, ...r };
+				})
+			)
+		).flatMap(({ ws, Modules }): (Module | WorkspaceItem)[] => {
+			if (Modules?.length) {
+				return Modules.map((x) => {
+					const mod = new Module(this.#workspace, this.#commands, x);
+					return this.#requested.get(mod.uri.toString()) || mod;
+				});
+			}
+			return [
+				this.#requested.get(ws.uri.toString()) ||
+					new WorkspaceItem(this.#workspace, this.#commands, ws.uri, ws.name)
+			];
+		});
+		return this.#roots;
 	}
 }
 
@@ -149,18 +180,63 @@ export interface GoTestItem {
 	getChildren(): GoTestItem[] | undefined | Thenable<GoTestItem[] | undefined>;
 }
 
-class Module implements GoTestItem {
+abstract class RootItem {
+	abstract readonly uri: Uri;
+
+	readonly #workspace: Workspace;
+	readonly #commands: Commands;
+	readonly #requested = new Map<string, Package>();
+
+	constructor(workspace: Workspace, commands: Commands) {
+		this.#workspace = workspace;
+		this.#commands = commands;
+	}
+
+	get #dir(): Uri {
+		if (this instanceof Module) {
+			return Uri.joinPath(this.uri, '..');
+		}
+		return this.uri;
+	}
+
+	contains(uri: Uri) {
+		const a = this.#dir.fsPath;
+		const b = uri.fsPath;
+		return b === a || b.startsWith(`${a}/`);
+	}
+
+	resolvePackage(pkg: Commands.Package) {
+		const item = new Package(this as any, pkg.Path, pkg.TestFiles!);
+		this.#requested.set(pkg.Path, item);
+		return item;
+	}
+
+	async getChildren(): Promise<GoTestItem[] | undefined> {
+		const mode = this.#workspace.getConfiguration('goExp', this.uri).get<DiscoveryMode>('testExplorer.discovery');
+		switch (mode) {
+			case 'on': // Discover all packages
+				return Package.resolve(
+					await this.#commands.packages({
+						Files: [this.#dir.toString()],
+						Mode: 1,
+						Recursive: true
+					})
+				).map((x) => new Package(this as any, x.Path, x.TestFiles!));
+
+			default: // Return only specifically requested packages
+				return [...this.#requested.values()];
+		}
+	}
+}
+
+class Module extends RootItem implements GoTestItem {
 	readonly uri: Uri;
 	readonly path: string;
 	readonly kind = 'module';
 	readonly hasChildren = true;
 
-	readonly #workspace: Workspace;
-	readonly #commands: Commands;
-
 	constructor(workspace: Workspace, commands: Commands, mod: Commands.Module) {
-		this.#workspace = workspace;
-		this.#commands = commands;
+		super(workspace, commands);
 		this.uri = Uri.parse(mod.GoMod);
 		this.path = mod.Path;
 	}
@@ -168,91 +244,39 @@ class Module implements GoTestItem {
 	get label() {
 		return this.path;
 	}
-
-	contains(uri: Uri) {
-		const a = Uri.joinPath(this.uri, '..').fsPath;
-		const b = uri.fsPath;
-		return b === a || b.startsWith(`${a}/`);
-	}
-
-	async getChildren(): Promise<GoTestItem[] | undefined> {
-		const mode = this.#workspace.getConfiguration('goExp').get<DiscoveryMode>('testExplorer.discovery');
-		switch (mode) {
-			case 'on':
-				break; // Ok
-			default:
-				return;
-		}
-		return await Package.resolve(
-			this,
-			this.#commands.packages({
-				Files: [Uri.joinPath(this.uri, '..').toString()],
-				Mode: 1,
-				Recursive: true
-			})
-		);
-	}
 }
 
-class WorkspaceItem implements GoTestItem {
+class WorkspaceItem extends RootItem implements GoTestItem {
 	readonly uri: Uri;
 	readonly label: string;
 	readonly kind = 'module';
 	readonly hasChildren = true;
 
-	readonly #workspace: Workspace;
-	readonly #commands: Commands;
-
 	constructor(workspace: Workspace, commands: Commands, uri: Uri, label: string) {
-		this.#workspace = workspace;
-		this.#commands = commands;
+		super(workspace, commands);
 		this.uri = uri;
 		this.label = label;
-	}
-
-	contains(uri: Uri) {
-		const a = this.uri.fsPath;
-		const b = uri.fsPath;
-		return b === a || b.startsWith(`${a}/`);
-	}
-
-	async getChildren(): Promise<GoTestItem[] | undefined> {
-		const mode = this.#workspace.getConfiguration('goExp').get<DiscoveryMode>('testExplorer.discovery');
-		switch (mode) {
-			case 'on':
-				break; // Ok
-			default:
-				return;
-		}
-		return await Package.resolve(
-			this,
-			this.#commands.packages({
-				Files: [this.uri.toString()],
-				Mode: 1,
-				Recursive: true
-			})
-		);
 	}
 }
 
 class Package implements GoTestItem {
-	static async resolve(parent: Module | WorkspaceItem, p: Thenable<Commands.PacakgesResults>) {
-		const { Packages = [] } = await p;
-
+	static resolve({ Packages: all = [] }: Commands.PackagesResults) {
 		// Consolidate `foo` and `foo_test` into a single Package
-		const paths = new Set(Packages.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
-		const children: Package[] = [];
+		const paths = new Set(all.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
+		const results: Commands.Package[] = [];
 		for (const path of paths) {
-			const files = Packages.filter((x) => x.Path === path || x.ForTest === path).flatMap(
-				(x) => x.TestFiles || []
-			);
+			const pkgs = all.filter((x) => x.Path === path || x.ForTest === path);
+			const files = pkgs.flatMap((x) => x.TestFiles || []);
 			if (!files.length) {
 				continue;
 			}
-
-			children.push(new Package(parent, path, files));
+			results.push({
+				Path: path,
+				ModulePath: pkgs[0].ModulePath,
+				TestFiles: files
+			});
 		}
-		return children;
+		return results;
 	}
 
 	readonly parent: Module | WorkspaceItem;

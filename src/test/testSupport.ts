@@ -30,7 +30,7 @@ export interface SetupArgs {
 
 export interface Commands {
 	modules(args: Commands.ModulesArgs): Thenable<Commands.ModulesResult>;
-	packages(args: Commands.PackagesArgs): Thenable<Commands.PacakgesResults>;
+	packages(args: Commands.PackagesArgs): Thenable<Commands.PackagesResults>;
 }
 
 export namespace Commands {
@@ -49,7 +49,7 @@ export namespace Commands {
 		Mode?: number;
 	}
 
-	export interface PacakgesResults {
+	export interface PackagesResults {
 		Packages: Package[];
 		Module: Record<string, Module>;
 	}
@@ -62,7 +62,7 @@ export namespace Commands {
 
 	export interface Package {
 		Path: string;
-		ForTest: string;
+		ForTest?: string;
 		ModulePath?: string;
 		TestFiles?: TestFile[];
 	}

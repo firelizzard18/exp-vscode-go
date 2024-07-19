@@ -57,7 +57,7 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 			childItems.replace(
 				await Promise.all(
 					providerChildren.map(async (providerChild) => {
-						return this.#getOrCreate(providerChild, false, childItems);
+						return this.#getOrCreate(providerChild, childItems);
 					})
 				)
 			);
@@ -66,24 +66,35 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 		}
 	}
 
-	#didChangeTestItem(items?: T[]) {
-		if (!items) {
+	async #didChangeTestItem(providerItems?: T[]) {
+		if (!providerItems) {
+			// Force a refresh by dumping all the roots and resolving
+			this.#ctrl.items.replace([]);
 			return this.resolve();
 		}
 
-		return Promise.all(items.map((x) => this.#getOrCreate(x)));
+		// Create a TestItem for each T, including its ancestors
+		const items = await Promise.all(providerItems.map((x) => this.#getOrCreateAll(x)));
+
+		// For each parent (using a Set to avoid duplicate work), force a
+		// refresh by dumping its children and resolving
+		return Promise.all(
+			[...new Set(items.map((x) => x.parent))].map(async (x) => {
+				(x?.children || this.#ctrl.items).replace([]);
+				return this.resolve(x);
+			})
+		);
 	}
 
-	async #getOrCreate(providerItem: T, add = true, children?: TestItemCollection): Promise<TestItem> {
-		if (!children) {
-			if (!providerItem.parent) {
-				children = this.#ctrl.items;
-			} else {
-				const parent = await this.#getOrCreate(providerItem.parent);
-				children = parent.children;
-			}
-		}
+	async #getOrCreateAll(providerItem: T): Promise<TestItem> {
+		const { parent } = providerItem;
+		const children = !parent ? this.#ctrl.items : (await this.#getOrCreateAll(parent)).children;
+		const item = await this.#getOrCreate(providerItem, children);
+		children.add(item);
+		return item;
+	}
 
+	async #getOrCreate(providerItem: T, children: TestItemCollection): Promise<TestItem> {
 		const data = await this.#provider.getTestItem(providerItem);
 		this.#items.set(data.id, providerItem);
 
@@ -94,7 +105,6 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 		item.canResolveChildren = data.hasChildren || false;
 		item.range = data.range;
 		item.error = data.error;
-		if (add) children.add(item);
 		return item;
 	}
 }

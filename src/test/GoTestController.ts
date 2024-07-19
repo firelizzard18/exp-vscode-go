@@ -33,7 +33,7 @@ export class GoTestController {
 
 		// [Event] Configuration change
 		ctx.subscriptions.push(
-			workspace.onDidChangeConfiguration((e: ConfigurationChangeEvent) => {
+			workspace.onDidChangeConfiguration(async (e: ConfigurationChangeEvent) => {
 				if (e.affectsConfiguration('goExp.testExplorer.enable')) {
 					const enabled = workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable');
 					if (enabled === ctrl.enabled) {
@@ -43,6 +43,17 @@ export class GoTestController {
 						ctrl.setup({ isInTest, createController: tests.createTestController });
 					} else {
 						ctrl.dispose();
+					}
+				}
+				if (!ctrl.enabled) {
+					return;
+				}
+				if (e.affectsConfiguration('goExp.testExplorer.discovery')) {
+					try {
+						await ctrl.#provider.reloadAll();
+					} catch (error) {
+						if (isInTest) throw error;
+						else outputChannel.error(`Error while handling configuration change: ${error}`);
 					}
 				}
 			})
@@ -57,7 +68,7 @@ export class GoTestController {
 					}
 				} catch (error) {
 					if (isInTest) throw error;
-					else outputChannel.error(`Failed while handling 'onDidOpenTextDocument': ${error}`);
+					else outputChannel.error(`Error while handling 'onDidOpenTextDocument': ${error}`);
 				}
 			})
 		);
@@ -71,7 +82,7 @@ export class GoTestController {
 					}
 				} catch (error) {
 					if (isInTest) throw error;
-					else outputChannel.error(`Failed while handling 'onDidChangeTextDocument': ${error}`);
+					else outputChannel.error(`Error while handling 'onDidChangeTextDocument': ${error}`);
 				}
 			})
 		);
@@ -85,7 +96,7 @@ export class GoTestController {
 					}
 				} catch (error) {
 					if (isInTest) throw error;
-					else outputChannel.appendLine(`Failed while handling 'onDidChangeWorkspaceFolders': ${error}`);
+					else outputChannel.appendLine(`Error while handling 'onDidChangeWorkspaceFolders': ${error}`);
 				}
 			})
 		);
@@ -101,7 +112,7 @@ export class GoTestController {
 					}
 				} catch (error) {
 					if (isInTest) throw error;
-					else outputChannel.appendLine(`Failed while handling 'FileSystemWatcher.onDidCreate': ${error}`);
+					else outputChannel.appendLine(`Error while handling 'FileSystemWatcher.onDidCreate': ${error}`);
 				}
 			})
 		);
@@ -113,7 +124,7 @@ export class GoTestController {
 					}
 				} catch (error) {
 					if (isInTest) throw error;
-					else outputChannel.appendLine(`Failed while handling 'FileSystemWatcher.onDidDelete': ${error}`);
+					else outputChannel.appendLine(`Error while handling 'FileSystemWatcher.onDidDelete': ${error}`);
 				}
 			})
 		);
@@ -150,7 +161,7 @@ export class GoTestController {
 				await resolver.resolve();
 			} catch (error) {
 				if (args.isInTest) throw error;
-				outputChannel.error(`Failed while refreshing tests: ${error}`);
+				outputChannel.error(`Error while refreshing tests: ${error}`);
 			}
 		};
 
@@ -159,8 +170,8 @@ export class GoTestController {
 				await resolver.resolve(item);
 			} catch (error) {
 				if (args.isInTest) throw error;
-				if (!item) outputChannel.error(`Failed while resolving tests: ${error}`);
-				else outputChannel.error(`Failed while resolving test item ${item.id}: ${error}`);
+				if (!item) outputChannel.error(`Error while resolving tests: ${error}`);
+				else outputChannel.error(`Error while resolving test item ${item.id}: ${error}`);
 				console.error(error);
 			}
 		};

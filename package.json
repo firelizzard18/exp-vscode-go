@@ -10,9 +10,13 @@
     "Other"
   ],
   "activationEvents": [
-    "*"
+    "onLanguage:go",
+    "onView:workbench.view.testing"
   ],
   "main": "./dist/extension.js",
+  "extensionDependencies": [
+    "golang.go"
+  ],
   "contributes": {
     "configuration": {
       "title": "Go (experimental)",
@@ -30,7 +34,7 @@
             "on",
             "off"
           ],
-          "scope": "window",
+          "scope": "resource",
           "description": "Control automatic discovery of tests"
         }
       }
