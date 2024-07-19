@@ -36,6 +36,18 @@
           ],
           "scope": "resource",
           "description": "Control automatic discovery of tests"
+        },
+        "goExp.testExplorer.showFiles": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Show files"
+        },
+        "goExp.testExplorer.nestPackages": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Nest packages"
         }
       }
     }

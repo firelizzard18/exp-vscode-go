@@ -48,7 +48,11 @@ export class GoTestController {
 				if (!ctrl.enabled) {
 					return;
 				}
-				if (e.affectsConfiguration('goExp.testExplorer.discovery')) {
+				if (
+					e.affectsConfiguration('goExp.testExplorer.discovery') ||
+					e.affectsConfiguration('goExp.testExplorer.showFiles') ||
+					e.affectsConfiguration('goExp.testExplorer.nestPackages')
+				) {
 					try {
 						await ctrl.#provider.reloadAll();
 					} catch (error) {
