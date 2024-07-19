@@ -264,6 +264,16 @@ abstract class RootItem {
 	}
 
 	async getChildren() {
+		const children = await this.#getChildren();
+		const i = children.findIndex((x) => x.uri.toString() === this.dir.toString());
+		if (i < 0) return children;
+
+		const selfPkg = children[i];
+		children.splice(i, 1);
+		return [...children, ...selfPkg.getChildren()];
+	}
+
+	async #getChildren() {
 		this.pkgChildParent = undefined;
 		this.pkgParentChild = undefined;
 
@@ -287,7 +297,7 @@ abstract class RootItem {
 			this.pkgParentChild.get(parent)!.push(child);
 		}
 
-		return this.pkgParentChild.get(undefined);
+		return this.pkgParentChild.get(undefined) || [];
 	}
 
 	async #getPackages() {
