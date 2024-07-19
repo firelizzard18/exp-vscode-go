@@ -43,7 +43,7 @@ export function registerTestController(ctx: ExtensionContext) {
 		packages: (args) => commands.executeCommand('gopls.packages', args)
 	});
 	const setup = () => {
-		ctrl.setup({ isInTest, createController: tests.createTestController });
+		ctrl.setup({ doSafe, createController: tests.createTestController });
 		window.visibleTextEditors.forEach((x) => ctrl.reload(x.document.uri));
 	};
 	ctx.subscriptions.push(ctrl);
@@ -117,25 +117,10 @@ class GoTestController {
 		this.#resolver = new TestItemResolver(this.#ctrl, this.#provider);
 		this.#disposable.push(this.#ctrl, this.#resolver);
 
-		this.#ctrl.refreshHandler = async () => {
-			try {
-				await this.#resolver?.resolve();
-			} catch (error) {
-				if (args.isInTest) throw error;
-				outputChannel.error(`Error while refreshing tests: ${error}`);
-			}
-		};
+		const doSafe = args.doSafe || (<T>(_: string, fn: () => T | Promise<T>) => fn());
 
-		this.#ctrl.resolveHandler = async (item) => {
-			try {
-				await this.#resolver?.resolve(item);
-			} catch (error) {
-				if (args.isInTest) throw error;
-				if (!item) outputChannel.error(`Error while resolving tests: ${error}`);
-				else outputChannel.error(`Error while resolving test item ${item.id}: ${error}`);
-				console.error(error);
-			}
-		};
+		this.#ctrl.refreshHandler = () => doSafe('refresh tests', () => this.#resolver?.resolve());
+		this.#ctrl.resolveHandler = (item) => doSafe('resolve test', () => this.#resolver?.resolve(item));
 	}
 
 	dispose() {

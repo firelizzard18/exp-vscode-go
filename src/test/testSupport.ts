@@ -24,8 +24,8 @@ export interface Workspace
 
 // Arguments for GoTestController.setup
 export interface SetupArgs {
-	isInTest: boolean;
 	createController(id: string, label: string): vscode.TestController;
+	doSafe?: <T>(msg: string, fn: () => T | Promise<T>) => Promise<T | undefined>;
 }
 
 export interface Commands {
