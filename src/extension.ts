@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GoTestController } from './test/GoTestController';
+import { registerTestController } from './test/GoTestController';
 
 export async function activate(ctx: vscode.ExtensionContext) {
 	// The Go extension _must_ be activated first since this extension depends
@@ -10,7 +10,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 	}
 	await goExt.activate();
 
-	GoTestController.register(ctx);
+	registerTestController(ctx);
 }
 
 export function deactivate() {}

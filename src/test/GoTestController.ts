@@ -1,10 +1,12 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
 	commands,
-	ConfigurationChangeEvent,
 	Disposable,
+	Event,
 	ExtensionContext,
 	ExtensionMode,
 	TestController,
+	TestItem,
 	tests,
 	Uri,
 	window,
@@ -12,136 +14,90 @@ import {
 } from 'vscode';
 import { Commands, SetupArgs, Workspace } from './testSupport';
 import { TestItemResolver } from './TestItemResolver';
-import { GoTestItemProvider } from './GoTestItem';
+import { GoTestItem, GoTestItemProvider } from './GoTestItem';
 
 const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
 
-export class GoTestController {
-	static register(ctx: ExtensionContext): GoTestController {
-		const isInTest = ctx.extensionMode === ExtensionMode.Test;
-
-		// Initialize the controller
-		const ctrl = new this(workspace, {
-			modules: (args) => commands.executeCommand('gopls.modules', args),
-			packages: (args) => commands.executeCommand('gopls.packages', args)
-		});
-		const setup = () => {
-			ctrl.setup({ isInTest, createController: tests.createTestController });
-			window.visibleTextEditors.forEach((x) => ctrl.reload(x.document.uri));
-		};
-
-		ctx.subscriptions.push(ctrl);
-
-		// [Event] Configuration change
-		ctx.subscriptions.push(
-			workspace.onDidChangeConfiguration(async (e: ConfigurationChangeEvent) => {
-				if (e.affectsConfiguration('goExp.testExplorer.enable')) {
-					const enabled = workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable');
-					if (enabled === ctrl.enabled) {
-						return;
-					}
-					if (enabled) {
-						setup();
-					} else {
-						ctrl.dispose();
-					}
-				}
-				if (!ctrl.enabled) {
-					return;
-				}
-				if (
-					e.affectsConfiguration('goExp.testExplorer.discovery') ||
-					e.affectsConfiguration('goExp.testExplorer.showFiles') ||
-					e.affectsConfiguration('goExp.testExplorer.nestPackages')
-				) {
-					try {
-						await ctrl.reload();
-					} catch (error) {
-						if (isInTest) throw error;
-						else outputChannel.error(`Error while handling configuration change: ${error}`);
-					}
-				}
-			})
-		);
-
-		// [Event] File open
-		ctx.subscriptions.push(
-			workspace.onDidOpenTextDocument(async (x) => {
-				try {
-					if (ctrl.enabled) {
-						await ctrl.reload(x.uri);
-					}
-				} catch (error) {
-					if (isInTest) throw error;
-					else outputChannel.error(`Error while handling 'onDidOpenTextDocument': ${error}`);
-				}
-			})
-		);
-
-		// [Event] File change
-		ctx.subscriptions.push(
-			workspace.onDidChangeTextDocument(async (x) => {
-				try {
-					if (ctrl.enabled) {
-						await ctrl.reload(x.document.uri);
-					}
-				} catch (error) {
-					if (isInTest) throw error;
-					else outputChannel.error(`Error while handling 'onDidChangeTextDocument': ${error}`);
-				}
-			})
-		);
-
-		// [Event] Workspace change
-		ctx.subscriptions.push(
-			workspace.onDidChangeWorkspaceFolders(async () => {
-				try {
-					if (ctrl.enabled) {
-						await ctrl.reload();
-					}
-				} catch (error) {
-					if (isInTest) throw error;
-					else outputChannel.appendLine(`Error while handling 'onDidChangeWorkspaceFolders': ${error}`);
-				}
-			})
-		);
-
-		// [Event] File created/deleted
-		const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);
-		ctx.subscriptions.push(watcher);
-		ctx.subscriptions.push(
-			watcher.onDidCreate(async (x) => {
-				try {
-					if (ctrl.enabled) {
-						await ctrl.reload(x);
-					}
-				} catch (error) {
-					if (isInTest) throw error;
-					else outputChannel.appendLine(`Error while handling 'FileSystemWatcher.onDidCreate': ${error}`);
-				}
-			})
-		);
-		ctx.subscriptions.push(
-			watcher.onDidDelete(async (x) => {
-				try {
-					if (ctrl.enabled) {
-						await ctrl.reload(x);
-					}
-				} catch (error) {
-					if (isInTest) throw error;
-					else outputChannel.appendLine(`Error while handling 'FileSystemWatcher.onDidDelete': ${error}`);
-				}
-			})
-		);
-
-		// Setup the controller (if enabled)
-		if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
-			setup();
+export function registerTestController(ctx: ExtensionContext) {
+	const isInTest = ctx.extensionMode === ExtensionMode.Test;
+	const doSafe = async <T>(msg: string, fn: () => T | Promise<T>) => {
+		try {
+			return await fn();
+		} catch (error) {
+			if (isInTest) throw error;
+			else outputChannel.error(`Error: ${msg}: ${error}`);
 		}
+	};
+	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
+		ctx.subscriptions.push(event((e) => doSafe(msg, () => fn(e))));
+	};
+	const command = (name: string, fn: (...args: any[]) => any) => {
+		ctx.subscriptions.push(
+			commands.registerCommand(name, (...args) => doSafe(`executing ${name}`, () => fn(...args)))
+		);
+	};
 
-		return ctrl;
+	// Initialize the controller
+	const ctrl = new GoTestController(workspace, {
+		modules: (args) => commands.executeCommand('gopls.modules', args),
+		packages: (args) => commands.executeCommand('gopls.packages', args)
+	});
+	const setup = () => {
+		ctrl.setup({ isInTest, createController: tests.createTestController });
+		window.visibleTextEditors.forEach((x) => ctrl.reload(x.document.uri));
+	};
+	ctx.subscriptions.push(ctrl);
+
+	// [Command] Refresh
+	command('goExp.testExplorer.refresh', (item) => ctrl.enabled && ctrl.reload(item));
+
+	// [Event] Configuration change
+	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
+		if (e.affectsConfiguration('goExp.testExplorer.enable')) {
+			const enabled = workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable');
+			if (enabled === ctrl.enabled) {
+				return;
+			}
+			if (enabled) {
+				setup();
+			} else {
+				ctrl.dispose();
+			}
+		}
+		if (!ctrl.enabled) {
+			return;
+		}
+		if (
+			e.affectsConfiguration('goExp.testExplorer.discovery') ||
+			e.affectsConfiguration('goExp.testExplorer.showFiles') ||
+			e.affectsConfiguration('goExp.testExplorer.nestPackages')
+		) {
+			await ctrl.reload();
+		}
+	});
+
+	// [Event] File open
+	event(workspace.onDidOpenTextDocument, 'opened document', (e) => ctrl.enabled && ctrl.reload(e.uri));
+
+	// [Event] File change
+	event(workspace.onDidChangeTextDocument, 'updated document', (e) => ctrl.enabled && ctrl.reload(e.document.uri));
+
+	// [Event] Workspace change
+	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => ctrl.enabled && ctrl.reload());
+
+	// [Event] File created/deleted
+	const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);
+	ctx.subscriptions.push(watcher);
+	event(watcher.onDidCreate, 'created file', async (e) => ctrl.enabled && ctrl.reload(e));
+	event(watcher.onDidDelete, 'deleted file', async (e) => ctrl.enabled && ctrl.reload(e));
+
+	// Setup the controller (if enabled)
+	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
+		setup();
 	}
+}
 
+class GoTestController {
 	readonly #provider: GoTestItemProvider;
 	readonly #disposable: Disposable[] = [];
 
@@ -150,6 +106,7 @@ export class GoTestController {
 	}
 
 	#ctrl?: TestController;
+	#resolver?: TestItemResolver<GoTestItem>;
 
 	get enabled() {
 		return !!this.#ctrl;
@@ -157,12 +114,12 @@ export class GoTestController {
 
 	setup(args: SetupArgs) {
 		this.#ctrl = args.createController('goExp', 'Go (experimental)');
-		const resolver = new TestItemResolver(this.#ctrl, this.#provider);
-		this.#disposable.push(this.#ctrl, resolver);
+		this.#resolver = new TestItemResolver(this.#ctrl, this.#provider);
+		this.#disposable.push(this.#ctrl, this.#resolver);
 
 		this.#ctrl.refreshHandler = async () => {
 			try {
-				await resolver.resolve();
+				await this.#resolver?.resolve();
 			} catch (error) {
 				if (args.isInTest) throw error;
 				outputChannel.error(`Error while refreshing tests: ${error}`);
@@ -171,7 +128,7 @@ export class GoTestController {
 
 		this.#ctrl.resolveHandler = async (item) => {
 			try {
-				await resolver.resolve(item);
+				await this.#resolver?.resolve(item);
 			} catch (error) {
 				if (args.isInTest) throw error;
 				if (!item) outputChannel.error(`Error while resolving tests: ${error}`);
@@ -185,9 +142,15 @@ export class GoTestController {
 		this.#disposable.forEach((x) => x.dispose());
 		this.#disposable.splice(0, this.#disposable.length);
 		this.#ctrl = undefined;
+		this.#resolver = undefined;
 	}
 
-	reload(uri?: Uri) {
-		this.#provider.reload(uri);
+	reload(item?: Uri | TestItem) {
+		if (!item || item instanceof Uri) {
+			this.#provider.reload(item);
+			return;
+		}
+
+		this.#resolver?.resolve(item);
 	}
 }

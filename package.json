@@ -50,6 +50,28 @@
           "description": "Nest packages"
         }
       }
+    },
+    "commands": {
+      "command": "goExp.testExplorer.refresh",
+      "title": "Go Test: Refresh",
+      "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
+      "category": "Test",
+      "icon": "$(refresh)"
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "goExp.testExplorer.refresh",
+          "when": "false"
+        }
+      ],
+      "testing/item/context": [
+        {
+          "command": "goExp.testExplorer.refresh",
+          "when": "controllerId == 'goExp'",
+          "group": "inline"
+        }
+      ]
     }
   },
   "scripts": {
