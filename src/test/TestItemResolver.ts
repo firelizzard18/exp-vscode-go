@@ -32,6 +32,14 @@ export class TestItemResolver<T> implements Disposable {
 				else this.#didChangeTestItem([e]);
 			})
 		);
+
+		this.#disposable.push(
+			provider.onDidInvalidateTestResults((e) => {
+				if (!e) this.#didInvalidateTestResults();
+				else if (e instanceof Array) this.#didInvalidateTestResults(e);
+				else this.#didInvalidateTestResults([e]);
+			})
+		);
 	}
 
 	dispose() {
@@ -100,6 +108,12 @@ export class TestItemResolver<T> implements Disposable {
 		);
 	}
 
+	async #didInvalidateTestResults(providerItems?: T[]) {
+		this.#ctrl.invalidateTestResults(
+			providerItems && (await Promise.all(providerItems.map((x) => this.getOrCreateAll(x))))
+		);
+	}
+
 	async getOrCreateAll(providerItem: T): Promise<TestItem> {
 		const parent = await this.#provider.getParent(providerItem);
 		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
@@ -125,6 +139,7 @@ export class TestItemResolver<T> implements Disposable {
 
 export interface TestItemProvider<T> {
 	onDidChangeTestItem: Event<T | T[] | null | undefined | void>;
+	onDidInvalidateTestResults: Event<T | T[] | null | undefined | void>;
 	getTestItem(element: T): TestItemData | Thenable<TestItemData>;
 	getParent(element: T): ProviderResult<T>;
 	getChildren(element?: T): ProviderResult<T[]>;

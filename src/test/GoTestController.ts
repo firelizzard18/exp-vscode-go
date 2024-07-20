@@ -96,7 +96,11 @@ export async function registerTestController(ctx: ExtensionContext) {
 	event(workspace.onDidOpenTextDocument, 'opened document', (e) => ctrl.enabled && ctrl.reload(e.uri));
 
 	// [Event] File change
-	event(workspace.onDidChangeTextDocument, 'updated document', (e) => ctrl.enabled && ctrl.reload(e.document.uri));
+	event(
+		workspace.onDidChangeTextDocument,
+		'updated document',
+		(e) => ctrl.enabled && ctrl.reload(e.document.uri, true)
+	);
 
 	// [Event] Workspace change
 	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => ctrl.enabled && ctrl.reload());
@@ -150,12 +154,15 @@ class GoTestController {
 		this.#resolver = undefined;
 	}
 
-	reload(item?: Uri | TestItem) {
+	reload(item?: Uri | TestItem, invalidate = false) {
 		if (!item || item instanceof Uri) {
-			this.#provider.reload(item);
+			this.#provider.reload(item, invalidate);
 			return;
 		}
 
 		this.#resolver?.resolve(item);
+		if (invalidate) {
+			this.#ctrl?.invalidateTestResults(item);
+		}
 	}
 }

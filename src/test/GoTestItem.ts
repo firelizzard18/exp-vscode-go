@@ -66,6 +66,8 @@ type DiscoveryMode = 'on' | 'off';
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly #didChangeTestItem = new EventEmitter<GoTestItem[] | void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
+	readonly #didInvalidateTestResults = new EventEmitter<GoTestItem[] | void>();
+	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
 
 	readonly #context: Context;
 	readonly #requested = new Map<string, Module | WorkspaceItem>();
@@ -111,9 +113,12 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		});
 	}
 
-	async reload(uri?: Uri) {
+	async reload(uri?: Uri, invalidate = false) {
 		if (!uri) {
 			this.#didChangeTestItem.fire();
+			if (invalidate) {
+				this.#didInvalidateTestResults.fire();
+			}
 			return;
 		}
 
@@ -189,6 +194,9 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		}
 
 		this.#didChangeTestItem.fire(items);
+		if (invalidate) {
+			this.#didInvalidateTestResults.fire(items);
+		}
 	}
 
 	async #loadRoots(force = false) {
