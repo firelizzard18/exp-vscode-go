@@ -6,6 +6,13 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import * as vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
+import { ExtensionAPI } from '../vscode-go';
+
+export interface Context {
+	readonly workspace: Workspace;
+	readonly commands: Commands;
+	readonly go: ExtensionAPI;
+}
 
 // The subset of vscode.FileSystem that is used by the test explorer.
 export type FileSystem = Pick<vscode.FileSystem, 'readFile' | 'readDirectory'>;
@@ -30,6 +37,7 @@ export interface SetupArgs {
 export interface Commands {
 	modules(args: Commands.ModulesArgs): Thenable<Commands.ModulesResult>;
 	packages(args: Commands.PackagesArgs): Thenable<Commands.PackagesResults>;
+	focusTestOutput(): Thenable<void>;
 }
 
 export namespace Commands {

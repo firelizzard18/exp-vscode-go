@@ -5,6 +5,7 @@ import {
 	Event,
 	ExtensionContext,
 	ExtensionMode,
+	extensions,
 	TestController,
 	TestItem,
 	TestRunProfileKind,
@@ -13,14 +14,22 @@ import {
 	window,
 	workspace
 } from 'vscode';
-import { Commands, SetupArgs, Workspace } from './testSupport';
+import { Context, SetupArgs } from './testSupport';
 import { TestItemResolver } from './TestItemResolver';
 import { GoTestItem, GoTestItemProvider } from './GoTestItem';
 import { GoTestRunner } from './GoTestRunner';
+import { ExtensionAPI } from '../vscode-go';
 
 const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
 
-export function registerTestController(ctx: ExtensionContext) {
+export async function registerTestController(ctx: ExtensionContext) {
+	// The Go extension _must_ be activated first since we depend on gopls
+	const goExt = extensions.getExtension<ExtensionAPI>('golang.go');
+	if (!goExt) {
+		throw new Error('Cannot activate without the Go extension');
+	}
+	const go = await goExt.activate();
+
 	const isInTest = ctx.extensionMode === ExtensionMode.Test;
 	const doSafe = async <T>(msg: string, fn: () => T | Promise<T>) => {
 		try {
@@ -40,9 +49,14 @@ export function registerTestController(ctx: ExtensionContext) {
 	};
 
 	// Initialize the controller
-	const ctrl = new GoTestController(workspace, {
-		modules: (args) => commands.executeCommand('gopls.modules', args),
-		packages: (args) => commands.executeCommand('gopls.packages', args)
+	const ctrl = new GoTestController({
+		workspace,
+		go,
+		commands: {
+			modules: (args) => commands.executeCommand('gopls.modules', args),
+			packages: (args) => commands.executeCommand('gopls.packages', args),
+			focusTestOutput: () => commands.executeCommand('testing.showMostRecentOutput')
+		}
 	});
 	const setup = () => {
 		ctrl.setup({ doSafe, createController: tests.createTestController });
@@ -100,13 +114,13 @@ export function registerTestController(ctx: ExtensionContext) {
 }
 
 class GoTestController {
-	readonly #workspace: Workspace;
+	readonly #context: Context;
 	readonly #provider: GoTestItemProvider;
 	readonly #disposable: Disposable[] = [];
 
-	constructor(workspace: Workspace, commands: Commands) {
-		this.#workspace = workspace;
-		this.#provider = new GoTestItemProvider(workspace, commands);
+	constructor(context: Context) {
+		this.#context = context;
+		this.#provider = new GoTestItemProvider(context);
 	}
 
 	#ctrl?: TestController;
@@ -125,8 +139,8 @@ class GoTestController {
 		const doSafe = args.doSafe || (<T>(_: string, fn: () => T | undefined | Promise<T | undefined>) => fn());
 		this.#ctrl.refreshHandler = () => doSafe('refresh tests', () => resolver.resolve());
 		this.#ctrl.resolveHandler = (item) => doSafe('resolve test', () => resolver.resolve(item));
-		new GoTestRunner(this.#workspace, this.#ctrl, doSafe, resolver, 'Go', TestRunProfileKind.Run, true);
-		new GoTestRunner(this.#workspace, this.#ctrl, doSafe, resolver, 'Go (debug)', TestRunProfileKind.Debug, true);
+		new GoTestRunner(this.#context, this.#ctrl, doSafe, resolver, 'Go', TestRunProfileKind.Run, true);
+		new GoTestRunner(this.#context, this.#ctrl, doSafe, resolver, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {

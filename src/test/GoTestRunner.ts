@@ -2,16 +2,19 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import {
 	CancellationToken,
+	Location,
 	TestController,
 	TestItem,
 	TestRunProfile,
 	TestRunProfileKind,
 	TestRunRequest
 } from 'vscode';
-import * as vscode from 'vscode';
+import cp from 'child_process';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem';
 import { TestItemResolver } from './TestItemResolver';
-import { Workspace } from './testSupport';
+import { Context, Workspace } from './testSupport';
+import { killProcessTree } from '../utils/processUtils';
+import { LineBuffer } from '../utils/lineBuffer';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
 	readonly packages: Set<Package>;
@@ -20,13 +23,13 @@ export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'excl
 }
 
 export class GoTestRunner {
-	readonly #workspace: Workspace;
+	readonly #context: Context;
 	readonly #ctrl: TestController;
 	readonly #resolver: TestItemResolver<GoTestItem>;
 	readonly #profile: TestRunProfile;
 
 	constructor(
-		workspace: Workspace,
+		context: Context,
 		ctrl: TestController,
 		doSafe: <T>(msg: string, fn: () => T | Promise<T>) => T | undefined | Promise<T | undefined>,
 		resolver: TestItemResolver<GoTestItem>,
@@ -34,7 +37,7 @@ export class GoTestRunner {
 		kind: TestRunProfileKind,
 		isDefault = false
 	) {
-		this.#workspace = workspace;
+		this.#context = context;
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#profile = ctrl.createRunProfile(
@@ -42,7 +45,7 @@ export class GoTestRunner {
 			kind,
 			(request, token) =>
 				doSafe('execute test', async () => {
-					const r = await resolveRunRequest(workspace, resolver, request);
+					const r = await resolveRunRequest(context, resolver, request);
 					await this.#run(r, token);
 				}),
 			isDefault
@@ -51,48 +54,268 @@ export class GoTestRunner {
 
 	async #run(request: GoTestRunRequest, token: CancellationToken) {
 		// Save all files to ensure `go test` tests the latest changes
-		await this.#workspace.saveAll(false);
+		await this.#context.workspace.saveAll(false);
 
+		// Open the test output panel
 		const showOutput = [...request.packages].some((x) =>
-			this.#workspace.getConfiguration('goExp', x.uri).get<boolean>('testExplorer.showOutput')
+			this.#context.workspace.getConfiguration('goExp', x.uri).get<boolean>('testExplorer.showOutput')
 		);
 		if (showOutput) {
-			// This directly references vscode.commands and thus is harder to
-			// verify in a test but I think it's ok to test this manually
-			await vscode.commands.executeCommand('testing.showMostRecentOutput');
+			await this.#context.commands.focusTestOutput();
 		}
 
-		// Pretend to run the tests
+		// Execute the tests
 		for (const pkg of request.packages) {
 			const pkgItem = await this.#resolver.getOrCreateAll(pkg);
 			const include = await resolveTestItems(this.#resolver, request.include.get(pkg) || pkg.getTests());
 			const exclude = await resolveTestItems(this.#resolver, request.exclude.get(pkg) || []);
 
-			const run = this.#ctrl.createTestRun({
-				...request,
-				include: [...include.values()],
-				exclude: [...exclude.values()]
+			await goTest({
+				context: this.#context,
+				ctrl: this.#ctrl,
+				pkg,
+				pkgItem,
+				runAll: !request.include.get(pkg),
+				include,
+				exclude,
+				request,
+				token
 			});
-
-			run.enqueued(pkgItem);
-			for (const [goItem, item] of include) {
-				if (!exclude.has(goItem)) {
-					run.enqueued(item);
-				}
-			}
-
-			for (const [goItem, item] of include) {
-				if (!exclude.has(goItem)) {
-					run.skipped(item);
-				}
-			}
-			run.end();
 		}
 	}
 }
 
+/**
+ * go test -json output format.
+ * which is a subset of https://golang.org/cmd/test2json/#hdr-Output_Format
+ * and includes only the fields that we are using.
+ */
+interface GoTestOutput {
+	Action: string;
+	Output?: string;
+	Package?: string;
+	Test?: string;
+	Elapsed?: number; // seconds
+}
+
+// TODO: Once this is merged into vscode-go, replace with vscode-go's more
+// complete goTest implementation (with modifications)
+async function goTest({
+	context: { workspace, go },
+	ctrl,
+	pkg,
+	pkgItem,
+	runAll,
+	include,
+	exclude,
+	request,
+	token
+}: {
+	context: Context;
+	ctrl: TestController;
+	pkg: Package;
+	pkgItem: TestItem;
+	runAll: boolean;
+	include: Map<TestCase, TestItem>;
+	exclude: Map<TestCase, TestItem>;
+	request: GoTestRunRequest;
+	token: CancellationToken;
+}) {
+	const run = ctrl.createTestRun({
+		...request,
+		include: [...include.values()],
+		exclude: [...exclude.values()]
+	});
+
+	run.enqueued(pkgItem);
+	for (const [goItem, item] of include) {
+		if (!exclude.has(goItem)) {
+			run.enqueued(item);
+		}
+	}
+
+	const { binPath: goRuntimePath } = go.settings.getExecutionCommand('go', pkg.uri) || {};
+	if (!goRuntimePath) {
+		run.failed(pkgItem, {
+			message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
+		});
+		run.end();
+		return;
+	}
+	const args: string[] = [
+		'test',
+		'-json',
+		'-fullpath' // Include the full path for output events
+	];
+	if (runAll) {
+		// Include all test cases
+		args.push('-run=.');
+		if (shouldRunBenchmarks(workspace, pkg)) {
+			args.push('-bench=.');
+		}
+	} else {
+		// Include specific test cases
+		args.push(`-run=^${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')}$`);
+		args.push(`-bench=^${makeRegex(include.keys(), (x) => x.kind === 'benchmark')}$`);
+	}
+	if (exclude.size) {
+		// Exclude specific test cases
+		args.push(`-skip=^${makeRegex(exclude.keys())}$`);
+	}
+
+	const append = (output: string, location?: Location, test?: TestItem) => {
+		run.appendOutput(output.replace(/\n/g, '\r\n'), location, test);
+	};
+
+	// TODO: map relative paths
+	const itemByName = new Map([...include].map(([test, item]) => [test.name, item]));
+	const onOutput = (s: string | null) => {
+		if (!s) return;
+
+		// Attempt to parse the output as a test message
+		let msg: GoTestOutput;
+		try {
+			msg = JSON.parse(s);
+		} catch (_) {
+			// Unknown output
+			append(s);
+			return;
+		}
+
+		// TODO: Benchmarks probably need a lot more processing as per
+		// extension/src/goTest/test_events.md (vscode-go)
+
+		const test = itemByName.get(msg.Test!) || pkgItem;
+		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
+		switch (msg.Action) {
+			case 'output':
+				if (!msg.Output) {
+					break;
+				}
+
+				// TODO: Extract location
+				append(msg.Output, undefined, test);
+
+				// if (record.has(test.id)) record.get(test.id)!.push(e.Output ?? '');
+				// else record.set(test.id, [e.Output ?? '']);
+				break;
+
+			case 'run':
+			case 'start':
+				run.started(test);
+				break;
+
+			case 'skip':
+				run.skipped(test);
+				break;
+
+			case 'pass':
+				// TODO(firelizzard18): add messages on pass, once that capability
+				// is added.
+				run.passed(test, elapsed);
+				break;
+
+			case 'fail': {
+				run.failed(test, [], elapsed);
+
+				// const messages = this.parseOutput(test, record.get(test.id) || []);
+
+				// if (!concat) {
+				// 	run.failed(test, messages, (e.Elapsed ?? 0) * 1000);
+				// 	break;
+				// }
+
+				// const merged = new Map<string, TestMessage>();
+				// for (const { message, location } of messages) {
+				// 	const loc = `${location?.uri}:${location?.range.start.line}`;
+				// 	if (merged.has(loc)) {
+				// 		merged.get(loc)!.message += '' + message;
+				// 	} else {
+				// 		merged.set(loc, { message, location });
+				// 	}
+				// }
+
+				// run.failed(test, Array.from(merged.values()), (e.Elapsed ?? 0) * 1000);
+				break;
+			}
+
+			default:
+				// Ignore 'cont' and 'pause'
+				break;
+		}
+	};
+
+	const stdout = new LineBuffer();
+	stdout.onLine(onOutput);
+	stdout.onDone(onOutput);
+
+	const stderr = new LineBuffer();
+	stderr.onLine((line) => append(line));
+	stderr.onDone((last) => last && append(last));
+
+	try {
+		append(`$ ${goRuntimePath} ${args.join(' ')}\n\n`);
+		const { code, signal } = await new Promise<ProcessResult>((resolve) =>
+			spawnGoTest({ token, goRuntimePath, args, pkg, resolve, stdout, stderr })
+		);
+		if (code !== 0) {
+			run.errored(pkgItem, {
+				message: `\`go test\` exited with ${[
+					...(code ? [`code ${code}`] : []),
+					...(signal ? [`signal ${signal}`] : [])
+				].join(', ')}`
+			});
+		}
+	} finally {
+		run.end();
+	}
+}
+
+interface ProcessResult {
+	code: number | null;
+	signal: NodeJS.Signals | null;
+}
+
+function spawnGoTest({
+	token,
+	goRuntimePath,
+	args,
+	pkg,
+	stdout,
+	stderr,
+	resolve
+}: {
+	token: CancellationToken;
+	goRuntimePath: string;
+	args: string[];
+	pkg: Package;
+	stdout: LineBuffer;
+	stderr: LineBuffer;
+	resolve: (_: ProcessResult) => void;
+}) {
+	if (token.isCancellationRequested) {
+		return;
+	}
+
+	const tp = cp.spawn(goRuntimePath, args, { cwd: pkg.uri.fsPath });
+	token.onCancellationRequested(() => killProcessTree(tp));
+
+	tp.stdout.on('data', (chunk) => stdout.append(chunk.toString()));
+	tp.stderr.on('data', (chunk) => stderr.append(chunk.toString()));
+
+	tp.on('close', (code, signal) => {
+		stdout.done();
+		stderr.done();
+		resolve({ code, signal });
+	});
+}
+
+function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
+	return '.*'; // TODO
+}
+
 async function resolveRunRequest(
-	workspace: Workspace,
+	{ workspace }: Context,
 	resolver: TestItemResolver<GoTestItem>,
 	request: TestRunRequest
 ) {
@@ -122,7 +345,7 @@ async function resolveRunRequest(
 
 	// Remove redundant requests for specific tests
 	for (const item of tests) {
-		const pkg = item.parent.parent;
+		const pkg = item.file.package;
 		if (!packages.has(pkg)) {
 			continue;
 		}
@@ -138,7 +361,7 @@ async function resolveRunRequest(
 	// Record requests for specific tests
 	const testsForPackage = new Map<Package, TestCase[]>();
 	for (const item of tests) {
-		const pkg = item.parent.parent;
+		const pkg = item.file.package;
 		packages.add(pkg);
 
 		if (!testsForPackage.has(pkg)) {
@@ -150,7 +373,7 @@ async function resolveRunRequest(
 	// Tests that should be excluded for each package
 	const excludeForPackage = new Map<Package, TestCase[]>();
 	for (const item of testCases(exclude)) {
-		const pkg = item.parent.parent;
+		const pkg = item.file.package;
 		if (!packages.has(pkg)) continue;
 
 		if (!excludeForPackage.has(pkg)) {
@@ -186,11 +409,9 @@ function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 	return true;
 }
 
-async function resolveTestItems(resolver: TestItemResolver<GoTestItem>, goItems: GoTestItem[]) {
+async function resolveTestItems<T extends GoTestItem>(resolver: TestItemResolver<GoTestItem>, goItems: T[]) {
 	return new Map(
-		await Promise.all(
-			goItems.map(async (x): Promise<[GoTestItem, TestItem]> => [x, await resolver.getOrCreateAll(x)])
-		)
+		await Promise.all(goItems.map(async (x): Promise<[T, TestItem]> => [x, await resolver.getOrCreateAll(x)]))
 	);
 }
 

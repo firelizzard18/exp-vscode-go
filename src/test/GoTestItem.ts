@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { ConfigurationScope, EventEmitter, MarkdownString, ProviderResult, Range, Uri, WorkspaceFolder } from 'vscode';
 import { TestItemData, TestItemProvider } from './TestItemResolver';
-import { Commands, Workspace } from './testSupport';
+import { Commands, Context } from './testSupport';
 import path from 'path';
 
 export namespace GoTestItem {
@@ -67,22 +67,20 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly #didChangeTestItem = new EventEmitter<GoTestItem[] | void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 
-	readonly #workspace: Workspace;
-	readonly #commands: Commands;
+	readonly #context: Context;
 	readonly #requested = new Map<string, Module | WorkspaceItem>();
 	#roots?: (Module | WorkspaceItem)[];
 
-	constructor(workspace: Workspace, commands: Commands) {
-		this.#workspace = workspace;
-		this.#commands = commands;
+	constructor(context: Context) {
+		this.#context = context;
 	}
 
 	getConfig<T>(name: string, scope?: ConfigurationScope): T | undefined {
-		return this.#workspace.getConfiguration('goExp', scope)?.get<T>(name);
+		return this.#context.workspace.getConfiguration('goExp', scope)?.get<T>(name);
 	}
 
 	getPackages(args: Commands.PackagesArgs) {
-		return this.#commands.packages(args);
+		return this.#context.commands.packages(args);
 	}
 
 	getTestItem(element: GoTestItem): TestItemData | Thenable<TestItemData> {
@@ -123,7 +121,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
-		const ws = this.#workspace.getWorkspaceFolder(uri);
+		const ws = this.#context.workspace.getWorkspaceFolder(uri);
 		if (!ws) {
 			// TODO: Handle tests from external packages?
 			return;
@@ -131,7 +129,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 
 		// Load tests for the given URI
 		const packages = Package.resolve(
-			await this.#commands.packages({
+			await this.#context.commands.packages({
 				Files: [uri.toString()],
 				Mode: 1
 			})
@@ -197,14 +195,14 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		if (!force && this.#roots) {
 			return this.#roots;
 		}
-		if (!this.#workspace.workspaceFolders) {
+		if (!this.#context.workspace.workspaceFolders) {
 			return [];
 		}
 
 		// Ask gopls for a list of modules for each workspace folder
 		const modules = await Promise.all(
-			this.#workspace.workspaceFolders.map(async (ws) => {
-				const r = await this.#commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
+			this.#context.workspace.workspaceFolders.map(async (ws) => {
+				const r = await this.#context.commands.modules({ Dir: ws.uri.toString(), MaxDepth: -1 });
 				return { ws, ...r };
 			})
 		);
@@ -227,7 +225,6 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 }
 
 export interface GoTestItem {
-	readonly parent?: GoTestItem;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly label: string;
@@ -447,7 +444,7 @@ export class Package implements GoTestItem {
 
 export class TestFile implements GoTestItem {
 	readonly #provider: GoTestItemProvider;
-	readonly parent: Package;
+	readonly package: Package;
 	readonly uri: Uri;
 	readonly kind = 'file';
 	readonly hasChildren = true;
@@ -455,7 +452,7 @@ export class TestFile implements GoTestItem {
 
 	constructor(provider: GoTestItemProvider, pkg: Package, file: Commands.TestFile) {
 		this.#provider = provider;
-		this.parent = pkg;
+		this.package = pkg;
 		this.uri = Uri.parse(file.URI);
 		this.tests = file.Tests.map((x) => new TestCase(this.#provider, this, x));
 	}
@@ -465,7 +462,7 @@ export class TestFile implements GoTestItem {
 	}
 
 	getParent() {
-		return this.parent;
+		return this.package;
 	}
 
 	getChildren(): GoTestItem[] {
@@ -479,7 +476,7 @@ export class TestFile implements GoTestItem {
 
 export class TestCase implements GoTestItem {
 	readonly #provider: GoTestItemProvider;
-	readonly parent: TestFile;
+	readonly file: TestFile;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
@@ -489,7 +486,7 @@ export class TestCase implements GoTestItem {
 
 	constructor(provider: GoTestItemProvider, file: TestFile, test: Commands.TestCase) {
 		this.#provider = provider;
-		this.parent = file;
+		this.file = file;
 		this.uri = Uri.parse(test.Loc.uri);
 		this.name = test.Name;
 		this.kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
@@ -504,9 +501,9 @@ export class TestCase implements GoTestItem {
 
 	getParent() {
 		if (this.#provider.getConfig<boolean>('testExplorer.showFiles', this.uri)) {
-			return this.parent;
+			return this.file;
 		}
-		return this.parent.parent;
+		return this.file.package;
 	}
 
 	getChildren(): GoTestItem[] {
