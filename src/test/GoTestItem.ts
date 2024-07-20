@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
-import { ConfigurationScope, EventEmitter, MarkdownString, Range, Uri, WorkspaceFolder } from 'vscode';
+import { ConfigurationScope, EventEmitter, MarkdownString, ProviderResult, Range, Uri, WorkspaceFolder } from 'vscode';
 import { TestItemData, TestItemProvider } from './TestItemResolver';
 import { Commands, Workspace } from './testSupport';
 import path from 'path';
@@ -96,7 +96,11 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		};
 	}
 
-	async getChildren(element?: GoTestItem | undefined): Promise<GoTestItem[] | undefined> {
+	getParent(element: GoTestItem) {
+		return element.getParent();
+	}
+
+	async getChildren(element?: GoTestItem | undefined) {
 		if (element) {
 			return element.getChildren();
 		}
@@ -232,11 +236,15 @@ export interface GoTestItem {
 	hasChildren: boolean;
 	error?: string | MarkdownString;
 
-	getChildren(): GoTestItem[] | undefined | Thenable<GoTestItem[] | undefined>;
+	getParent(): ProviderResult<GoTestItem>;
+	getChildren(): ProviderResult<GoTestItem[]>;
 }
 
-abstract class RootItem {
+export abstract class RootItem implements GoTestItem {
 	abstract readonly uri: Uri;
+	abstract readonly kind: GoTestItem.Kind;
+	abstract readonly label: string;
+	readonly hasChildren = true;
 
 	readonly #provider: GoTestItemProvider;
 	readonly #requested = new Map<string, Package>();
@@ -268,8 +276,12 @@ abstract class RootItem {
 		return item;
 	}
 
-	async getChildren() {
-		const children = await this.#getChildren();
+	getParent() {
+		return null;
+	}
+
+	async getChildren(): Promise<GoTestItem[]> {
+		const children = await this.getPackages();
 		const i = children.findIndex((x) => x.uri.toString() === this.dir.toString());
 		if (i < 0) return children;
 
@@ -278,7 +290,7 @@ abstract class RootItem {
 		return [...children, ...selfPkg.getChildren()];
 	}
 
-	async #getChildren() {
+	async getPackages() {
 		this.pkgChildParent = undefined;
 		this.pkgParentChild = undefined;
 
@@ -327,7 +339,6 @@ class Module extends RootItem implements GoTestItem {
 	readonly uri: Uri;
 	readonly path: string;
 	readonly kind = 'module';
-	readonly hasChildren = true;
 
 	constructor(provider: GoTestItemProvider, mod: Commands.Module) {
 		super(provider);
@@ -343,7 +354,6 @@ class Module extends RootItem implements GoTestItem {
 class WorkspaceItem extends RootItem implements GoTestItem {
 	readonly ws: WorkspaceFolder;
 	readonly kind = 'workspace';
-	readonly hasChildren = true;
 
 	constructor(provider: GoTestItemProvider, ws: WorkspaceFolder) {
 		super(provider);
@@ -359,7 +369,7 @@ class WorkspaceItem extends RootItem implements GoTestItem {
 	}
 }
 
-class Package implements GoTestItem {
+export class Package implements GoTestItem {
 	static resolve({ Packages: all = [] }: Commands.PackagesResults) {
 		if (!all) return [];
 
@@ -381,25 +391,20 @@ class Package implements GoTestItem {
 		return results;
 	}
 
-	readonly parent: Module | WorkspaceItem;
+	readonly #provider: GoTestItemProvider;
+	readonly parent: RootItem;
 	readonly uri: Uri;
 	readonly path: string;
 	readonly kind = 'package';
 	readonly hasChildren = true;
 	readonly files: TestFile[];
-	readonly #provider: GoTestItemProvider;
 
-	constructor(
-		provider: GoTestItemProvider,
-		parent: Module | WorkspaceItem,
-		path: string,
-		files: Commands.TestFile[]
-	) {
+	constructor(provider: GoTestItemProvider, parent: RootItem, path: string, files: Commands.TestFile[]) {
 		this.#provider = provider;
 		this.parent = parent;
 		this.path = path;
 		this.uri = Uri.joinPath(Uri.parse(files[0].URI), '..');
-		this.files = files.filter((x) => x.Tests.length).map((x) => new TestFile(this, x));
+		this.files = files.filter((x) => x.Tests.length).map((x) => new TestFile(this.#provider, this, x));
 	}
 
 	get label() {
@@ -413,7 +418,14 @@ class Package implements GoTestItem {
 		return this.path;
 	}
 
-	getChildren() {
+	getParent() {
+		if (!this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
+			return this.parent;
+		}
+		return this.parent.pkgChildParent?.get(this) || this.parent;
+	}
+
+	getChildren(): GoTestItem[] {
 		if (!this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
 			return this.#getChildren();
 		}
@@ -427,31 +439,46 @@ class Package implements GoTestItem {
 		}
 		return this.files.flatMap((x) => x.getChildren());
 	}
+
+	getTests() {
+		return this.files.flatMap((x) => x.getTests());
+	}
 }
 
-class TestFile implements GoTestItem {
+export class TestFile implements GoTestItem {
+	readonly #provider: GoTestItemProvider;
 	readonly parent: Package;
 	readonly uri: Uri;
 	readonly kind = 'file';
 	readonly hasChildren = true;
 	readonly tests: TestCase[];
 
-	constructor(pkg: Package, file: Commands.TestFile) {
+	constructor(provider: GoTestItemProvider, pkg: Package, file: Commands.TestFile) {
+		this.#provider = provider;
 		this.parent = pkg;
 		this.uri = Uri.parse(file.URI);
-		this.tests = file.Tests.map((x) => new TestCase(this, x));
+		this.tests = file.Tests.map((x) => new TestCase(this.#provider, this, x));
 	}
 
 	get label() {
 		return path.basename(this.uri.fsPath);
 	}
 
-	getChildren() {
+	getParent() {
+		return this.parent;
+	}
+
+	getChildren(): GoTestItem[] {
+		return this.tests;
+	}
+
+	getTests() {
 		return this.tests;
 	}
 }
 
-class TestCase implements GoTestItem {
+export class TestCase implements GoTestItem {
+	readonly #provider: GoTestItemProvider;
 	readonly parent: TestFile;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
@@ -460,7 +487,8 @@ class TestCase implements GoTestItem {
 	readonly hasChildren = false;
 	// TODO: subtests
 
-	constructor(file: TestFile, test: Commands.TestCase) {
+	constructor(provider: GoTestItemProvider, file: TestFile, test: Commands.TestCase) {
+		this.#provider = provider;
 		this.parent = file;
 		this.uri = Uri.parse(test.Loc.uri);
 		this.name = test.Name;
@@ -474,7 +502,14 @@ class TestCase implements GoTestItem {
 		return this.name;
 	}
 
-	getChildren() {
+	getParent() {
+		if (this.#provider.getConfig<boolean>('testExplorer.showFiles', this.uri)) {
+			return this.parent;
+		}
+		return this.parent.parent;
+	}
+
+	getChildren(): GoTestItem[] {
 		return [];
 	}
 }

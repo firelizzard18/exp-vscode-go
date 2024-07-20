@@ -11,21 +11,20 @@ import type * as lsp from 'vscode-languageserver-types';
 export type FileSystem = Pick<vscode.FileSystem, 'readFile' | 'readDirectory'>;
 
 // The subset of vscode.workspace that is used by the test explorer.
-export interface Workspace
-	extends Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'textDocuments'> {
+export interface Workspace extends Pick<typeof vscode.workspace, WorkspaceProps> {
 	// use custom FS type
 	readonly fs: FileSystem;
 
 	// only include one overload
 	openTextDocument(uri: vscode.Uri): Thenable<vscode.TextDocument>;
-
-	getConfiguration(section?: string, scope?: vscode.ConfigurationScope | null): vscode.WorkspaceConfiguration;
 }
+
+type WorkspaceProps = 'workspaceFolders' | 'getWorkspaceFolder' | 'textDocuments' | 'getConfiguration' | 'saveAll';
 
 // Arguments for GoTestController.setup
 export interface SetupArgs {
 	createController(id: string, label: string): vscode.TestController;
-	doSafe?: <T>(msg: string, fn: () => T | Promise<T>) => Promise<T | undefined>;
+	doSafe?: <T>(msg: string, fn: () => T | Promise<T>) => T | undefined | Promise<T | undefined>;
 }
 
 export interface Commands {

@@ -15,7 +15,7 @@ import {
  * Translates between VSCode's test resolver interface and a more typical tree
  * data style provider.
  */
-export class TestItemResolver<T extends { parent?: T }> implements Disposable {
+export class TestItemResolver<T> implements Disposable {
 	readonly #ctrl: TestController;
 	readonly #provider: TestItemProvider<T>;
 	readonly #items = new Map<string, T>();
@@ -36,6 +36,20 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 
 	dispose() {
 		this.#disposable.forEach((x) => x.dispose());
+	}
+
+	getProviderItem(id: string) {
+		return this.#items.get(id);
+	}
+
+	get roots() {
+		const { items } = this.#ctrl;
+		function* it() {
+			for (const [, item] of items) {
+				yield item;
+			}
+		}
+		return it();
 	}
 
 	async resolve(item?: TestItem) {
@@ -74,7 +88,7 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 		}
 
 		// Create a TestItem for each T, including its ancestors
-		const items = await Promise.all(providerItems.map((x) => this.#getOrCreateAll(x)));
+		const items = await Promise.all(providerItems.map((x) => this.getOrCreateAll(x)));
 
 		// For each parent (using a Set to avoid duplicate work), force a
 		// refresh by dumping its children and resolving
@@ -86,9 +100,9 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 		);
 	}
 
-	async #getOrCreateAll(providerItem: T): Promise<TestItem> {
-		const { parent } = providerItem;
-		const children = !parent ? this.#ctrl.items : (await this.#getOrCreateAll(parent)).children;
+	async getOrCreateAll(providerItem: T): Promise<TestItem> {
+		const parent = await this.#provider.getParent(providerItem);
+		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
 		const item = await this.#getOrCreate(providerItem, children);
 		children.add(item);
 		return item;
@@ -112,6 +126,7 @@ export class TestItemResolver<T extends { parent?: T }> implements Disposable {
 export interface TestItemProvider<T> {
 	onDidChangeTestItem: Event<T | T[] | null | undefined | void>;
 	getTestItem(element: T): TestItemData | Thenable<TestItemData>;
+	getParent(element: T): ProviderResult<T>;
 	getChildren(element?: T): ProviderResult<T[]>;
 }
 

@@ -48,6 +48,18 @@
           "default": false,
           "scope": "resource",
           "description": "Nest packages"
+        },
+        "goExp.testExplorer.runPackageBenchmarks": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "When the test explorer is used to run all tests within a package, include benchmarks"
+        },
+        "goExp.testExplorer.showOutput": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Focus the test output panel when a test is run"
         }
       }
     },

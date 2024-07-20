@@ -7,6 +7,7 @@ import {
 	ExtensionMode,
 	TestController,
 	TestItem,
+	TestRunProfileKind,
 	tests,
 	Uri,
 	window,
@@ -15,6 +16,7 @@ import {
 import { Commands, SetupArgs, Workspace } from './testSupport';
 import { TestItemResolver } from './TestItemResolver';
 import { GoTestItem, GoTestItemProvider } from './GoTestItem';
+import { GoTestRunner } from './GoTestRunner';
 
 const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
 
@@ -98,10 +100,12 @@ export function registerTestController(ctx: ExtensionContext) {
 }
 
 class GoTestController {
+	readonly #workspace: Workspace;
 	readonly #provider: GoTestItemProvider;
 	readonly #disposable: Disposable[] = [];
 
 	constructor(workspace: Workspace, commands: Commands) {
+		this.#workspace = workspace;
 		this.#provider = new GoTestItemProvider(workspace, commands);
 	}
 
@@ -114,13 +118,15 @@ class GoTestController {
 
 	setup(args: SetupArgs) {
 		this.#ctrl = args.createController('goExp', 'Go (experimental)');
-		this.#resolver = new TestItemResolver(this.#ctrl, this.#provider);
+		const resolver = new TestItemResolver(this.#ctrl, this.#provider);
+		this.#resolver = resolver;
 		this.#disposable.push(this.#ctrl, this.#resolver);
 
-		const doSafe = args.doSafe || (<T>(_: string, fn: () => T | Promise<T>) => fn());
-
-		this.#ctrl.refreshHandler = () => doSafe('refresh tests', () => this.#resolver?.resolve());
-		this.#ctrl.resolveHandler = (item) => doSafe('resolve test', () => this.#resolver?.resolve(item));
+		const doSafe = args.doSafe || (<T>(_: string, fn: () => T | undefined | Promise<T | undefined>) => fn());
+		this.#ctrl.refreshHandler = () => doSafe('refresh tests', () => resolver.resolve());
+		this.#ctrl.resolveHandler = (item) => doSafe('resolve test', () => resolver.resolve(item));
+		new GoTestRunner(this.#workspace, this.#ctrl, doSafe, resolver, 'Go', TestRunProfileKind.Run, true);
+		new GoTestRunner(this.#workspace, this.#ctrl, doSafe, resolver, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {
