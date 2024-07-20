@@ -5,6 +5,7 @@ import {
 	Location,
 	TestController,
 	TestItem,
+	TestRun,
 	TestRunProfile,
 	TestRunProfileKind,
 	TestRunRequest
@@ -17,6 +18,7 @@ import { killProcessTree } from '../utils/processUtils';
 import { LineBuffer } from '../utils/lineBuffer';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
+	readonly original: TestRunRequest;
 	readonly packages: Set<Package>;
 	readonly include: Map<Package, TestCase[]>;
 	readonly exclude: Map<Package, TestCase[]>;
@@ -64,23 +66,35 @@ export class GoTestRunner {
 			await this.#context.commands.focusTestOutput();
 		}
 
-		// Execute the tests
-		for (const pkg of request.packages) {
-			const pkgItem = await this.#resolver.getOrCreateAll(pkg);
-			const include = await resolveTestItems(this.#resolver, request.include.get(pkg) || pkg.getTests());
-			const exclude = await resolveTestItems(this.#resolver, request.exclude.get(pkg) || []);
+		const run = this.#ctrl.createTestRun(request.original);
 
-			await goTest({
-				context: this.#context,
-				ctrl: this.#ctrl,
-				pkg,
-				pkgItem,
-				runAll: !request.include.get(pkg),
-				include,
-				exclude,
-				request,
-				token
-			});
+		// Execute the tests
+		try {
+			let first = true;
+			for (const pkg of request.packages) {
+				if (first) {
+					first = false;
+				} else {
+					run.appendOutput('\r\n\r\n');
+				}
+
+				const pkgItem = await this.#resolver.getOrCreateAll(pkg);
+				const include = await resolveTestItems(this.#resolver, request.include.get(pkg) || pkg.getTests());
+				const exclude = await resolveTestItems(this.#resolver, request.exclude.get(pkg) || []);
+
+				await goTest({
+					context: this.#context,
+					run,
+					pkg,
+					pkgItem,
+					runAll: !request.include.get(pkg),
+					include,
+					exclude,
+					token
+				});
+			}
+		} finally {
+			run.end();
 		}
 	}
 }
@@ -102,31 +116,23 @@ interface GoTestOutput {
 // complete goTest implementation (with modifications)
 async function goTest({
 	context: { workspace, go },
-	ctrl,
+	run,
 	pkg,
 	pkgItem,
 	runAll,
 	include,
 	exclude,
-	request,
 	token
 }: {
 	context: Context;
-	ctrl: TestController;
+	run: TestRun;
 	pkg: Package;
 	pkgItem: TestItem;
 	runAll: boolean;
 	include: Map<TestCase, TestItem>;
 	exclude: Map<TestCase, TestItem>;
-	request: GoTestRunRequest;
 	token: CancellationToken;
 }) {
-	const run = ctrl.createTestRun({
-		...request,
-		include: [...include.values()],
-		exclude: [...exclude.values()]
-	});
-
 	run.enqueued(pkgItem);
 	for (const [goItem, item] of include) {
 		if (!exclude.has(goItem)) {
@@ -139,7 +145,6 @@ async function goTest({
 		run.failed(pkgItem, {
 			message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
 		});
-		run.end();
 		return;
 	}
 	const args: string[] = [
@@ -253,21 +258,17 @@ async function goTest({
 	stderr.onLine((line) => append(line));
 	stderr.onDone((last) => last && append(last));
 
-	try {
-		append(`$ ${goRuntimePath} ${args.join(' ')}\n\n`);
-		const { code, signal } = await new Promise<ProcessResult>((resolve) =>
-			spawnGoTest({ token, goRuntimePath, args, pkg, resolve, stdout, stderr })
-		);
-		if (code !== 0) {
-			run.errored(pkgItem, {
-				message: `\`go test\` exited with ${[
-					...(code ? [`code ${code}`] : []),
-					...(signal ? [`signal ${signal}`] : [])
-				].join(', ')}`
-			});
-		}
-	} finally {
-		run.end();
+	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`);
+	const { code, signal } = await new Promise<ProcessResult>((resolve) =>
+		spawnGoTest({ token, goRuntimePath, args, pkg, resolve, stdout, stderr })
+	);
+	if (code !== 0) {
+		run.errored(pkgItem, {
+			message: `\`go test\` exited with ${[
+				...(code ? [`code ${code}`] : []),
+				...(signal ? [`signal ${signal}`] : [])
+			].join(', ')}`
+		});
 	}
 }
 
@@ -318,7 +319,7 @@ async function resolveRunRequest(
 	{ workspace }: Context,
 	resolver: TestItemResolver<GoTestItem>,
 	request: TestRunRequest
-) {
+): Promise<GoTestRunRequest> {
 	const include = (request.include || [...resolver.roots]).map((x) => resolveGoTestItem(resolver, x));
 	const exclude = request.exclude?.map((x) => resolveGoTestItem(resolver, x)) || [];
 
@@ -384,6 +385,7 @@ async function resolveRunRequest(
 
 	return {
 		...request,
+		original: request,
 		packages,
 		include: testsForPackage,
 		exclude: excludeForPackage
