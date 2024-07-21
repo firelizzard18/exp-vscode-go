@@ -14,13 +14,12 @@ import {
 	window,
 	workspace
 } from 'vscode';
-import { Context, SetupArgs } from './testSupport';
+import { Context, doSafe, SetupArgs } from './testSupport';
 import { safeInvalidate, TestItemResolver } from './TestItemResolver';
 import { GoTestItem, GoTestItemProvider } from './GoTestItem';
 import { GoTestRunner } from './GoTestRunner';
 import { ExtensionAPI } from '../vscode-go';
-
-export const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
+import { spawnProcess } from '../utils/processUtils';
 
 export async function registerTestController(ctx: ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -30,36 +29,32 @@ export async function registerTestController(ctx: ExtensionContext) {
 	}
 	const go = await goExt.activate();
 
-	const isInTest = ctx.extensionMode === ExtensionMode.Test;
-	const doSafe = async <T>(msg: string, fn: () => T | Promise<T>) => {
-		try {
-			return await fn();
-		} catch (error) {
-			if (isInTest) throw error;
-			else outputChannel.error(`Error: ${msg}: ${error}`);
-		}
-	};
-	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
-		ctx.subscriptions.push(event((e) => doSafe(msg, () => fn(e))));
-	};
-	const command = (name: string, fn: (...args: any[]) => any) => {
-		ctx.subscriptions.push(
-			commands.registerCommand(name, (...args) => doSafe(`executing ${name}`, () => fn(...args)))
-		);
-	};
-
-	// Initialize the controller
-	const ctrl = new GoTestController({
+	const testCtx: Context = {
 		workspace,
 		go,
+		spawn: spawnProcess,
+		testing: ctx.extensionMode === ExtensionMode.Test,
+		output: window.createOutputChannel('Go Tests (experimental)', { log: true }),
 		commands: {
 			modules: (args) => commands.executeCommand('gopls.modules', args),
 			packages: (args) => commands.executeCommand('gopls.packages', args),
 			focusTestOutput: () => commands.executeCommand('testing.showMostRecentOutput')
 		}
-	});
+	};
+
+	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
+		ctx.subscriptions.push(event((e) => doSafe(testCtx, msg, () => fn(e))));
+	};
+	const command = (name: string, fn: (...args: any[]) => any) => {
+		ctx.subscriptions.push(
+			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args)))
+		);
+	};
+
+	// Initialize the controller
+	const ctrl = new GoTestController(testCtx);
 	const setup = () => {
-		ctrl.setup({ doSafe, createController: tests.createTestController });
+		ctrl.setup({ createController: tests.createTestController });
 		window.visibleTextEditors.forEach((x) => ctrl.reload(x.document.uri));
 	};
 	ctx.subscriptions.push(ctrl);
@@ -140,11 +135,10 @@ class GoTestController {
 		this.#resolver = resolver;
 		this.#disposable.push(this.#ctrl, this.#resolver);
 
-		const doSafe = args.doSafe || (<T>(_: string, fn: () => T | undefined | Promise<T | undefined>) => fn());
-		this.#ctrl.refreshHandler = () => doSafe('refresh tests', () => resolver.resolve());
-		this.#ctrl.resolveHandler = (item) => doSafe('resolve test', () => resolver.resolve(item));
-		new GoTestRunner(this.#context, this.#ctrl, doSafe, resolver, 'Go', TestRunProfileKind.Run, true);
-		new GoTestRunner(this.#context, this.#ctrl, doSafe, resolver, 'Go (debug)', TestRunProfileKind.Debug, true);
+		this.#ctrl.refreshHandler = () => doSafe(this.#context, 'refresh tests', () => resolver.resolve());
+		this.#ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
+		new GoTestRunner(this.#context, this.#ctrl, resolver, 'Go', TestRunProfileKind.Run, true);
+		new GoTestRunner(this.#context, this.#ctrl, resolver, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {

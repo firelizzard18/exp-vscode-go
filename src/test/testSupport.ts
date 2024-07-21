@@ -7,11 +7,15 @@
 import * as vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
 import { ExtensionAPI } from '../vscode-go';
+import { spawnProcess } from '../utils/processUtils';
 
 export interface Context {
 	readonly workspace: Workspace;
 	readonly commands: Commands;
 	readonly go: ExtensionAPI;
+	readonly testing: boolean;
+	readonly output: vscode.LogOutputChannel;
+	readonly spawn: typeof spawnProcess;
 }
 
 // The subset of vscode.FileSystem that is used by the test explorer.
@@ -31,7 +35,6 @@ type WorkspaceProps = 'workspaceFolders' | 'getWorkspaceFolder' | 'textDocuments
 // Arguments for GoTestController.setup
 export interface SetupArgs {
 	createController(id: string, label: string): vscode.TestController;
-	doSafe?: <T>(msg: string, fn: () => T | Promise<T>) => T | undefined | Promise<T | undefined>;
 }
 
 export interface Commands {
@@ -83,4 +86,17 @@ export namespace Commands {
 		Name: string;
 		Loc: lsp.Location;
 	}
+}
+
+export const doSafe = async <T>(ctx: Context, msg: string, fn: () => T | Promise<T>) => {
+	try {
+		return await fn();
+	} catch (error) {
+		reportError(ctx, new Error(`${msg}: ${error}`, { cause: error }));
+	}
+};
+
+export function reportError(ctx: Context, error: unknown) {
+	if (ctx.testing) throw error;
+	else ctx.output.error(`Error: ${error}`);
 }

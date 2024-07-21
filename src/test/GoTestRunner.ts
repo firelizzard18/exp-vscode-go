@@ -17,10 +17,9 @@ import cp from 'child_process';
 import path from 'path';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem';
 import { TestItemResolver } from './TestItemResolver';
-import { Context, Workspace } from './testSupport';
+import { Context, doSafe, reportError, Workspace } from './testSupport';
 import { killProcessTree } from '../utils/processUtils';
 import { LineBuffer } from '../utils/lineBuffer';
-import { outputChannel } from './GoTestController';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
 	readonly original: TestRunRequest;
@@ -38,7 +37,6 @@ export class GoTestRunner {
 	constructor(
 		context: Context,
 		ctrl: TestController,
-		doSafe: <T>(msg: string, fn: () => T | Promise<T>) => T | undefined | Promise<T | undefined>,
 		resolver: TestItemResolver<GoTestItem>,
 		label: string,
 		kind: TestRunProfileKind,
@@ -51,7 +49,7 @@ export class GoTestRunner {
 			label,
 			kind,
 			(request, token) =>
-				doSafe('execute test', async () => {
+				doSafe(context, 'execute test', async () => {
 					const r = await resolveRunRequest(context, resolver, request);
 					await this.#run(r, token);
 				}),
@@ -120,7 +118,7 @@ interface GoTestOutput {
 // TODO: Once this is merged into vscode-go, replace with vscode-go's more
 // complete goTest implementation (with modifications)
 async function goTest({
-	context: { workspace, go },
+	context,
 	run,
 	pkg,
 	pkgItem,
@@ -145,7 +143,7 @@ async function goTest({
 		}
 	}
 
-	const { binPath: goRuntimePath } = go.settings.getExecutionCommand('go', pkg.uri) || {};
+	const { binPath: goRuntimePath } = context.go.settings.getExecutionCommand('go', pkg.uri) || {};
 	if (!goRuntimePath) {
 		run.failed(pkgItem, {
 			message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
@@ -160,7 +158,7 @@ async function goTest({
 	if (runAll) {
 		// Include all test cases
 		args.push('-run=.');
-		if (shouldRunBenchmarks(workspace, pkg)) {
+		if (shouldRunBenchmarks(context.workspace, pkg)) {
 			args.push('-bench=.');
 		}
 	} else {
@@ -184,24 +182,24 @@ async function goTest({
 		if (!line) return;
 		append(line, undefined, pkgItem);
 		errOutput.push(line);
-		outputChannel.debug(`stderr> ${line}`);
+		context.output.debug(`stderr> ${line}`);
 	};
 
 	const itemByName = new Map([...include].map(([test, item]) => [test.name, item]));
 	const output = new Map<string, string[]>();
 	const currentLocation = new Map<string, Location>();
-	const onOutput = (s: string | null) => {
+	const onStdout = (s: string | null) => {
 		if (!s) return;
 
 		// Attempt to parse the output as a test message
 		let msg: GoTestOutput;
 		try {
 			msg = JSON.parse(s);
-			outputChannel.debug(s);
+			context.output.debug(s);
 		} catch (_) {
 			// Unknown output
 			append(s);
-			outputChannel.debug(`stdout> ${s}`);
+			context.output.debug(`stdout> ${s}`);
 			return;
 		}
 
@@ -276,18 +274,13 @@ async function goTest({
 		}
 	};
 
-	const stdout = new LineBuffer();
-	stdout.onLine(onOutput);
-	stdout.onDone(onOutput);
-
-	const stderr = new LineBuffer();
-	stderr.onLine(onStderr);
-	stderr.onDone(onStderr);
-
 	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`, undefined, pkgItem);
-	const { code, signal } = await new Promise<ProcessResult>((resolve) =>
-		spawnGoTest({ token, goRuntimePath, args, pkg, resolve, stdout, stderr })
-	);
+	const { code, signal } = await context.spawn(goRuntimePath, args, {
+		cwd: pkg.uri.fsPath,
+		cancel: token,
+		stdout: onStdout,
+		stderr: onStderr
+	});
 	if (code !== 0 && code !== 1) {
 		run.errored(pkgItem, {
 			message: `\`go test\` exited with ${[
@@ -324,7 +317,9 @@ function spawnGoTest({
 		return;
 	}
 
-	const tp = cp.spawn(goRuntimePath, args, { cwd: pkg.uri.fsPath });
+	const tp = cp.spawn(goRuntimePath, args, {
+		cwd: pkg.uri.fsPath
+	});
 	token.onCancellationRequested(() => killProcessTree(tp));
 
 	tp.stdout.on('data', (chunk) => stdout.append(chunk.toString()));
