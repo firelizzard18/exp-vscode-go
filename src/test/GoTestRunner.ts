@@ -159,25 +159,23 @@ async function goTest({
 		});
 		return;
 	}
-	const args: string[] = [
-		'test',
-		'-json',
+	const flags: string[] = [
 		'-fullpath' // Include the full path for output events
 	];
 	if (runAll) {
 		// Include all test cases
-		args.push('-run=.');
+		flags.push('-run=.');
 		if (shouldRunBenchmarks(context.workspace, pkg)) {
-			args.push('-bench=.');
+			flags.push('-bench=.');
 		}
 	} else {
 		// Include specific test cases
-		args.push(`-run=^(${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')})$`);
-		args.push(`-bench=^(${makeRegex(include.keys(), (x) => x.kind === 'benchmark')})$`);
+		flags.push(`-run=^(${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')})$`);
+		flags.push(`-bench=^(${makeRegex(include.keys(), (x) => x.kind === 'benchmark')})$`);
 	}
 	if (exclude.size) {
 		// Exclude specific test cases
-		args.push(`-skip=^${makeRegex(exclude.keys())}$`);
+		flags.push(`-skip=^${makeRegex(exclude.keys())}$`);
 	}
 
 	const append = (output: string, location?: Location, test?: TestItem) => {
@@ -283,8 +281,8 @@ async function goTest({
 		}
 	};
 
-	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`, undefined, pkgItem);
-	const r = await spawn(context, goRuntimePath, args, {
+	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} test ${flags.join(' ')}\n\n`, undefined, pkgItem);
+	const r = await spawn(context, goRuntimePath, flags, {
 		run,
 		cwd: pkg.uri.fsPath,
 		cancel: token,
