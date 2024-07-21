@@ -15,12 +15,12 @@ import {
 	workspace
 } from 'vscode';
 import { Context, SetupArgs } from './testSupport';
-import { TestItemResolver } from './TestItemResolver';
+import { safeInvalidate, TestItemResolver } from './TestItemResolver';
 import { GoTestItem, GoTestItemProvider } from './GoTestItem';
 import { GoTestRunner } from './GoTestRunner';
 import { ExtensionAPI } from '../vscode-go';
 
-const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
+export const outputChannel = window.createOutputChannel('Go Tests (experimental)', { log: true });
 
 export async function registerTestController(ctx: ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -161,8 +161,8 @@ class GoTestController {
 		}
 
 		this.#resolver?.resolve(item);
-		if (invalidate) {
-			this.#ctrl?.invalidateTestResults(item);
+		if (invalidate && this.#ctrl) {
+			safeInvalidate(this.#ctrl, item);
 		}
 	}
 }

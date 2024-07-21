@@ -16,6 +16,7 @@ import { TestItemResolver } from './TestItemResolver';
 import { Context, Workspace } from './testSupport';
 import { killProcessTree } from '../utils/processUtils';
 import { LineBuffer } from '../utils/lineBuffer';
+import { outputChannel } from './GoTestController';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
 	readonly original: TestRunRequest;
@@ -160,8 +161,8 @@ async function goTest({
 		}
 	} else {
 		// Include specific test cases
-		args.push(`-run=^${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')}$`);
-		args.push(`-bench=^${makeRegex(include.keys(), (x) => x.kind === 'benchmark')}$`);
+		args.push(`-run=^(${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')})$`);
+		args.push(`-bench=^(${makeRegex(include.keys(), (x) => x.kind === 'benchmark')})$`);
 	}
 	if (exclude.size) {
 		// Exclude specific test cases
@@ -181,6 +182,7 @@ async function goTest({
 		let msg: GoTestOutput;
 		try {
 			msg = JSON.parse(s);
+			outputChannel.debug(s);
 		} catch (_) {
 			// Unknown output
 			append(s);
@@ -193,7 +195,7 @@ async function goTest({
 		const test = itemByName.get(msg.Test!) || pkgItem;
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
-			case 'output':
+			case 'output': {
 				if (!msg.Output) {
 					break;
 				}
@@ -203,7 +205,16 @@ async function goTest({
 
 				// if (record.has(test.id)) record.get(test.id)!.push(e.Output ?? '');
 				// else record.set(test.id, [e.Output ?? '']);
+
+				// Detect benchmark completion, e.g.
+				//   "BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op"
+				const m = msg.Output.match(/^(?<name>Benchmark[#/\w+]+)(?:-(?<procs>\d+)\s+(?<result>.*))?(?:$|\n)/);
+				if (m && msg.Test && m.groups?.name === msg.Test) {
+					run.passed(test);
+				}
+
 				break;
+			}
 
 			case 'run':
 			case 'start':
@@ -312,7 +323,10 @@ function spawnGoTest({
 }
 
 function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
-	return '.*'; // TODO
+	return [...tests]
+		.filter(where)
+		.map((x) => x.name)
+		.join('|');
 }
 
 async function resolveRunRequest(

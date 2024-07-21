@@ -439,7 +439,7 @@ export class Package implements GoTestItem {
 	}
 
 	#getChildren() {
-		if (this.#provider.getConfig<boolean>('testExplorer.showFiles')) {
+		if (this.#provider.getConfig<boolean>('testExplorer.showFiles', this.uri)) {
 			return this.files;
 		}
 		return this.files.flatMap((x) => x.getChildren());

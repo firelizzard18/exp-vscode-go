@@ -1,12 +1,12 @@
 {
 	"compilerOptions": {
-		"module": "commonjs",
+		"module": "Node16", // VSCode 1.75 -> Electron 19.1.9 -> NodeJS 16.14.2 (https://github.com/ewanharris/vscode-versions)
 		"outDir": "out",
 		"rootDir": "src",
 		"sourceMap": true,
-		"target": "es2017",
+		"target": "ES2022", // NodeJS 16.14.2 -> ES2022 (https://node.green/)
 		"lib": [
-			"es2017"
+			"ES2022"
 		],
 		"strict": true,
 		"esModuleInterop": true,
