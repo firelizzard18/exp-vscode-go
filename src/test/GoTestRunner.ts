@@ -270,10 +270,10 @@ async function goTest({
 	stdout.onDone(onOutput);
 
 	const stderr = new LineBuffer();
-	stderr.onLine((line) => append(line));
-	stderr.onDone((last) => last && append(last));
+	stderr.onLine((line) => append(line, undefined, pkgItem));
+	stderr.onDone((last) => last && append(last, undefined, pkgItem));
 
-	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`);
+	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`, undefined, pkgItem);
 	const { code, signal } = await new Promise<ProcessResult>((resolve) =>
 		spawnGoTest({ token, goRuntimePath, args, pkg, resolve, stdout, stderr })
 	);
