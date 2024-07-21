@@ -3,14 +3,18 @@
 import {
 	CancellationToken,
 	Location,
+	Position,
 	TestController,
 	TestItem,
+	TestMessage,
 	TestRun,
 	TestRunProfile,
 	TestRunProfileKind,
-	TestRunRequest
+	TestRunRequest,
+	Uri
 } from 'vscode';
 import cp from 'child_process';
+import path from 'path';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem';
 import { TestItemResolver } from './TestItemResolver';
 import { Context, Workspace } from './testSupport';
@@ -175,6 +179,8 @@ async function goTest({
 
 	// TODO: map relative paths
 	const itemByName = new Map([...include].map(([test, item]) => [test.name, item]));
+	const output = new Map<string, string[]>();
+	const currentLocation = new Map<string, Location>();
 	const onOutput = (s: string | null) => {
 		if (!s) return;
 
@@ -192,7 +198,7 @@ async function goTest({
 		// TODO: Benchmarks probably need a lot more processing as per
 		// extension/src/goTest/test_events.md (vscode-go)
 
-		const test = itemByName.get(msg.Test!) || pkgItem;
+		const test = itemByName.get(msg.Test!);
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
 			case 'output': {
@@ -200,11 +206,22 @@ async function goTest({
 					break;
 				}
 
-				// TODO: Extract location
-				append(msg.Output, undefined, test);
+				if (!test || /^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
+					append(msg.Output, undefined, pkgItem);
+					break;
+				}
 
-				// if (record.has(test.id)) record.get(test.id)!.push(e.Output ?? '');
-				// else record.set(test.id, [e.Output ?? '']);
+				const { message, location } = parseOutputLocation(msg.Output, path.join(test.uri!.fsPath, '..'));
+				if (location) {
+					currentLocation.set(test.id, location);
+				}
+				append(message, location || currentLocation.get(test.id), test);
+
+				// Track output
+				if (!output.has(test.id)) {
+					output.set(test.id, []);
+				}
+				output.get(test.id)!.push(msg.Output);
 
 				// Detect benchmark completion, e.g.
 				//   "BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op"
@@ -218,40 +235,27 @@ async function goTest({
 
 			case 'run':
 			case 'start':
-				run.started(test);
+				run.started(test || pkgItem);
 				break;
 
 			case 'skip':
-				run.skipped(test);
+				run.skipped(test || pkgItem);
 				break;
 
 			case 'pass':
 				// TODO(firelizzard18): add messages on pass, once that capability
 				// is added.
-				run.passed(test, elapsed);
+				run.passed(test || pkgItem, elapsed);
 				break;
 
 			case 'fail': {
-				run.failed(test, [], elapsed);
+				if (!test) {
+					run.failed(pkgItem, [], elapsed);
+					break;
+				}
 
-				// const messages = this.parseOutput(test, record.get(test.id) || []);
-
-				// if (!concat) {
-				// 	run.failed(test, messages, (e.Elapsed ?? 0) * 1000);
-				// 	break;
-				// }
-
-				// const merged = new Map<string, TestMessage>();
-				// for (const { message, location } of messages) {
-				// 	const loc = `${location?.uri}:${location?.range.start.line}`;
-				// 	if (merged.has(loc)) {
-				// 		merged.get(loc)!.message += '' + message;
-				// 	} else {
-				// 		merged.set(loc, { message, location });
-				// 	}
-				// }
-
-				// run.failed(test, Array.from(merged.values()), (e.Elapsed ?? 0) * 1000);
+				const messages = parseFailure(test, output.get(test.id) || []);
+				run.failed(test, messages, elapsed);
 				break;
 			}
 
@@ -273,7 +277,7 @@ async function goTest({
 	const { code, signal } = await new Promise<ProcessResult>((resolve) =>
 		spawnGoTest({ token, goRuntimePath, args, pkg, resolve, stdout, stderr })
 	);
-	if (code !== 0) {
+	if (code !== 0 && code !== 1) {
 		run.errored(pkgItem, {
 			message: `\`go test\` exited with ${[
 				...(code ? [`code ${code}`] : []),
@@ -320,13 +324,6 @@ function spawnGoTest({
 		stderr.done();
 		resolve({ code, signal });
 	});
-}
-
-function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
-	return [...tests]
-		.filter(where)
-		.map((x) => x.name)
-		.join('|');
 }
 
 async function resolveRunRequest(
@@ -446,4 +443,98 @@ function* testCases(items: GoTestItem[]) {
 			yield* item.getTests();
 		}
 	}
+}
+
+// parseOutput returns build/test error messages associated with source locations.
+// Location info is inferred heuristically by applying a simple pattern matching
+// over the output strings from `go test -json` `output` type action events.
+function parseFailure(test: TestItem, output: string[]): TestMessage[] {
+	const messages: TestMessage[] = [];
+
+	const { kind } = GoTestItem.parseId(test.id);
+	const gotI = output.indexOf('got:\n');
+	const wantI = output.indexOf('want:\n');
+	if (kind === 'example' && gotI >= 0 && wantI >= 0) {
+		const got = output.slice(gotI + 1, wantI).join('');
+		const want = output.slice(wantI + 1).join('');
+		const message = TestMessage.diff('Output does not match', want, got);
+		if (test.uri && test.range) {
+			message.location = new Location(test.uri, test.range.start);
+		}
+		messages.push(message);
+		output = output.slice(0, gotI);
+	}
+
+	// TODO(hyangah): handle panic messages specially.
+
+	const dir = path.join(test.uri!.fsPath, '..');
+	output.forEach((line) => messages.push(parseOutputLocation(line, dir)));
+
+	return messages;
+}
+
+/**
+ * ^(?:.*\s+|\s*)                  - non-greedy match of any chars followed by a space or, a space.
+ * (?<file>\S+\.go):(?<line>\d+):  - gofile:line: followed by a space.
+ * (?<message>.\n)$                - all remaining message up to $.
+ */
+const lineLocPattern = /^.*\s+(?<file>\S+\.go):(?<line>\d+): (?<message>.*\n)$/;
+
+/**
+ * Extract the location info from output message.
+ * This is not trivial since both the test output and any output/print
+ * from the tested program are reported as `output` type test events
+ * and not distinguishable. stdout/stderr output from the tested program
+ * makes this more trickier.
+ *
+ * Here we assume that test output messages are line-oriented, precede
+ * with a file name and line number, and end with new lines.
+ */
+function parseOutputLocation(line: string, dir: string): { message: string; location?: Location } {
+	const m = line.match(lineLocPattern);
+	if (!m?.groups?.file) {
+		return { message: line };
+	}
+
+	// Paths will always be absolute for versions of Go (1.21+) due to
+	// -fullpath, but the user may be using an old version
+	const file =
+		m.groups.file && path.isAbsolute(m.groups.file)
+			? Uri.file(m.groups.file)
+			: Uri.file(path.join(dir, m.groups.file));
+
+	// VSCode uses 0-based line numbering (internally)
+	const ln = Number(m.groups.line) - 1;
+
+	return {
+		message: m.groups.message,
+		location: new Location(file, new Position(ln, 0))
+	};
+}
+
+function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
+	return [...tests]
+		.filter(where)
+		.map((x) => escapeSubTestName(x.name))
+		.join('|');
+}
+
+// escapeSubTestName escapes regexp-like metacharacters. Unlike
+// escapeSubTestName in subTestUtils.ts, this assumes the input are
+// coming from the test explorer test items whose names are computed from
+// the actual test run, not from a hacky source code analysis so escaping
+// empty unprintable characters is not necessary here.
+function escapeSubTestName(v: string) {
+	return v?.includes('/')
+		? v
+				.split('/')
+				.map((part) => escapeRegExp(part), '')
+				.join('/')
+		: v;
+}
+
+// escapeRegExp escapes regex metacharacters.
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+export function escapeRegExp(v: string) {
+	return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
