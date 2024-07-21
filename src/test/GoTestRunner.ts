@@ -174,10 +174,19 @@ async function goTest({
 	}
 
 	const append = (output: string, location?: Location, test?: TestItem) => {
-		run.appendOutput(output.replace(/\n/g, '\r\n'), location, test);
+		if (!output.endsWith('\n')) output += '\n';
+		output = output.replace(/\n/g, '\r\n');
+		run.appendOutput(output, location, test);
 	};
 
-	// TODO: map relative paths
+	const errOutput: string[] = [];
+	const onStderr = (line: string | null) => {
+		if (!line) return;
+		append(line, undefined, pkgItem);
+		errOutput.push(line);
+		outputChannel.debug(`stderr> ${line}`);
+	};
+
 	const itemByName = new Map([...include].map(([test, item]) => [test.name, item]));
 	const output = new Map<string, string[]>();
 	const currentLocation = new Map<string, Location>();
@@ -192,6 +201,7 @@ async function goTest({
 		} catch (_) {
 			// Unknown output
 			append(s);
+			outputChannel.debug(`stdout> ${s}`);
 			return;
 		}
 
@@ -206,6 +216,13 @@ async function goTest({
 					break;
 				}
 
+				// Track output
+				const { id } = test || pkgItem;
+				if (!output.has(id)) {
+					output.set(id, []);
+				}
+				output.get(id)!.push(msg.Output);
+
 				if (!test || /^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
 					append(msg.Output, undefined, pkgItem);
 					break;
@@ -213,15 +230,9 @@ async function goTest({
 
 				const { message, location } = parseOutputLocation(msg.Output, path.join(test.uri!.fsPath, '..'));
 				if (location) {
-					currentLocation.set(test.id, location);
+					currentLocation.set(id, location);
 				}
-				append(message, location || currentLocation.get(test.id), test);
-
-				// Track output
-				if (!output.has(test.id)) {
-					output.set(test.id, []);
-				}
-				output.get(test.id)!.push(msg.Output);
+				append(message, location || currentLocation.get(id), test);
 
 				// Detect benchmark completion, e.g.
 				//   "BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op"
@@ -250,11 +261,11 @@ async function goTest({
 
 			case 'fail': {
 				if (!test) {
-					run.failed(pkgItem, [], elapsed);
+					processPackageFailure(run, pkg, pkgItem, elapsed, output.get(pkgItem.id) || [], errOutput);
 					break;
 				}
 
-				const messages = parseFailure(test, output.get(test.id) || []);
+				const messages = parseTestFailure(test, output.get(test.id) || []);
 				run.failed(test, messages, elapsed);
 				break;
 			}
@@ -270,8 +281,8 @@ async function goTest({
 	stdout.onDone(onOutput);
 
 	const stderr = new LineBuffer();
-	stderr.onLine((line) => append(line, undefined, pkgItem));
-	stderr.onDone((last) => last && append(last, undefined, pkgItem));
+	stderr.onLine(onStderr);
+	stderr.onDone(onStderr);
 
 	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`, undefined, pkgItem);
 	const { code, signal } = await new Promise<ProcessResult>((resolve) =>
@@ -445,10 +456,54 @@ function* testCases(items: GoTestItem[]) {
 	}
 }
 
-// parseOutput returns build/test error messages associated with source locations.
-// Location info is inferred heuristically by applying a simple pattern matching
-// over the output strings from `go test -json` `output` type action events.
-function parseFailure(test: TestItem, output: string[]): TestMessage[] {
+function processPackageFailure(
+	run: TestRun,
+	pkg: Package,
+	pkgItem: TestItem,
+	elapsed: number | undefined,
+	stdout: string[],
+	stderr: string[]
+) {
+	const buildFailed = stdout.some((x) => /\[build failed\]\s*$/.test(x));
+	if (!buildFailed) {
+		run.failed(pkgItem, [], elapsed);
+		return;
+	}
+
+	const pkgMessages: TestMessage[] = [];
+	const testMessages = new Map<TestItem, TestMessage[]>();
+
+	for (const line of stderr) {
+		const { message, location } = parseOutputLocation(line, pkg.uri.fsPath);
+		const test =
+			location &&
+			[...pkgItem.children]
+				.map((x) => x[1])
+				.find((x) => x.uri!.fsPath === location.uri.fsPath && x.range?.contains(location.range));
+
+		if (!test) {
+			pkgMessages.push({ message });
+			continue;
+		}
+
+		if (!testMessages.has(test)) {
+			testMessages.set(test, []);
+		}
+		testMessages.get(test)!.push({ message, location });
+	}
+
+	run.errored(pkgItem, pkgMessages, elapsed);
+	for (const [test, messages] of testMessages) {
+		run.errored(test, messages);
+	}
+}
+
+/**
+ * Returns build/test error messages associated with source locations.
+ * Location info is inferred heuristically by applying a simple pattern matching
+ * over the output strings from `go test -json` `output` type action events.
+ */
+function parseTestFailure(test: TestItem, output: string[]): TestMessage[] {
 	const messages: TestMessage[] = [];
 
 	const { kind } = GoTestItem.parseId(test.id);
@@ -478,7 +533,7 @@ function parseFailure(test: TestItem, output: string[]): TestMessage[] {
  * (?<file>\S+\.go):(?<line>\d+):  - gofile:line: followed by a space.
  * (?<message>.\n)$                - all remaining message up to $.
  */
-const lineLocPattern = /^.*\s+(?<file>\S+\.go):(?<line>\d+): (?<message>.*\n)$/;
+const lineLocPattern = /^(.*\s+)?(?<file>\S+\.go):(?<line>\d+)(?::(?<column>\d+)): (?<message>.*\n?)$/;
 
 /**
  * Extract the location info from output message.
@@ -505,10 +560,11 @@ function parseOutputLocation(line: string, dir: string): { message: string; loca
 
 	// VSCode uses 0-based line numbering (internally)
 	const ln = Number(m.groups.line) - 1;
+	const col = m.groups.column ? Number(m.groups.column) - 1 : 0;
 
 	return {
 		message: m.groups.message,
-		location: new Location(file, new Position(ln, 0))
+		location: new Location(file, new Position(ln, col))
 	};
 }
 
