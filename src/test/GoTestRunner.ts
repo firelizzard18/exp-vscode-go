@@ -20,6 +20,7 @@ import { TestItemResolver } from './TestItemResolver';
 import { Context, doSafe, reportError, Workspace } from './testSupport';
 import { killProcessTree } from '../utils/processUtils';
 import { LineBuffer } from '../utils/lineBuffer';
+import { Spawner } from './utils';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
 	readonly original: TestRunRequest;
@@ -58,6 +59,11 @@ export class GoTestRunner {
 	}
 
 	async #run(request: GoTestRunRequest, token: CancellationToken) {
+		if (request.packages.size > 1 && this.#profile.kind === TestRunProfileKind.Debug) {
+			reportError(this.#context, new Error('debugging multiple packages is not supported'));
+			return;
+		}
+
 		// Save all files to ensure `go test` tests the latest changes
 		await this.#context.workspace.saveAll(false);
 
@@ -93,7 +99,8 @@ export class GoTestRunner {
 					runAll: !request.include.get(pkg),
 					include,
 					exclude,
-					token
+					token,
+					spawn: this.#profile.kind === TestRunProfileKind.Debug ? this.#context.debug : this.#context.spawn
 				});
 			}
 		} finally {
@@ -125,7 +132,8 @@ async function goTest({
 	runAll,
 	include,
 	exclude,
-	token
+	token,
+	spawn
 }: {
 	context: Context;
 	run: TestRun;
@@ -135,6 +143,7 @@ async function goTest({
 	include: Map<TestCase, TestItem>;
 	exclude: Map<TestCase, TestItem>;
 	token: CancellationToken;
+	spawn: Spawner;
 }) {
 	run.enqueued(pkgItem);
 	for (const [goItem, item] of include) {
@@ -275,17 +284,18 @@ async function goTest({
 	};
 
 	append(`$ cd ${pkg.uri.fsPath}\n$ ${goRuntimePath} ${args.join(' ')}\n\n`, undefined, pkgItem);
-	const { code, signal } = await context.spawn(goRuntimePath, args, {
+	const r = await spawn(context, goRuntimePath, args, {
+		run,
 		cwd: pkg.uri.fsPath,
 		cancel: token,
 		stdout: onStdout,
 		stderr: onStderr
 	});
-	if (code !== 0 && code !== 1) {
+	if (r && r.code !== 0 && r.code !== 1) {
 		run.errored(pkgItem, {
 			message: `\`go test\` exited with ${[
-				...(code ? [`code ${code}`] : []),
-				...(signal ? [`signal ${signal}`] : [])
+				...(r.code ? [`code ${r.code}`] : []),
+				...(r.signal ? [`signal ${r.signal}`] : [])
 			].join(', ')}`
 		});
 	}

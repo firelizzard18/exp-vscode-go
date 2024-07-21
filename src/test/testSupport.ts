@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
 import { ExtensionAPI } from '../vscode-go';
-import { spawnProcess } from '../utils/processUtils';
+import { Spawner } from './utils';
 
 export interface Context {
 	readonly workspace: Workspace;
@@ -15,7 +15,8 @@ export interface Context {
 	readonly go: ExtensionAPI;
 	readonly testing: boolean;
 	readonly output: vscode.LogOutputChannel;
-	readonly spawn: typeof spawnProcess;
+	readonly spawn: Spawner;
+	readonly debug: Spawner;
 }
 
 // The subset of vscode.FileSystem that is used by the test explorer.

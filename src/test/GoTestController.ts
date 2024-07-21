@@ -19,7 +19,7 @@ import { safeInvalidate, TestItemResolver } from './TestItemResolver';
 import { GoTestItem, GoTestItemProvider } from './GoTestItem';
 import { GoTestRunner } from './GoTestRunner';
 import { ExtensionAPI } from '../vscode-go';
-import { spawnProcess } from '../utils/processUtils';
+import { debugProcess, spawnProcess } from './utils';
 
 export async function registerTestController(ctx: ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -33,6 +33,7 @@ export async function registerTestController(ctx: ExtensionContext) {
 		workspace,
 		go,
 		spawn: spawnProcess,
+		debug: debugProcess,
 		testing: ctx.extensionMode === ExtensionMode.Test,
 		output: window.createOutputChannel('Go Tests (experimental)', { log: true }),
 		commands: {
