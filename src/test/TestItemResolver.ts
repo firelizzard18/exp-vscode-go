@@ -1,15 +1,15 @@
-import {
+import type {
 	Disposable,
 	Event,
 	MarkdownString,
 	ProviderResult,
 	Range,
-	TestController,
 	TestItem,
 	TestItemCollection,
 	TestTag,
 	Uri
 } from 'vscode';
+import { TestController } from './testSupport';
 
 /**
  * Translates between VSCode's test resolver interface and a more typical tree

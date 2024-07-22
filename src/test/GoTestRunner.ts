@@ -4,7 +4,6 @@ import {
 	CancellationToken,
 	Location,
 	Position,
-	TestController,
 	TestItem,
 	TestMessage,
 	TestRun,
@@ -17,7 +16,7 @@ import cp from 'child_process';
 import path from 'path';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem';
 import { TestItemResolver } from './TestItemResolver';
-import { Context, doSafe, reportError, Workspace } from './testSupport';
+import { Context, doSafe, reportError, TestController, Workspace } from './testSupport';
 import { killProcessTree } from '../utils/processUtils';
 import { LineBuffer } from '../utils/lineBuffer';
 import { Spawner } from './utils';
@@ -66,14 +65,6 @@ export class GoTestRunner {
 
 		// Save all files to ensure `go test` tests the latest changes
 		await this.#context.workspace.saveAll(false);
-
-		// Open the test output panel
-		const showOutput = [...request.packages].some((x) =>
-			this.#context.workspace.getConfiguration('goExp', x.uri).get<boolean>('testExplorer.showOutput')
-		);
-		if (showOutput) {
-			await this.#context.commands.focusTestOutput();
-		}
 
 		const run = this.#ctrl.createTestRun(request.original);
 

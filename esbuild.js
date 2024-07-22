@@ -1,4 +1,6 @@
-const esbuild = require("esbuild");
+/* eslint-disable n/no-process-exit */
+/* eslint-disable n/no-unpublished-require */
+const esbuild = require('esbuild');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -20,14 +22,12 @@ const esbuildProblemMatcherPlugin = {
 			});
 			console.log('[watch] build finished');
 		});
-	},
+	}
 };
 
 async function main() {
 	const ctx = await esbuild.context({
-		entryPoints: [
-			'src/extension.ts'
-		],
+		entryPoints: ['src/extension.ts'],
 		bundle: true,
 		format: 'cjs',
 		minify: production,
@@ -39,8 +39,8 @@ async function main() {
 		logLevel: 'silent',
 		plugins: [
 			/* add to the end of plugins array */
-			esbuildProblemMatcherPlugin,
-		],
+			esbuildProblemMatcherPlugin
+		]
 	});
 	if (watch) {
 		await ctx.watch();
@@ -50,7 +50,7 @@ async function main() {
 	}
 }
 
-main().catch(e => {
+main().catch((e) => {
 	console.error(e);
 	process.exit(1);
 });

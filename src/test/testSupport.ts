@@ -4,44 +4,39 @@
 
 /* eslint-disable n/no-unpublished-import */
 /* eslint-disable @typescript-eslint/no-namespace */
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
-import { ExtensionAPI } from '../vscode-go';
-import { Spawner } from './utils';
+import type { GoExtensionAPI } from '../vscode-go';
+import type { Spawner } from './utils';
 
 export interface Context {
+	readonly testing: boolean;
+	readonly go: GoExtensionAPI;
+	readonly output: vscode.LogOutputChannel;
 	readonly workspace: Workspace;
 	readonly commands: Commands;
-	readonly go: ExtensionAPI;
-	readonly testing: boolean;
-	readonly output: vscode.LogOutputChannel;
 	readonly spawn: Spawner;
 	readonly debug: Spawner;
 }
 
-// The subset of vscode.FileSystem that is used by the test explorer.
-export type FileSystem = Pick<vscode.FileSystem, 'readFile' | 'readDirectory'>;
-
 // The subset of vscode.workspace that is used by the test explorer.
-export interface Workspace extends Pick<typeof vscode.workspace, WorkspaceProps> {
-	// use custom FS type
-	readonly fs: FileSystem;
+export type Workspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
+	// Only allow reading the goExp config
+	getConfiguration(section: 'goExp', scope?: vscode.ConfigurationScope | null): ConfigValue;
+};
 
-	// only include one overload
-	openTextDocument(uri: vscode.Uri): Thenable<vscode.TextDocument>;
+export interface ConfigValue {
+	get<T>(section: string): T | undefined;
 }
 
-type WorkspaceProps = 'workspaceFolders' | 'getWorkspaceFolder' | 'textDocuments' | 'getConfiguration' | 'saveAll';
-
-// Arguments for GoTestController.setup
-export interface SetupArgs {
-	createController(id: string, label: string): vscode.TestController;
-}
+export type TestController = Pick<
+	vscode.TestController,
+	'items' | 'createTestItem' | 'createRunProfile' | 'createTestRun' | 'dispose' | 'resolveHandler' | 'refreshHandler'
+>;
 
 export interface Commands {
 	modules(args: Commands.ModulesArgs): Thenable<Commands.ModulesResult>;
 	packages(args: Commands.PackagesArgs): Thenable<Commands.PackagesResults>;
-	focusTestOutput(): Thenable<void>;
 }
 
 export namespace Commands {

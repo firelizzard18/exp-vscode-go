@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
-import { ConfigurationScope, EventEmitter, MarkdownString, ProviderResult, Range, Uri, WorkspaceFolder } from 'vscode';
+import { Uri, EventEmitter, Range } from 'vscode';
+import type { ConfigurationScope, MarkdownString, ProviderResult, WorkspaceFolder } from 'vscode';
 import { TestItemData, TestItemProvider } from './TestItemResolver';
 import { Commands, Context } from './testSupport';
 import path from 'path';

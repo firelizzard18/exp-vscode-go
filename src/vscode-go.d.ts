@@ -3,7 +3,7 @@
  * Licensed under the MIT License. See LICENSE in the project root for license information.
  *--------------------------------------------------------*/
 
-import { Uri } from 'vscode';
+import type { Uri } from 'vscode';
 import type semver = require('semver');
 import type moment = require('moment');
 
@@ -58,7 +58,7 @@ export interface CommandInvocation {
 	cwd?: string;
 }
 
-export interface ExtensionAPI {
+export interface GoExtensionAPI {
 	settings: {
 		/**
 		 * Returns the execution command corresponding to the specified resource, taking into account
