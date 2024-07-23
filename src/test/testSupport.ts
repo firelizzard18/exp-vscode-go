@@ -9,6 +9,19 @@ import type * as lsp from 'vscode-languageserver-types';
 import type { GoExtensionAPI } from '../vscode-go';
 import type { Spawner } from './utils';
 
+// Signatures used by the component test mock to allow tests to wait for events
+// to be processed.
+declare module 'vscode' {
+	export interface EventEmitter<T> {
+		fire(data: T): Promise<void>;
+	}
+
+	export interface TestItemCollection {
+		replace(items: readonly TestItem[]): Promise<void>;
+		add(item: TestItem): Promise<void>;
+	}
+}
+
 export interface Context {
 	readonly testing: boolean;
 	readonly go: GoExtensionAPI;
@@ -42,7 +55,7 @@ export interface Commands {
 export namespace Commands {
 	export interface ModulesArgs {
 		Dir: lsp.URI;
-		MaxDepth?: number;
+		MaxDepth: number;
 	}
 
 	export interface ModulesResult {

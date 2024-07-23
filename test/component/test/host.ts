@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-namespace */
+/* eslint-disable n/no-extraneous-import */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import type {
@@ -12,12 +14,16 @@ import type {
 	TestRunProfileKind,
 	TestRunRequest,
 	TestTag,
-	Uri,
 	WorkspaceFolder
 } from 'vscode';
+import { Uri } from 'vscode';
+import type { MatcherFunction, ExpectationResult } from 'expect';
 import { Commands, ConfigValue, Context, TestController, Workspace } from '../../../src/test/testSupport';
 import { CommandInvocation, GoExtensionAPI } from '../../../src/vscode-go';
 import { Spawner } from '../../../src/test/utils';
+import { GoTestItem } from '../../../src/test/GoTestItem';
+import { Module } from 'module';
+import { GoTestController } from '../../../src/test/GoTestController';
 
 interface Configuration {
 	enable: boolean;
@@ -28,9 +34,12 @@ interface Configuration {
 }
 
 export class TestHost implements Context {
+	readonly modules: Commands.Module[] = [];
+	readonly packages: Commands.Package[] = [];
+
 	readonly testing = true;
 	readonly go = new TestGoExtensionAPI();
-	readonly commands = new TestCommands();
+	readonly commands = new TestCommands(this);
 	readonly workspace = new TestWorkspace();
 	readonly output = new FakeOutputChannel();
 
@@ -38,17 +47,100 @@ export class TestHost implements Context {
 	debug: Spawner = () => Promise.resolve();
 }
 
+export type HostConfig = (host: TestHost) => void;
+
+export function makeHost(...config: HostConfig[]) {
+	const host = new TestHost();
+	config.forEach((x) => x(host));
+
+	const ctrl = new MockTestController();
+	const goCtrl = new GoTestController(host);
+	goCtrl.setup({ createController: () => ctrl });
+
+	return { host, ctrl, goCtrl };
+}
+
+export function withWorkspace(name: string, uri: string): HostConfig {
+	return (host) =>
+		host.workspace.workspaceFolders.push({
+			name,
+			uri: Uri.parse(uri),
+			index: host.workspace.workspaceFolders.length
+		});
+}
+
+export function withModule(mod: Commands.Module): HostConfig {
+	return (host: TestHost) => host.modules.push(mod);
+}
+
+export function withPackage(pkg: Commands.Package): HostConfig {
+	return (host: TestHost) => host.packages.push(pkg);
+}
+
 class TestCommands implements Commands {
-	modules = (args: Commands.ModulesArgs) => {
-		return Promise.resolve({ Modules: [] }) as Thenable<Commands.ModulesResult>;
-	};
-	packages = (args: Commands.PackagesArgs) => {
-		return Promise.resolve({ Module: {}, Packages: [] }) as Thenable<Commands.PackagesResults>;
+	readonly #host: TestHost;
+
+	constructor(host: TestHost) {
+		this.#host = host;
+	}
+
+	modules = (args: Commands.ModulesArgs): Thenable<Commands.ModulesResult> =>
+		Promise.resolve({
+			Modules: this.#host.modules.filter((x) => {
+				const dir = `${args.Dir}/`;
+				if (!x.GoMod.startsWith(dir)) {
+					return false;
+				}
+				if (args.MaxDepth < 0) {
+					return true;
+				}
+
+				const rel = x.GoMod.replace(dir, '').replace(/\/go\.mod/, '');
+				return [...rel.matchAll(/\//)].length <= args.MaxDepth;
+			})
+		});
+
+	packages = (args: Commands.PackagesArgs): Thenable<Commands.PackagesResults> => {
+		const dirs = args.Files.map((file) => {
+			const isFile =
+				this.#host.modules.some((mod) => mod.GoMod === file) ||
+				this.#host.packages.some((pkg) => pkg.TestFiles?.some((f) => f.URI === file));
+			if (isFile) {
+				return file.replace(/\/[^/]+$/, '');
+			}
+			return file;
+		});
+
+		const Module: Record<string, Commands.Module> = {};
+		const Packages = this.#host.packages.filter((pkg) =>
+			pkg.TestFiles?.some((file) =>
+				dirs.some((dir) => {
+					const s = `${dir}/`;
+					if (!file.URI.startsWith(s)) {
+						return false;
+					}
+					if (!args.Recursive && file.URI.replace(s, '').includes('/')) {
+						return false;
+					}
+
+					const mod = pkg.ModulePath && this.#host.modules.find((x) => x.Path === pkg.ModulePath);
+					if (mod) {
+						Module[pkg.ModulePath!] = mod;
+					} else if (pkg.ModulePath) {
+						throw new Error(`Missing module: ${pkg.ModulePath}`);
+					}
+
+					return true;
+				})
+			)
+		);
+
+		return Promise.resolve({ Module, Packages });
 	};
 }
 
 class TestWorkspace implements Workspace {
-	workspaceFolders: readonly WorkspaceFolder[] = [];
+	readonly workspaceFolders: WorkspaceFolder[] = [];
 	readonly config: Configuration = {
 		enable: true,
 		discovery: 'on',
@@ -186,9 +278,9 @@ class MockTestItem implements TestItem {
 
 class MapTestItemCollection implements TestItemCollection {
 	#items = new Map<string, TestItem>();
-	readonly #didAdd: (_: TestItem) => void;
+	readonly #didAdd: (_: TestItem) => void | Thenable<void>;
 
-	constructor(didAdd: (_: TestItem) => void) {
+	constructor(didAdd: (_: TestItem) => void | Thenable<void>) {
 		this.#didAdd = didAdd;
 	}
 
@@ -196,18 +288,18 @@ class MapTestItemCollection implements TestItemCollection {
 		return this.#items.size;
 	}
 
-	replace(items: readonly TestItem[]): void {
+	async replace(items: readonly TestItem[]): Promise<void> {
 		this.#items = new Map(items.map((x) => [x.id, x]));
-		items.forEach((x) => this.#didAdd(x));
+		await Promise.all([...items].map((x) => this.#didAdd(x)));
 	}
 
 	forEach(callback: (item: TestItem, collection: TestItemCollection) => unknown, thisArg?: any): void {
 		this.#items.forEach((item) => callback.call(thisArg, item, this));
 	}
 
-	add(item: TestItem): void {
+	async add(item: TestItem): Promise<void> {
 		this.#items.set(item.id, item);
-		this.#didAdd(item);
+		await this.#didAdd(item);
 	}
 
 	delete(id: string): void {
@@ -220,5 +312,64 @@ class MapTestItemCollection implements TestItemCollection {
 
 	[Symbol.iterator](): Iterator<[id: string, testItem: TestItem]> {
 		return this.#items[Symbol.iterator]();
+	}
+}
+
+export interface ExpectedTestItem {
+	kind: GoTestItem.Kind;
+	uri: string;
+	children?: ExpectedTestItem[];
+}
+
+const toResolve: MatcherFunction<[ExpectedTestItem[]]> = function (got, want): ExpectationResult {
+	if (!(got instanceof MockTestController)) {
+		throw new Error('Expected test controller');
+	}
+
+	const convert = (items: TestItemCollection) =>
+		[...items].map(([, item]): ExpectedTestItem => {
+			const { kind } = GoTestItem.parseId(item.id);
+			return {
+				kind,
+				uri: item.uri!.toString(),
+				children: convert(item.children)
+			};
+		});
+
+	const addChildren = (items: ExpectedTestItem[]) =>
+		items.forEach((item) => {
+			if (!item.children) {
+				item.children = [];
+			} else {
+				addChildren(item.children);
+			}
+		});
+
+	const got2 = convert(got.items);
+	addChildren(want);
+
+	const gots = this.utils.printReceived(got2);
+	const wants = this.utils.printExpected(want);
+	if (this.equals(got2, want)) {
+		return {
+			message: () => `Want: ${wants}\nGot: ${gots}`,
+			pass: true
+		};
+	}
+
+	const diff = this.utils.diff(want, got2, { omitAnnotationLines: true });
+	return {
+		message: () => `Want: ${wants}\nGot: ${gots}\n\n${diff}`,
+		pass: false
+	};
+};
+
+expect.extend({ toResolve });
+
+declare global {
+	namespace jest {
+		interface Matchers<R> {
+			toResolve(expected: ExpectedTestItem[]): ExpectationResult;
+		}
 	}
 }

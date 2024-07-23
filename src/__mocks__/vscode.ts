@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export { Uri } from './uri';
-export { EventEmitter } from './event_emitter';
+import type * as vscode from 'vscode';
 
 export enum FileType {
 	Unknown = 0,
@@ -91,4 +93,27 @@ export class Position {
 	// translate(change: { lineDelta?: number; characterDelta?: number }): Position;
 	// with(line?: number, character?: number): Position;
 	// with(change: { line?: number; character?: number }): Position;
+}
+
+export class EventEmitter<T> implements vscode.EventEmitter<T> {
+	readonly #listeners = new Set<(_: T) => any>();
+
+	readonly event = (
+		listener: (e: T) => any,
+		thisArgs: any = {},
+		disposables?: vscode.Disposable[]
+	): vscode.Disposable => {
+		const l = (e: T) => listener.call(thisArgs, e);
+		const d = { dispose: () => this.#listeners.delete(l) };
+		this.#listeners.add(l);
+		disposables?.push(d);
+		return d;
+	};
+
+	fire = async (e: T): Promise<void> => {
+		// Return a promise to allow tests to await the result
+		await Promise.all([...this.#listeners].map((l) => l(e)));
+	};
+
+	readonly dispose = () => {};
 }

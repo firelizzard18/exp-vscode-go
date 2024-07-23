@@ -116,9 +116,9 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 
 	async reload(uri?: Uri, invalidate = false) {
 		if (!uri) {
-			this.#didChangeTestItem.fire();
+			await this.#didChangeTestItem.fire();
 			if (invalidate) {
-				this.#didInvalidateTestResults.fire();
+				await this.#didInvalidateTestResults.fire();
 			}
 			return;
 		}
@@ -194,9 +194,9 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			items.push(parent.resolvePackage(pkg));
 		}
 
-		this.#didChangeTestItem.fire(items);
+		await this.#didChangeTestItem.fire(items);
 		if (invalidate) {
-			this.#didInvalidateTestResults.fire(items);
+			await this.#didInvalidateTestResults.fire(items);
 		}
 	}
 

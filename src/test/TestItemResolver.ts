@@ -26,18 +26,18 @@ export class TestItemResolver<T> implements Disposable {
 		this.#provider = provider;
 
 		this.#disposable.push(
-			provider.onDidChangeTestItem((e) => {
-				if (!e) this.#didChangeTestItem();
-				else if (e instanceof Array) this.#didChangeTestItem(e);
-				else this.#didChangeTestItem([e]);
+			provider.onDidChangeTestItem(async (e) => {
+				if (!e) await this.#didChangeTestItem();
+				else if (e instanceof Array) await this.#didChangeTestItem(e);
+				else await this.#didChangeTestItem([e]);
 			})
 		);
 
 		this.#disposable.push(
-			provider.onDidInvalidateTestResults((e) => {
-				if (!e) this.#didInvalidateTestResults();
-				else if (e instanceof Array) this.#didInvalidateTestResults(e);
-				else this.#didInvalidateTestResults([e]);
+			provider.onDidInvalidateTestResults(async (e) => {
+				if (!e) await this.#didInvalidateTestResults();
+				else if (e instanceof Array) await this.#didInvalidateTestResults(e);
+				else await this.#didInvalidateTestResults([e]);
 			})
 		);
 	}
@@ -76,7 +76,7 @@ export class TestItemResolver<T> implements Disposable {
 				return;
 			}
 
-			childItems.replace(
+			await childItems.replace(
 				await Promise.all(
 					providerChildren.map(async (providerChild) => {
 						return this.#getOrCreate(providerChild, childItems);
@@ -119,7 +119,7 @@ export class TestItemResolver<T> implements Disposable {
 		const parent = await this.#provider.getParent(providerItem);
 		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
 		const item = await this.#getOrCreate(providerItem, children);
-		children.add(item);
+		await children.add(item);
 		return item;
 	}
 
