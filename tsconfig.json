@@ -2,7 +2,6 @@
 	"compilerOptions": {
 		"module": "Node16", // VSCode 1.75 -> Electron 19.1.9 -> NodeJS 16.14.2 (https://github.com/ewanharris/vscode-versions)
 		"outDir": "out",
-		"rootDir": "src",
 		"sourceMap": true,
 		"target": "ES2022", // NodeJS 16.14.2 -> ES2022 (https://node.green/)
 		"lib": [
@@ -11,9 +10,6 @@
 		"strict": true,
 		"esModuleInterop": true,
 	},
-	"include": [
-		"src/**/*.ts"
-	],
 	"exclude": [
 		"node_modules",
 		"third_party",
