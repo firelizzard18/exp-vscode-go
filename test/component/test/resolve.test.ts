@@ -20,11 +20,11 @@ const fooPkgNoMod: Commands.Package = {
 	TestFiles: [
 		{
 			URI: 'file:///foo/foo_test.go',
-			Tests: [{ Name: 'TestFoo', Loc: { uri: 'file:///foo/foo_test.go', range: nullRange } }]
+			Tests: [{ Name: 'TestFoo', Loc: { range: nullRange, uri: '' } }]
 		},
 		{
 			URI: 'file:///foo/foo_test2.go',
-			Tests: [{ Name: 'TestFoo2', Loc: { uri: 'file:///foo/foo_test2.go', range: nullRange } }]
+			Tests: [{ Name: 'TestFoo2', Loc: { range: nullRange, uri: '' } }]
 		}
 	]
 };
@@ -40,7 +40,7 @@ const barPkg: Commands.Package = {
 	TestFiles: [
 		{
 			URI: 'file:///foo/bar/bar_test.go',
-			Tests: [{ Name: 'TestBar', Loc: { uri: 'file:///foo/bar/bar_test.go', range: nullRange } }]
+			Tests: [{ Name: 'TestBar', Loc: { range: nullRange, uri: '' } }]
 		}
 	]
 };

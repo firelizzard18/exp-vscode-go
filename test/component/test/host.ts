@@ -70,6 +70,7 @@ export function withModule(mod: Commands.Module): HostConfig {
 }
 
 export function withPackage(pkg: Commands.Package): HostConfig {
+	pkg.TestFiles?.forEach((x) => x.Tests.forEach((y) => (y.Loc.uri = x.URI)));
 	return (host: TestHost) => host.packages.push(pkg);
 }
 
