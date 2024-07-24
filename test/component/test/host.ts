@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-namespace */
-/* eslint-disable n/no-extraneous-import */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import type {
@@ -17,12 +15,9 @@ import type {
 	WorkspaceFolder
 } from 'vscode';
 import { Uri } from 'vscode';
-import type { MatcherFunction, ExpectationResult } from 'expect';
 import { Commands, ConfigValue, Context, TestController, Workspace } from '../../../src/test/testSupport';
 import { CommandInvocation, GoExtensionAPI } from '../../../src/vscode-go';
 import { Spawner } from '../../../src/test/utils';
-import { GoTestItem } from '../../../src/test/GoTestItem';
-import { Module } from 'module';
 import { GoTestController } from '../../../src/test/GoTestController';
 
 interface Configuration {
@@ -45,20 +40,17 @@ export class TestHost implements Context {
 
 	spawn: Spawner = () => Promise.resolve();
 	debug: Spawner = () => Promise.resolve();
+
+	readonly controller = new MockTestController();
+	readonly manager = new GoTestController(this);
+
+	constructor(...config: HostConfig[]) {
+		config.forEach((x) => x(this));
+		this.manager.setup({ createController: () => this.controller });
+	}
 }
 
 export type HostConfig = (host: TestHost) => void;
-
-export function makeHost(...config: HostConfig[]) {
-	const host = new TestHost();
-	config.forEach((x) => x(host));
-
-	const ctrl = new MockTestController();
-	const goCtrl = new GoTestController(host);
-	goCtrl.setup({ createController: () => ctrl });
-
-	return { host, ctrl, goCtrl };
-}
 
 export function withWorkspace(name: string, uri: string): HostConfig {
 	return (host) =>
@@ -67,6 +59,10 @@ export function withWorkspace(name: string, uri: string): HostConfig {
 			uri: Uri.parse(uri),
 			index: host.workspace.workspaceFolders.length
 		});
+}
+
+export function withConfiguration(config: Partial<Configuration>): HostConfig {
+	return (host) => Object.assign(host.workspace.config, config);
 }
 
 export function withModule(mod: Commands.Module): HostConfig {
@@ -312,64 +308,5 @@ class MapTestItemCollection implements TestItemCollection {
 
 	[Symbol.iterator](): Iterator<[id: string, testItem: TestItem]> {
 		return this.#items[Symbol.iterator]();
-	}
-}
-
-export interface ExpectedTestItem {
-	kind: GoTestItem.Kind;
-	uri: string;
-	children?: ExpectedTestItem[];
-}
-
-const toResolve: MatcherFunction<[ExpectedTestItem[]]> = function (got, want): ExpectationResult {
-	if (!(got instanceof MockTestController)) {
-		throw new Error('Expected test controller');
-	}
-
-	const convert = (items: TestItemCollection) =>
-		[...items].map(([, item]): ExpectedTestItem => {
-			const { kind } = GoTestItem.parseId(item.id);
-			return {
-				kind,
-				uri: item.uri!.toString(),
-				children: convert(item.children)
-			};
-		});
-
-	const addChildren = (items: ExpectedTestItem[]) =>
-		items.forEach((item) => {
-			if (!item.children) {
-				item.children = [];
-			} else {
-				addChildren(item.children);
-			}
-		});
-
-	const got2 = convert(got.items);
-	addChildren(want);
-
-	const gots = this.utils.printReceived(got2);
-	const wants = this.utils.printExpected(want);
-	if (this.equals(got2, want)) {
-		return {
-			message: () => `Want: ${wants}\nGot: ${gots}`,
-			pass: true
-		};
-	}
-
-	const diff = this.utils.diff(want, got2, { omitAnnotationLines: true });
-	return {
-		message: () => `Want: ${wants}\nGot: ${gots}\n\n${diff}`,
-		pass: false
-	};
-};
-
-expect.extend({ toResolve });
-
-declare global {
-	namespace jest {
-		interface Matchers<R> {
-			toResolve(expected: ExpectedTestItem[]): ExpectationResult;
-		}
 	}
 }
