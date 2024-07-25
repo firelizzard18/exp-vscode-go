@@ -541,7 +541,7 @@ export class TestCase implements GoTestItem {
 		return this.file.package;
 	}
 
-	getChildren(): GoTestItem[] {
+	getChildren(): TestCase[] {
 		return this.file.package.testRelations?.getChildren(this) || [];
 	}
 }

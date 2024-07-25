@@ -90,6 +90,7 @@ export class GoTestRunner {
 					runAll: !request.include.get(pkg),
 					include,
 					exclude,
+					resolver: this.#resolver,
 					token,
 					spawn: this.#profile.kind === TestRunProfileKind.Debug ? this.#context.debug : this.#context.spawn
 				});
@@ -123,6 +124,7 @@ async function goTest({
 	runAll,
 	include,
 	exclude,
+	resolver,
 	token,
 	spawn
 }: {
@@ -133,6 +135,7 @@ async function goTest({
 	runAll: boolean;
 	include: Map<TestCase, TestItem>;
 	exclude: Map<TestCase, TestItem>;
+	resolver: TestItemResolver<GoTestItem>;
 	token: CancellationToken;
 	spawn: Spawner;
 }) {
@@ -161,12 +164,12 @@ async function goTest({
 		}
 	} else {
 		// Include specific test cases
-		flags.push(`-run=^(${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')})$`);
-		flags.push(`-bench=^(${makeRegex(include.keys(), (x) => x.kind === 'benchmark')})$`);
+		flags.push(`-run=${makeRegex(include.keys(), (x) => x.kind !== 'benchmark')}`);
+		flags.push(`-bench=${makeRegex(include.keys(), (x) => x.kind === 'benchmark')}`);
 	}
 	if (exclude.size) {
 		// Exclude specific test cases
-		flags.push(`-skip=^${makeRegex(exclude.keys())}$`);
+		flags.push(`-skip=${makeRegex(exclude.keys())}`);
 	}
 
 	const append = (output: string, location?: Location, test?: TestItem) => {
@@ -183,7 +186,15 @@ async function goTest({
 		context.output.debug(`stderr> ${line}`);
 	};
 
-	const itemByName = new Map([...include].map(([test, item]) => [test.name, item]));
+	// Map item to name for all tests in the package
+	const itemByName = new Map<string, TestItem>();
+	await Promise.all(
+		pkg.allTests().map(async (test) => {
+			const item = await resolver.get(test);
+			if (item) itemByName.set(test.name, item);
+		})
+	);
+
 	const output = new Map<string, string[]>();
 	const currentLocation = new Map<string, Location>();
 	const onStdout = (s: string | null) => {
@@ -201,7 +212,7 @@ async function goTest({
 			return;
 		}
 
-		const test = itemByName.get(msg.Test!);
+		const item = itemByName.get(msg.Test!);
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
 			case 'output': {
@@ -210,28 +221,28 @@ async function goTest({
 				}
 
 				// Track output
-				const { id } = test || pkgItem;
+				const { id } = item || pkgItem;
 				if (!output.has(id)) {
 					output.set(id, []);
 				}
 				output.get(id)!.push(msg.Output);
 
-				if (!test || /^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
+				if (!item || /^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
 					append(msg.Output, undefined, pkgItem);
 					break;
 				}
 
-				const { message, location } = parseOutputLocation(msg.Output, path.join(test.uri!.fsPath, '..'));
+				const { message, location } = parseOutputLocation(msg.Output, path.join(item.uri!.fsPath, '..'));
 				if (location) {
 					currentLocation.set(id, location);
 				}
-				append(message, location || currentLocation.get(id), test);
+				append(message, location || currentLocation.get(id), item);
 
 				// Detect benchmark completion, e.g.
 				//   "BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op"
 				const m = msg.Output.match(/^(?<name>Benchmark[#/\w+]+)(?:-(?<procs>\d+)\s+(?<result>.*))?(?:$|\n)/);
 				if (m && msg.Test && m.groups?.name === msg.Test) {
-					run.passed(test);
+					run.passed(item);
 				}
 
 				break;
@@ -239,25 +250,25 @@ async function goTest({
 
 			case 'run':
 			case 'start':
-				run.started(test || pkgItem);
+				run.started(item || pkgItem);
 				break;
 
 			case 'skip':
-				run.skipped(test || pkgItem);
+				run.skipped(item || pkgItem);
 				break;
 
 			case 'pass':
-				run.passed(test || pkgItem, elapsed);
+				run.passed(item || pkgItem, elapsed);
 				break;
 
 			case 'fail': {
-				if (!test) {
+				if (!item) {
 					processPackageFailure(run, pkg, pkgItem, elapsed, output.get(pkgItem.id) || [], errOutput);
 					break;
 				}
 
-				const messages = parseTestFailure(test, output.get(test.id) || []);
-				run.failed(test, messages, elapsed);
+				const messages = parseTestFailure(item, output.get(item.id) || []);
+				run.failed(item, messages, elapsed);
 				break;
 			}
 
@@ -285,45 +296,34 @@ async function goTest({
 	}
 }
 
-interface ProcessResult {
-	code: number | null;
-	signal: NodeJS.Signals | null;
+async function mapTestItems(
+	resolver: TestItemResolver<GoTestItem>,
+	map: Map<string, TestItem>,
+	tests: Iterable<TestCase>
+) {
+	for (const test of tests) {
+		map.set(test.name, await resolver.getOrCreateAll(test));
+		await mapTestItems(resolver, map, test.getChildren());
+	}
 }
 
-function spawnGoTest({
-	token,
-	goRuntimePath,
-	args,
-	pkg,
-	stdout,
-	stderr,
-	resolve
-}: {
-	token: CancellationToken;
-	goRuntimePath: string;
-	args: string[];
-	pkg: Package;
-	stdout: LineBuffer;
-	stderr: LineBuffer;
-	resolve: (_: ProcessResult) => void;
-}) {
-	if (token.isCancellationRequested) {
-		return;
+function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
+	// When the user clicks the run button on a package, they expect all of the
+	// tests within that package to run - they probably don't want to run the
+	// benchmarks. So if a benchmark is not explicitly selected, don't run
+	// benchmarks. But the user may disagree, so behavior can be changed with
+	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
+	// button on a file or package that contains benchmarks and nothing else,
+	// they likely expect those benchmarks to run.
+	if (workspace.getConfiguration('goExp', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
+		return true;
 	}
-
-	const tp = cp.spawn(goRuntimePath, args, {
-		cwd: pkg.uri.fsPath
-	});
-	token.onCancellationRequested(() => killProcessTree(tp));
-
-	tp.stdout.on('data', (chunk) => stdout.append(chunk.toString()));
-	tp.stderr.on('data', (chunk) => stderr.append(chunk.toString()));
-
-	tp.on('close', (code, signal) => {
-		stdout.done();
-		stderr.done();
-		resolve({ code, signal });
-	});
+	for (const test of pkg.allTests()) {
+		if (test.kind !== 'benchmark') {
+			return false;
+		}
+	}
+	return true;
 }
 
 async function resolveRunRequest(
@@ -401,25 +401,6 @@ async function resolveRunRequest(
 		include: testsForPackage,
 		exclude: excludeForPackage
 	};
-}
-
-function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
-	// When the user clicks the run button on a package, they expect all of the
-	// tests within that package to run - they probably don't want to run the
-	// benchmarks. So if a benchmark is not explicitly selected, don't run
-	// benchmarks. But the user may disagree, so behavior can be changed with
-	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
-	// button on a file or package that contains benchmarks and nothing else,
-	// they likely expect those benchmarks to run.
-	if (workspace.getConfiguration('goExp', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
-		return true;
-	}
-	for (const test of pkg.allTests()) {
-		if (test.kind !== 'benchmark') {
-			return false;
-		}
-	}
-	return true;
 }
 
 async function resolveTestItems<T extends GoTestItem>(resolver: TestItemResolver<GoTestItem>, goItems: T[]) {
@@ -558,28 +539,20 @@ function parseOutputLocation(line: string, dir: string): { message: string; loca
 }
 
 function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
+	// TODO: Handle Go ≤ 1.17 (https://go.dev/issue/39904)
 	return [...tests]
 		.filter(where)
-		.map((x) => escapeSubTestName(x.name))
-		.join('|');
-}
-
-// escapeSubTestName escapes regexp-like metacharacters. Unlike
-// escapeSubTestName in subTestUtils.ts, this assumes the input are
-// coming from the test explorer test items whose names are computed from
-// the actual test run, not from a hacky source code analysis so escaping
-// empty unprintable characters is not necessary here.
-function escapeSubTestName(v: string) {
-	return v?.includes('/')
-		? v
+		.map((x) =>
+			x.name
 				.split('/')
-				.map((part) => escapeRegExp(part), '')
+				.map((part) => `^${escapeRegExp(part)}$`)
 				.join('/')
-		: v;
+		)
+		.join('|');
 }
 
 // escapeRegExp escapes regex metacharacters.
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-export function escapeRegExp(v: string) {
+function escapeRegExp(v: string) {
 	return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

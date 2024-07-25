@@ -115,6 +115,15 @@ export class TestItemResolver<T> implements Disposable {
 		);
 	}
 
+	async get(providerItem: T): Promise<TestItem | undefined> {
+		const { id } = await this.#provider.getTestItem(providerItem);
+		const parent = await this.#provider.getParent(providerItem);
+		if (!parent) {
+			return this.#ctrl.items.get(id);
+		}
+		return (await this.get(parent))?.children.get(id);
+	}
+
 	async getOrCreateAll(providerItem: T): Promise<TestItem> {
 		const parent = await this.#provider.getParent(providerItem);
 		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
