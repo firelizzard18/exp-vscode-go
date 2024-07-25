@@ -101,8 +101,8 @@ export class TestItemResolver<T> implements Disposable {
 		// For each parent (using a Set to avoid duplicate work), force a
 		// refresh by dumping its children and resolving
 		return Promise.all(
-			[...new Set(items.map((x) => x.parent))].map(async (x) => {
-				(x?.children || this.#ctrl.items).replace([]);
+			items.map(async (x) => {
+				x.children.replace([]);
 				return this.resolve(x);
 			})
 		);
@@ -131,7 +131,7 @@ export class TestItemResolver<T> implements Disposable {
 		item.description = data.description;
 		item.sortText = data.sortText;
 		item.tags = data.tags || [];
-		item.canResolveChildren = data.hasChildren || false;
+		item.canResolveChildren = data.hasChildren;
 		item.range = data.range;
 		item.error = data.error;
 		return item;

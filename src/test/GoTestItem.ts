@@ -189,9 +189,10 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 
 			// Mark the package as requested
 			this.#requested.set(parent.uri.toString(), parent);
+			parent.markRequested(pkg);
 
 			// Update the data model
-			items.push(parent.resolvePackage(pkg));
+			items.push(parent);
 		}
 
 		await this.#didChangeTestItem.fire(items);
@@ -274,11 +275,9 @@ export abstract class RootItem implements GoTestItem {
 		return b === a || b.startsWith(`${a}/`);
 	}
 
-	resolvePackage(pkg: Commands.Package) {
-		// TODO: testExplorer.nestPackages
+	markRequested(pkg: Commands.Package) {
 		const item = new Package(this.#provider, this as any, pkg.Path, pkg.TestFiles!);
 		this.#requested.set(pkg.Path, item);
-		return item;
 	}
 
 	getParent() {
