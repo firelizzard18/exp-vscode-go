@@ -342,7 +342,7 @@ async function resolveRunRequest(
 	const packages = new Set(include.filter((x) => x instanceof Package));
 	await Promise.all(
 		[...roots].map(async (x) => {
-			for (const pkg of (await x.getPackages()) || []) {
+			for (const pkg of (await x.allPackages()) || []) {
 				packages.add(pkg);
 			}
 		})

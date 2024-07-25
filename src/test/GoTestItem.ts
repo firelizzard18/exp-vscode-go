@@ -285,17 +285,17 @@ export abstract class RootItem implements GoTestItem {
 	}
 
 	async getChildren(): Promise<GoTestItem[]> {
-		const children = await this.getPackages();
-		const i = children.findIndex((x) => x.uri.toString() === this.dir.toString());
-		if (i < 0) return children;
+		const packages = await this.#getPackages();
+		const i = packages.findIndex((x) => x.uri.toString() === this.dir.toString());
+		if (i < 0) return packages;
 
-		const selfPkg = children[i];
-		children.splice(i, 1);
-		return [...children, ...selfPkg.getChildren()];
+		const selfPkg = packages[i];
+		packages.splice(i, 1);
+		return [...packages, ...selfPkg.getChildren()];
 	}
 
-	async getPackages() {
-		const packages = await this.#getPackages();
+	async #getPackages() {
+		const packages = await this.allPackages();
 
 		// Rebuild package relations
 		this.pkgRelations = undefined;
@@ -312,7 +312,7 @@ export abstract class RootItem implements GoTestItem {
 		return this.pkgRelations?.getChildren(undefined) || packages;
 	}
 
-	async #getPackages() {
+	async allPackages() {
 		const mode = this.#provider.getConfig<DiscoveryMode>('testExplorer.discovery', this.uri);
 		switch (mode) {
 			case 'on': // Discover all packages
