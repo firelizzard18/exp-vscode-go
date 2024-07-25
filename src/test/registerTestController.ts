@@ -65,7 +65,8 @@ export async function registerTestController(ctx: ExtensionContext) {
 		if (
 			e.affectsConfiguration('goExp.testExplorer.discovery') ||
 			e.affectsConfiguration('goExp.testExplorer.showFiles') ||
-			e.affectsConfiguration('goExp.testExplorer.nestPackages')
+			e.affectsConfiguration('goExp.testExplorer.nestPackages') ||
+			e.affectsConfiguration('goExp.testExplorer.nestSubtests')
 		) {
 			await ctrl.reload();
 		}

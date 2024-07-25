@@ -49,6 +49,12 @@
           "scope": "resource",
           "description": "Nest packages"
         },
+        "goExp.testExplorer.nestSubtests": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Nest subtests"
+        },
         "goExp.testExplorer.runPackageBenchmarks": {
           "type": "boolean",
           "default": false,

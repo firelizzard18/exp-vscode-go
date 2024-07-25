@@ -79,7 +79,7 @@ export class GoTestRunner {
 				}
 
 				const pkgItem = await this.#resolver.getOrCreateAll(pkg);
-				const include = await resolveTestItems(this.#resolver, request.include.get(pkg) || pkg.getTests());
+				const include = await resolveTestItems(this.#resolver, request.include.get(pkg) || pkg.allTests());
 				const exclude = await resolveTestItems(this.#resolver, request.exclude.get(pkg) || []);
 
 				await goTest({
@@ -201,9 +201,6 @@ async function goTest({
 			return;
 		}
 
-		// TODO: Benchmarks probably need a lot more processing as per
-		// extension/src/goTest/test_events.md (vscode-go)
-
 		const test = itemByName.get(msg.Test!);
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
@@ -250,8 +247,6 @@ async function goTest({
 				break;
 
 			case 'pass':
-				// TODO(firelizzard18): add messages on pass, once that capability
-				// is added.
 				run.passed(test || pkgItem, elapsed);
 				break;
 
@@ -419,7 +414,7 @@ function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 	if (workspace.getConfiguration('goExp', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
 		return true;
 	}
-	for (const test of pkg.getTests()) {
+	for (const test of pkg.allTests()) {
 		if (test.kind !== 'benchmark') {
 			return false;
 		}
@@ -445,7 +440,7 @@ function* testCases(items: GoTestItem[]) {
 			yield item;
 		}
 		if (item instanceof TestFile) {
-			yield* item.getTests();
+			yield* item.allTests();
 		}
 	}
 }

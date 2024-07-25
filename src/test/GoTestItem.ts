@@ -255,8 +255,7 @@ export abstract class RootItem implements GoTestItem {
 	readonly #provider: GoTestItemProvider;
 	readonly #requested = new Map<string, Package>();
 
-	pkgChildParent?: Map<Package, Package | undefined>;
-	pkgParentChild?: Map<Package | undefined, Package[]>;
+	pkgRelations?: RelationMap<Package, Package | undefined>;
 
 	constructor(provider: GoTestItemProvider) {
 		this.#provider = provider;
@@ -297,30 +296,21 @@ export abstract class RootItem implements GoTestItem {
 	}
 
 	async getPackages() {
-		this.pkgChildParent = undefined;
-		this.pkgParentChild = undefined;
-
 		const packages = await this.#getPackages();
-		if (!this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
-			return packages;
+
+		// Rebuild package relations
+		this.pkgRelations = undefined;
+		if (this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
+			this.pkgRelations = new RelationMap(
+				packages.map((pkg): [Package, Package | undefined] => {
+					const ancestors = packages.filter((x) => pkg.path.startsWith(`${x.path}/`));
+					ancestors.sort((a, b) => a.path.length - b.path.length);
+					return [pkg, ancestors[0]];
+				})
+			);
 		}
 
-		this.pkgChildParent = new Map<Package, Package | undefined>();
-		for (const pkg of packages) {
-			const ancestors = packages.filter((x) => pkg.path.startsWith(`${x.path}/`));
-			ancestors.sort((a, b) => a.path.length - b.path.length);
-			this.pkgChildParent.set(pkg, ancestors[0]);
-		}
-
-		this.pkgParentChild = new Map<Package | undefined, Package[]>();
-		for (const [child, parent] of this.pkgChildParent) {
-			if (!this.pkgParentChild.has(parent)) {
-				this.pkgParentChild.set(parent, []);
-			}
-			this.pkgParentChild.get(parent)!.push(child);
-		}
-
-		return this.pkgParentChild.get(undefined) || [];
+		return this.pkgRelations?.getChildren(undefined) || packages;
 	}
 
 	async #getPackages() {
@@ -405,6 +395,8 @@ export class Package implements GoTestItem {
 	readonly hasChildren = true;
 	readonly files: TestFile[];
 
+	testRelations?: RelationMap<TestCase, TestCase | undefined>;
+
 	constructor(provider: GoTestItemProvider, parent: RootItem, path: string, files: Commands.TestFile[]) {
 		this.#provider = provider;
 		this.parent = parent;
@@ -414,7 +406,7 @@ export class Package implements GoTestItem {
 	}
 
 	get label() {
-		const pkgParent = this.parent.pkgChildParent?.get(this);
+		const pkgParent = this.parent.pkgRelations?.getParent(this);
 		if (pkgParent && this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
 			return this.path.substring(pkgParent.path.length + 1);
 		}
@@ -428,26 +420,48 @@ export class Package implements GoTestItem {
 		if (!this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
 			return this.parent;
 		}
-		return this.parent.pkgChildParent?.get(this) || this.parent;
+		return this.parent.pkgRelations?.getParent(this) || this.parent;
 	}
 
 	getChildren(): GoTestItem[] {
 		if (!this.#provider.getConfig<boolean>('testExplorer.nestPackages', this.uri)) {
-			return this.#getChildren();
+			return this.#getTests();
 		}
 
-		return [...(this.parent.pkgParentChild?.get(this) || []), ...this.#getChildren()];
+		return [...(this.parent.pkgRelations?.getChildren(this) || []), ...this.#getTests()];
 	}
 
-	#getChildren() {
+	/**
+	 * Returns the {@link TestCase} or {@link TestFile} children of this package, depending
+	 * on configuration.
+	 */
+	#getTests() {
+		// Rebuild test relations
+		this.testRelations = undefined;
+		if (this.#provider.getConfig<boolean>('testExplorer.nestSubtests')) {
+			const allTests = this.allTests();
+			this.testRelations = new RelationMap(
+				allTests.map((test): [TestCase, TestCase | undefined] => {
+					const i = test.name.lastIndexOf('/');
+					if (i < 0) return [test, undefined];
+					const name = test.name.substring(0, i);
+					const parent = allTests.find((x) => x.name === name);
+					return [test, parent];
+				})
+			);
+		}
+
 		if (this.#provider.getConfig<boolean>('testExplorer.showFiles', this.uri)) {
 			return this.files;
 		}
 		return this.files.flatMap((x) => x.getChildren());
 	}
 
-	getTests() {
-		return this.files.flatMap((x) => x.getTests());
+	/**
+	 * Returns all of the package's tests, ignoring configuration.
+	 */
+	allTests() {
+		return this.files.flatMap((x) => x.allTests());
 	}
 }
 
@@ -475,10 +489,13 @@ export class TestFile implements GoTestItem {
 	}
 
 	getChildren(): GoTestItem[] {
-		return this.tests;
+		return this.package.testRelations?.getChildren(undefined) || this.tests;
 	}
 
-	getTests() {
+	/**
+	 * Returns all of the file's tests, ignoring configuration.
+	 */
+	allTests() {
 		return this.tests;
 	}
 }
@@ -490,8 +507,6 @@ export class TestCase implements GoTestItem {
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
 	readonly range: Range | undefined;
-	readonly hasChildren = false;
-	// TODO: subtests
 
 	constructor(provider: GoTestItemProvider, file: TestFile, test: Commands.TestCase) {
 		this.#provider = provider;
@@ -505,10 +520,22 @@ export class TestCase implements GoTestItem {
 	}
 
 	get label() {
-		return this.name;
+		const parent = this.file.package.testRelations?.getParent(this);
+		if (!parent) {
+			return this.name;
+		}
+		return this.name.replace(`${parent.name}/`, '');
+	}
+
+	get hasChildren() {
+		return this.getChildren().length > 0;
 	}
 
 	getParent() {
+		const parentTest = this.file.package.testRelations?.getParent(this);
+		if (parentTest) {
+			return parentTest;
+		}
 		if (this.#provider.getConfig<boolean>('testExplorer.showFiles', this.uri)) {
 			return this.file;
 		}
@@ -516,6 +543,30 @@ export class TestCase implements GoTestItem {
 	}
 
 	getChildren(): GoTestItem[] {
-		return [];
+		return this.file.package.testRelations?.getChildren(this) || [];
+	}
+}
+
+class RelationMap<Child, Parent> {
+	readonly #childParent = new Map<Child, Parent>();
+	readonly #parentChild = new Map<Parent, Child[]>();
+
+	constructor(relations: Iterable<[Child, Parent]>) {
+		for (const [child, parent] of relations) {
+			this.#childParent.set(child, parent);
+			if (this.#parentChild.has(parent)) {
+				this.#parentChild.get(parent)?.push(child);
+			} else {
+				this.#parentChild.set(parent, [child]);
+			}
+		}
+	}
+
+	getParent(child: Child) {
+		return this.#childParent.get(child);
+	}
+
+	getChildren(parent: Parent) {
+		return this.#parentChild.get(parent);
 	}
 }

@@ -107,9 +107,6 @@ export async function debugProcess(
 	flags: readonly string[],
 	options: SpawnOptions
 ): Promise<ProcessResult | void> {
-	// TODO Can we get output from the debug session, in order to check for
-	// run/pass/fail events?
-
 	const { run, cancel, cwd, env, stdout, stderr } = options;
 	if (cancel.isCancellationRequested) {
 		return Promise.resolve();
