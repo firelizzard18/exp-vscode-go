@@ -59,7 +59,7 @@ export namespace Commands {
 	}
 
 	export interface ModulesResult {
-		Modules: Module[];
+		Modules?: Module[];
 	}
 
 	export interface PackagesArgs {
@@ -69,8 +69,8 @@ export namespace Commands {
 	}
 
 	export interface PackagesResults {
-		Packages: Package[];
-		Module: Record<string, Module>;
+		Packages?: Package[];
+		Module?: Record<string, Module>;
 	}
 
 	export interface Module {

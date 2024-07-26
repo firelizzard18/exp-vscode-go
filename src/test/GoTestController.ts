@@ -3,8 +3,9 @@ import { TestRunProfileKind, Uri } from 'vscode';
 import type { Disposable, TestItem } from 'vscode';
 import { Context, doSafe, TestController } from './testSupport';
 import { safeInvalidate, TestItemResolver } from './TestItemResolver';
-import { GoTestItem, GoTestItemProvider } from './GoTestItem';
+import { GoTestItem } from './GoTestItem';
 import { GoTestRunner } from './GoTestRunner';
+import { GoTestItemProvider } from './GoTestItemProvider';
 
 export class GoTestController {
 	readonly #context: Context;
