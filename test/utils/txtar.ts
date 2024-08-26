@@ -16,7 +16,7 @@ export class TxTar implements FileSystem {
 
 	constructor(...args: Parameters<typeof Buffer.from>) {
 		const txtar = Buffer.from(...args).toString('utf-8');
-		const files = txtar.split(/^-- ([^\n]*) --$/gm).slice(1);
+		const files = txtar.split(/^-- ([^\n]*) --$\n/gm).slice(1);
 		while (files.length > 1) {
 			const [file, content] = files.splice(0, 2);
 			this.#fs.mkdir(path.dirname(file)).set(path.basename(file), Buffer.from(content, 'utf-8'));
@@ -70,8 +70,8 @@ class MapFS extends Map<string, MapFS | Uint8Array> implements FileSystem {
 	}
 
 	#read(fsPath: string): MapFS | Uint8Array | void {
-		const [base, rest] = fsPath.split('/', 2);
-		const entry = this.get(base);
+		const [, base, rest] = fsPath.match(/([^/]+)?(?:\/(.*))?/) || [];
+		const entry = !base ? this : this.get(base);
 		if (!entry) {
 			throw new Error(`${path.join(this.path, fsPath)} not found`);
 		}

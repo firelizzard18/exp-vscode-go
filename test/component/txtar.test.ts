@@ -1,70 +1,38 @@
+import { Uri } from 'vscode';
 import { TxTar } from '../utils/txtar';
+import { expect } from '@jest/globals';
 
 const src = `
--- go.mod --
-module foo
-
-go 1.20
-
 -- foo.go --
 package foo
 
-import "fmt"
+-- bar/bar.go --
+package bar
 
-func Foo() {
-	fmt.Println("Foo")
-}
-
-func TestFoo2(t *testing.T) {
-	Foo()
-}
-
--- foo_test.go --
-package foo
-
-import "testing"
-
-func callFoo() {
-	Foo()
-}
-
-func TestFoo(t *testing.T) {
-	callFoo()
-}
-
--- foo2_test.go --
-package foo_test
-
-import "testing"
-
-func TestBar(t *testing.T) {
-	Foo()
-}
-
--- baz/baz_test.go --
+-- bar/baz/baz.go --
 package baz
 
-import "testing"
-
-func TestBaz(*testing.T)      {}
-func BenchmarkBaz(*testing.B) {}
-func FuzzBaz(*testing.F)      {}
-func ExampleBaz()             {}
-
--- bat/go.mod --
-module bat
-
--- bat/bat_test.go --
-package bat
-
-import "testing"
-
-func TestBat(*testing.T) {}
 `;
 
 describe('TxTar', () => {
-	it('can parse a txtar', () => {
+	it('can parse a txtar', async () => {
 		const txtar = new TxTar(src, 'utf-8');
-		console.log(txtar);
+		let dir = await txtar.readDirectory(Uri.file('/'));
+		expect(dir.map(([x]) => x)).toStrictEqual(['foo.go', 'bar']);
+
+		dir = await txtar.readDirectory(Uri.file('/bar'));
+		expect(dir.map(([x]) => x)).toStrictEqual(['bar.go', 'baz']);
+
+		dir = await txtar.readDirectory(Uri.file('/bar/baz'));
+		expect(dir.map(([x]) => x)).toStrictEqual(['baz.go']);
+
+		let file = await txtar.readFile(Uri.file('/foo.go'));
+		expect(Buffer.from(file).toString('utf-8')).toStrictEqual('package foo\n\n');
+
+		file = await txtar.readFile(Uri.file('/bar/bar.go'));
+		expect(Buffer.from(file).toString('utf-8')).toStrictEqual('package bar\n\n');
+
+		file = await txtar.readFile(Uri.file('/bar/baz/baz.go'));
+		expect(Buffer.from(file).toString('utf-8')).toStrictEqual('package baz\n\n');
 	});
 });
