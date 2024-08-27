@@ -13,8 +13,7 @@ describe('Go test controller', () => {
 
 	describe('with no module', () => {
 		const ws = setupWorkspace(
-			`
-			-- go.mod --
+			`-- go.mod --
 			module foo
 
 			-- foo/foo.go --
@@ -64,7 +63,8 @@ describe('Go test controller', () => {
 
 			import "testing"
 
-			func TestBar(*testing.T)`);
+			func TestBar(*testing.T)
+		`);
 
 		it('resolves all tests', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
@@ -203,9 +203,155 @@ describe('Go test controller', () => {
 				]);
 			});
 		});
+
+		describe('with nestPackages', () => {
+			const ws = setupWorkspace(`
+				-- go.mod --
+				module foo
+
+				-- bar/bar.go --
+				package bar
+
+				-- bar/bar_test.go --
+				package bar
+
+				import "testing"
+
+				func TestBar(t *testing.T)
+
+				-- bar/baz/baz.go --
+				package baz
+
+				-- bar/baz/baz_test.go --
+				package baz
+
+				import "testing"
+
+				func TestBaz(t *testing.T)
+			`);
+
+			it('resolves tests in nested packages', async () => {
+				const host = new TestHost(
+					ws.path,
+					withWorkspace('foo', `${ws.uri}`),
+					withConfiguration({ nestPackages: true })
+				);
+
+				await host.manager.reload();
+				expect(host).toResolve([
+					{
+						kind: 'module',
+						uri: `${ws.uri}/go.mod`,
+						children: [
+							{
+								kind: 'package',
+								uri: `${ws.uri}/bar`,
+								children: [
+									{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` },
+									{
+										kind: 'package',
+										uri: `${ws.uri}/bar/baz`,
+										children: [
+											{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }
+										]
+									}
+								]
+							}
+						]
+					}
+				]);
+
+				// Changing config changes the resolved tests
+				host.workspace.config.nestPackages = false;
+				await host.manager.reload();
+				expect(host).toResolve([
+					{
+						kind: 'module',
+						uri: `${ws.uri}/go.mod`,
+						children: [
+							{
+								kind: 'package',
+								uri: `${ws.uri}/bar`,
+								children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							},
+							{
+								kind: 'package',
+								uri: `${ws.uri}/bar/baz`,
+								children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }]
+							}
+						]
+					}
+				]);
+			});
+		});
 	});
 
-	describe('with all the func types', () => {
+	describe.skip('with a nested module', () => {
+		// Testing this with the current setup is not feasible since gopls is
+		// called with `cd <dir> && gopls execute <command> <args>`, and thus
+		// gopls will only ever have one view loaded at a time
+
+		const ws = setupWorkspace(`
+			-- go.mod --
+			module foo
+
+			-- foo.go --
+			package foo
+
+			-- foo_test.go --
+			package foo
+
+			import "testing"
+
+			func TestFoo(t *testing.T)
+
+			-- bar/go.mod --
+			module foo/bar
+
+			-- bar/bar.go --
+			package bar
+
+			-- bar/bar_test.go --
+			package bar
+
+			import "testing"
+
+			func TestBar(t *testing.T)
+		`);
+
+		it('does not cross module boundaries', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await host.manager.reload();
+			expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+				}
+			]);
+		});
+
+		it('resolves tests when a file in the module is opened', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar.go`));
+			expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+				},
+				{
+					kind: 'module',
+					uri: `${ws.uri}/bar/go.mod`,
+					children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+				}
+			]);
+		});
+	});
+
+	describe('with all test func types', () => {
 		const ws = setupWorkspace(`
 			-- go.mod --
 			module foo
@@ -221,9 +367,10 @@ describe('Go test controller', () => {
 			func TestBaz(*testing.T)      {}
 			func BenchmarkBaz(*testing.B) {}
 			func FuzzBaz(*testing.F)      {}
-			func ExampleBaz()             {}`);
+			func ExampleBaz()             {}
+		`);
 
-		it('resolves all the funcs', async () => {
+		it('resolves all test funcs', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await host.manager.reload();
@@ -241,6 +388,61 @@ describe('Go test controller', () => {
 			]);
 		});
 	});
+
+	describe('with subtests', () => {
+		const ws = setupWorkspace(`
+			-- go.mod --
+			module foo
+
+			-- foo.go --
+			package foo
+
+			-- foo_test.go --
+			package foo
+
+			import "testing"
+
+			func TestFoo(t *testing.T) {
+				t.Run("Subtest", func(t *testing.T) {})
+			}
+		`);
+
+		it('nests subtests', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await host.manager.reload();
+			expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'test',
+							name: 'TestFoo',
+							uri: `${ws.uri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo/Subtest', uri: `${ws.uri}/foo_test.go` }]
+						}
+					]
+				}
+			]);
+
+			// Changing config changes the resolved tests
+			host.workspace.config.nestSubtests = false;
+			await host.manager.reload();
+			expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+						{ kind: 'test', name: 'TestFoo/Subtest', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
+		});
+	});
+
+	// ...
 });
 
 /**
@@ -256,19 +458,21 @@ function setupWorkspace(src: string, wsdir?: string) {
 
 	// Remove common leading whitespace
 	const lines = src.split('\n');
+	const checkLines = lines.filter((l, i) => i > 0 && /\S/.test(l));
 	let i = 0;
 	for (; ; i++) {
-		const s = lines.map((l) => l.substring(i, i + 1));
+		const s = checkLines.map((l) => l.substring(i, i + 1));
 		if (s.some((s) => !/^\s*$/.test(s)) && new Set(s).size !== 1) {
 			break;
 		}
 	}
-	src = lines.map((l) => l.substring(i)).join('\n');
+	src = lines.map((l) => l.replace(/^\s*/, (s) => (s.length > i ? s.substring(i) : ''))).join('\n');
 
 	beforeAll(async () => {
 		const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'jest-'));
 		ws.path = wsdir ? path.join(tmp, wsdir) : tmp;
 		ws.uri = Uri.file(ws.path);
+		console.log('Workspace:', ws.path);
 
 		const txtar = new TxTar(src);
 		await txtar.copyTo(tmp);

@@ -22,12 +22,16 @@ import { GoTestController } from '../../../src/test/GoTestController';
 import cp from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import pkg from '../../../package.json';
+
+const config = pkg.contributes.configuration.properties;
 
 interface Configuration {
 	enable: boolean;
 	discovery: 'on' | 'off';
 	showFiles: boolean;
 	nestPackages: boolean;
+	nestSubtests: boolean;
 	runPackageBenchmarks: boolean;
 }
 
@@ -97,11 +101,12 @@ class TestCommands implements Commands {
 class TestWorkspace implements Workspace {
 	readonly workspaceFolders: WorkspaceFolder[] = [];
 	readonly config: Configuration = {
-		enable: true,
-		discovery: 'on',
-		showFiles: false,
-		nestPackages: false,
-		runPackageBenchmarks: false
+		enable: config['goExp.testExplorer.enable'].default,
+		discovery: config['goExp.testExplorer.discovery'].default as any,
+		showFiles: config['goExp.testExplorer.showFiles'].default,
+		nestPackages: config['goExp.testExplorer.nestPackages'].default,
+		nestSubtests: config['goExp.testExplorer.nestSubtests'].default,
+		runPackageBenchmarks: config['goExp.testExplorer.runPackageBenchmarks'].default
 	};
 
 	saveAll(): Thenable<boolean> {
