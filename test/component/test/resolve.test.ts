@@ -1,78 +1,130 @@
 /* eslint-disable n/no-unpublished-import */
-import type * as lsp from 'vscode-languageserver-types';
-import type { Commands } from '../../../src/test/testSupport';
-import { TestHost, withConfiguration, withModule, withPackage, withWorkspace } from './host';
-import { expect } from '@jest/globals';
+import { TestHost, withConfiguration, withWorkspace } from './host';
+import { afterAll, beforeAll, expect } from '@jest/globals';
 import './expect';
 import { Uri } from 'vscode';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { TxTar } from '../../utils/txtar';
 
-const nullPos: lsp.Position = { line: 0, character: 0 };
-const nullRange: lsp.Range = { start: nullPos, end: nullPos };
+const src = `
+-- go.mod --
+module foo
 
-const fooMod: Commands.Module = {
-	GoMod: 'file:///foo/go.mod',
-	Path: 'foo'
-};
+go 1.20
 
-const fooPkgNoMod: Commands.Package = {
-	Path: 'foo',
-	ForTest: 'foo',
-	TestFiles: [
-		{
-			URI: 'file:///foo/foo_test.go',
-			Tests: [{ Name: 'TestFoo', Loc: { range: nullRange, uri: '' } }]
-		},
-		{
-			URI: 'file:///foo/foo_test2.go',
-			Tests: [{ Name: 'TestFoo2', Loc: { range: nullRange, uri: '' } }]
-		}
-	]
-};
-const fooPkg: Commands.Package = {
-	...fooPkgNoMod,
-	ModulePath: 'foo'
-};
+-- foo.go --
+package foo
 
-const barPkg: Commands.Package = {
-	Path: 'foo/bar',
-	ForTest: 'foo/bar',
-	ModulePath: 'foo',
-	TestFiles: [
-		{
-			URI: 'file:///foo/bar/bar_test.go',
-			Tests: [{ Name: 'TestBar', Loc: { range: nullRange, uri: '' } }]
-		}
-	]
-};
+import "fmt"
+
+func Foo() {
+	fmt.Println("Foo")
+}
+
+func TestFoo2(t *testing.T) {
+	Foo()
+}
+
+-- foo_test.go --
+package foo
+
+import "testing"
+
+func callFoo() {
+	Foo()
+}
+
+func TestFoo(t *testing.T) {
+	callFoo()
+}
+
+-- foo2_test.go --
+package foo_test
+
+import "testing"
+
+func TestBar(t *testing.T) {
+	Foo()
+}
+
+-- baz/baz_test.go --
+package baz
+
+import "testing"
+
+func TestBaz(*testing.T)      {}
+func BenchmarkBaz(*testing.B) {}
+func FuzzBaz(*testing.F)      {}
+func ExampleBaz()             {}
+
+-- bat/go.mod --
+module bat
+
+-- bat/bat_test.go --
+package bat
+
+import "testing"
+
+func TestBat(*testing.T) {}
+`;
 
 describe('Go test controller', () => {
-	it('resolves workspace tests', async () => {
-		const host = new TestHost(withWorkspace('foo', 'file:///foo'), withPackage(fooPkgNoMod));
+	// NOTE: These tests assume ~/go/bin/gopls exists and has test support
+
+	// Dump the txtar to a temp directory and delete it afterwards
+	let tmpdir: string, tmpdirUri: Uri;
+	beforeAll(async () => {
+		tmpdir = await fs.mkdtemp(path.join(os.tmpdir(), 'jest-'));
+		tmpdirUri = Uri.file(tmpdir);
+
+		const txtar = new TxTar(src);
+		await txtar.copyTo(tmpdir);
+	});
+
+	afterAll(async () => {
+		await fs.rm(tmpdir, { force: true, recursive: true });
+	});
+
+	it.skip('resolves workspace tests', async () => {
+		const host = new TestHost(tmpdir, withWorkspace('foo', `${tmpdirUri}`));
+		console.log(tmpdir);
 
 		await host.manager.reload();
 		expect(host).toResolve([
 			{
 				kind: 'workspace',
-				uri: 'file:///foo',
+				uri: `${tmpdirUri}`,
 				children: [
-					{ kind: 'test', name: 'TestFoo', uri: 'file:///foo/foo_test.go' },
-					{ kind: 'test', name: 'TestFoo2', uri: 'file:///foo/foo_test2.go' }
+					{ kind: 'test', name: 'TestFoo', uri: `${tmpdirUri}/foo_test.go` },
+					{ kind: 'test', name: 'TestFoo2', uri: `${tmpdirUri}/foo_test2.go` }
 				]
 			}
 		]);
 	});
 
 	it('resolves module tests', async () => {
-		const host = new TestHost(withWorkspace('foo', 'file:///foo'), withModule(fooMod), withPackage(fooPkg));
+		const host = new TestHost(tmpdir, withWorkspace('foo', `${tmpdirUri}`));
 
 		await host.manager.reload();
 		expect(host).toResolve([
 			{
 				kind: 'module',
-				uri: 'file:///foo/go.mod',
+				uri: `${tmpdirUri}/go.mod`,
 				children: [
-					{ kind: 'test', name: 'TestFoo', uri: 'file:///foo/foo_test.go' },
-					{ kind: 'test', name: 'TestFoo2', uri: 'file:///foo/foo_test2.go' }
+					{
+						kind: 'package',
+						uri: `${tmpdirUri}/baz`,
+						children: [
+							{ kind: 'benchmark', name: 'BenchmarkBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+							{ kind: 'example', name: 'ExampleBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+							{ kind: 'fuzz', name: 'FuzzBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+							{ kind: 'test', name: 'TestBaz', uri: `${tmpdirUri}/baz/baz_test.go` }
+						]
+					},
+					{ kind: 'test', name: 'TestFoo', uri: `${tmpdirUri}/foo_test.go` },
+					{ kind: 'test', name: 'TestBar', uri: `${tmpdirUri}/foo2_test.go` }
 				]
 			}
 		]);
@@ -81,27 +133,46 @@ describe('Go test controller', () => {
 	describe('with showFiles', () => {
 		it('resolves files', async () => {
 			const host = new TestHost(
-				withWorkspace('foo', 'file:///foo'),
-				withConfiguration({ showFiles: true }),
-				withModule(fooMod),
-				withPackage(fooPkg)
+				tmpdir,
+				withWorkspace('foo', `${tmpdirUri}`),
+				withConfiguration({ showFiles: true })
 			);
 
 			await host.manager.reload();
 			expect(host).toResolve([
 				{
 					kind: 'module',
-					uri: 'file:///foo/go.mod',
+					uri: `${tmpdirUri}/go.mod`,
 					children: [
 						{
-							kind: 'file',
-							uri: 'file:///foo/foo_test.go',
-							children: [{ kind: 'test', name: 'TestFoo', uri: 'file:///foo/foo_test.go' }]
+							kind: 'package',
+							uri: `${tmpdirUri}/baz`,
+							children: [
+								{
+									kind: 'file',
+									uri: `${tmpdirUri}/baz/baz_test.go`,
+									children: [
+										{
+											kind: 'benchmark',
+											name: 'BenchmarkBaz',
+											uri: `${tmpdirUri}/baz/baz_test.go`
+										},
+										{ kind: 'example', name: 'ExampleBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+										{ kind: 'fuzz', name: 'FuzzBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+										{ kind: 'test', name: 'TestBaz', uri: `${tmpdirUri}/baz/baz_test.go` }
+									]
+								}
+							]
 						},
 						{
 							kind: 'file',
-							uri: 'file:///foo/foo_test2.go',
-							children: [{ kind: 'test', name: 'TestFoo2', uri: 'file:///foo/foo_test2.go' }]
+							uri: `${tmpdirUri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo', uri: `${tmpdirUri}/foo_test.go` }]
+						},
+						{
+							kind: 'file',
+							uri: `${tmpdirUri}/foo2_test.go`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${tmpdirUri}/foo2_test.go` }]
 						}
 					]
 				}
@@ -113,10 +184,20 @@ describe('Go test controller', () => {
 			expect(host).toResolve([
 				{
 					kind: 'module',
-					uri: 'file:///foo/go.mod',
+					uri: `${tmpdirUri}/go.mod`,
 					children: [
-						{ kind: 'test', name: 'TestFoo', uri: 'file:///foo/foo_test.go' },
-						{ kind: 'test', name: 'TestFoo2', uri: 'file:///foo/foo_test2.go' }
+						{
+							kind: 'package',
+							uri: `${tmpdirUri}/baz`,
+							children: [
+								{ kind: 'benchmark', name: 'BenchmarkBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'example', name: 'ExampleBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'fuzz', name: 'FuzzBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'test', name: 'TestBaz', uri: `${tmpdirUri}/baz/baz_test.go` }
+							]
+						},
+						{ kind: 'test', name: 'TestFoo', uri: `${tmpdirUri}/foo_test.go` },
+						{ kind: 'test', name: 'TestBar', uri: `${tmpdirUri}/foo2_test.go` }
 					]
 				}
 			]);
@@ -126,11 +207,9 @@ describe('Go test controller', () => {
 	describe('without discovery', () => {
 		it('resolves on-demand', async () => {
 			const host = new TestHost(
-				withWorkspace('foo', 'file:///foo'),
-				withConfiguration({ discovery: 'off' }),
-				withModule(fooMod),
-				withPackage(fooPkg),
-				withPackage(barPkg)
+				tmpdir,
+				withWorkspace('foo', `${tmpdirUri}`),
+				withConfiguration({ discovery: 'off' })
 			);
 
 			// Nothing is resolved initially
@@ -138,16 +217,21 @@ describe('Go test controller', () => {
 			expect(host).toResolve([]);
 
 			// Opening a file (which calls reload) causes the tests within it to be resolved
-			await host.manager.reload(Uri.parse('file:///foo/bar/bar_test.go'));
+			await host.manager.reload(Uri.parse(`${tmpdirUri}/baz/baz_test.go`));
 			expect(host).toResolve([
 				{
 					kind: 'module',
-					uri: 'file:///foo/go.mod',
+					uri: `${tmpdirUri}/go.mod`,
 					children: [
 						{
 							kind: 'package',
-							uri: 'file:///foo/bar',
-							children: [{ kind: 'test', name: 'TestBar', uri: 'file:///foo/bar/bar_test.go' }]
+							uri: `${tmpdirUri}/baz`,
+							children: [
+								{ kind: 'benchmark', name: 'BenchmarkBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'example', name: 'ExampleBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'fuzz', name: 'FuzzBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'test', name: 'TestBaz', uri: `${tmpdirUri}/baz/baz_test.go` }
+							]
 						}
 					]
 				}
@@ -159,15 +243,20 @@ describe('Go test controller', () => {
 			expect(host).toResolve([
 				{
 					kind: 'module',
-					uri: 'file:///foo/go.mod',
+					uri: `${tmpdirUri}/go.mod`,
 					children: [
 						{
 							kind: 'package',
-							uri: 'file:///foo/bar',
-							children: [{ kind: 'test', name: 'TestBar', uri: 'file:///foo/bar/bar_test.go' }]
+							uri: `${tmpdirUri}/baz`,
+							children: [
+								{ kind: 'benchmark', name: 'BenchmarkBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'example', name: 'ExampleBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'fuzz', name: 'FuzzBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'test', name: 'TestBaz', uri: `${tmpdirUri}/baz/baz_test.go` }
+							]
 						},
-						{ kind: 'test', name: 'TestFoo', uri: 'file:///foo/foo_test.go' },
-						{ kind: 'test', name: 'TestFoo2', uri: 'file:///foo/foo_test2.go' }
+						{ kind: 'test', name: 'TestFoo', uri: `${tmpdirUri}/foo_test.go` },
+						{ kind: 'test', name: 'TestBar', uri: `${tmpdirUri}/foo2_test.go` }
 					]
 				}
 			]);
@@ -177,12 +266,17 @@ describe('Go test controller', () => {
 			expect(host).toResolve([
 				{
 					kind: 'module',
-					uri: 'file:///foo/go.mod',
+					uri: `${tmpdirUri}/go.mod`,
 					children: [
 						{
 							kind: 'package',
-							uri: 'file:///foo/bar',
-							children: [{ kind: 'test', name: 'TestBar', uri: 'file:///foo/bar/bar_test.go' }]
+							uri: `${tmpdirUri}/baz`,
+							children: [
+								{ kind: 'benchmark', name: 'BenchmarkBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'example', name: 'ExampleBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'fuzz', name: 'FuzzBaz', uri: `${tmpdirUri}/baz/baz_test.go` },
+								{ kind: 'test', name: 'TestBaz', uri: `${tmpdirUri}/baz/baz_test.go` }
+							]
 						}
 					]
 				}

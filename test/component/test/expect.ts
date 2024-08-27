@@ -29,26 +29,29 @@ export type ExpectedTestItem =
 
 const toResolve: MatcherFunction<[ExpectedTestItem[]]> = function (src, want): ExpectationResult {
 	const convert = (items: TestItemCollection) =>
-		[...items].map(([, item]): ExpectedTestItem => {
-			const { kind, name } = GoTestItem.parseId(item.id);
-			switch (kind) {
-				case 'test':
-				case 'benchmark':
-				case 'fuzz':
-				case 'example':
-					return {
-						kind,
-						name: name!,
-						uri: item.uri!.toString(),
-						children: convert(item.children)
-					};
-			}
-			return {
-				kind,
-				uri: item.uri!.toString(),
-				children: convert(item.children)
-			};
-		});
+		[...items]
+			.map((x) => x[1])
+			.sort((a, b) => a.id.localeCompare(b.id))
+			.map((item): ExpectedTestItem => {
+				const { kind, name } = GoTestItem.parseId(item.id);
+				switch (kind) {
+					case 'test':
+					case 'benchmark':
+					case 'fuzz':
+					case 'example':
+						return {
+							kind,
+							name: name!,
+							uri: item.uri!.toString(),
+							children: convert(item.children)
+						};
+				}
+				return {
+					kind,
+					uri: item.uri!.toString(),
+					children: convert(item.children)
+				};
+			});
 
 	const addChildren = (items: ExpectedTestItem[]) =>
 		items.forEach((item) => {

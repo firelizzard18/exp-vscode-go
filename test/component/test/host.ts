@@ -19,6 +19,9 @@ import { Commands, ConfigValue, Context, TestController, Workspace } from '../..
 import { CommandInvocation, GoExtensionAPI } from '../../../src/vscode-go';
 import { Spawner } from '../../../src/test/utils';
 import { GoTestController } from '../../../src/test/GoTestController';
+import cp from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
 
 interface Configuration {
 	enable: boolean;
@@ -29,9 +32,7 @@ interface Configuration {
 }
 
 export class TestHost implements Context {
-	readonly modules: Commands.Module[] = [];
-	readonly packages: Commands.Package[] = [];
-
+	readonly dir: string;
 	readonly testing = true;
 	readonly go = new TestGoExtensionAPI();
 	readonly commands = new TestCommands(this);
@@ -44,7 +45,8 @@ export class TestHost implements Context {
 	readonly controller = new MockTestController();
 	readonly manager = new GoTestController(this);
 
-	constructor(...config: HostConfig[]) {
+	constructor(dir: string, ...config: HostConfig[]) {
+		this.dir = dir;
 		config.forEach((x) => x(this));
 		this.manager.setup({ createController: () => this.controller });
 	}
@@ -65,15 +67,6 @@ export function withConfiguration(config: Partial<Configuration>): HostConfig {
 	return (host) => Object.assign(host.workspace.config, config);
 }
 
-export function withModule(mod: Commands.Module): HostConfig {
-	return (host: TestHost) => host.modules.push(mod);
-}
-
-export function withPackage(pkg: Commands.Package): HostConfig {
-	pkg.TestFiles?.forEach((x) => x.Tests.forEach((y) => (y.Loc.uri = x.URI)));
-	return (host: TestHost) => host.packages.push(pkg);
-}
-
 class TestCommands implements Commands {
 	readonly #host: TestHost;
 
@@ -81,58 +74,23 @@ class TestCommands implements Commands {
 		this.#host = host;
 	}
 
-	modules = (args: Commands.ModulesArgs): Thenable<Commands.ModulesResult> =>
-		Promise.resolve({
-			Modules: this.#host.modules.filter((x) => {
-				const dir = `${args.Dir}/`;
-				if (!x.GoMod.startsWith(dir)) {
-					return false;
-				}
-				if (args.MaxDepth < 0) {
-					return true;
-				}
-
-				const rel = x.GoMod.replace(dir, '').replace(/\/go\.mod/, '');
-				return [...rel.matchAll(/\//)].length <= args.MaxDepth;
-			})
+	#execute(cmd: string, args: any) {
+		// Assume that gopls is in ~/go/bin and has test support
+		const r = cp.spawnSync(path.join(os.homedir(), 'go', 'bin', 'gopls'), ['execute', cmd, JSON.stringify(args)], {
+			encoding: 'utf-8',
+			cwd: this.#host.dir
 		});
+		if (r.error) throw new Error('gopls error', { cause: r.error });
+		const x = JSON.parse(r.stdout);
+		return x;
+	}
+
+	modules = (args: Commands.ModulesArgs): Thenable<Commands.ModulesResult> => {
+		return this.#execute('gopls.modules', args);
+	};
 
 	packages = (args: Commands.PackagesArgs): Thenable<Commands.PackagesResults> => {
-		const dirs = args.Files.map((file) => {
-			const isFile =
-				this.#host.modules.some((mod) => mod.GoMod === file) ||
-				this.#host.packages.some((pkg) => pkg.TestFiles?.some((f) => f.URI === file));
-			if (isFile) {
-				return file.replace(/\/[^/]+$/, '');
-			}
-			return file;
-		});
-
-		const Module: Record<string, Commands.Module> = {};
-		const Packages = this.#host.packages.filter((pkg) =>
-			pkg.TestFiles?.some((file) =>
-				dirs.some((dir) => {
-					const s = `${dir}/`;
-					if (!file.URI.startsWith(s)) {
-						return false;
-					}
-					if (!args.Recursive && file.URI.replace(s, '').includes('/')) {
-						return false;
-					}
-
-					const mod = pkg.ModulePath && this.#host.modules.find((x) => x.Path === pkg.ModulePath);
-					if (mod) {
-						Module[pkg.ModulePath!] = mod;
-					} else if (pkg.ModulePath) {
-						throw new Error(`Missing module: ${pkg.ModulePath}`);
-					}
-
-					return true;
-				})
-			)
-		);
-
-		return Promise.resolve({ Module, Packages });
+		return this.#execute('gopls.packages', args);
 	};
 }
 

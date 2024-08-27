@@ -1,28 +1,8 @@
 import type { Uri, FileSystem as FullFileSystem } from 'vscode';
-import path from 'path';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
 type FileSystem = Pick<FullFileSystem, 'readFile' | 'readDirectory'>;
-
-export class TxTar implements FileSystem {
-	readonly #fs = new MapFS('/');
-
-	readFile(uri: Uri): Thenable<Uint8Array> {
-		return this.#fs.readFile(uri);
-	}
-
-	readDirectory(uri: Uri): Thenable<[string, FileType][]> {
-		return this.#fs.readDirectory(uri);
-	}
-
-	constructor(...args: Parameters<typeof Buffer.from>) {
-		const txtar = Buffer.from(...args).toString('utf-8');
-		const files = txtar.split(/^-- ([^\n]*) --$\n/gm).slice(1);
-		while (files.length > 1) {
-			const [file, content] = files.splice(0, 2);
-			this.#fs.mkdir(path.dirname(file)).set(path.basename(file), Buffer.from(content, 'utf-8'));
-		}
-	}
-}
 
 class MapFS extends Map<string, MapFS | Uint8Array> implements FileSystem {
 	readonly path: string;
@@ -30,6 +10,18 @@ class MapFS extends Map<string, MapFS | Uint8Array> implements FileSystem {
 	constructor(path: string) {
 		super();
 		this.path = path;
+	}
+
+	async copyTo(dst: string) {
+		for (const [name, entry] of this) {
+			const loc = path.join(dst, name);
+			if (entry instanceof MapFS) {
+				await fs.mkdir(loc);
+				await entry.copyTo(loc);
+			} else {
+				fs.writeFile(loc, entry);
+			}
+		}
 	}
 
 	readFile(uri: Uri): Thenable<Uint8Array> {
@@ -83,6 +75,18 @@ class MapFS extends Map<string, MapFS | Uint8Array> implements FileSystem {
 			throw new Error(`${path.join(this.path, fsPath)} is not a directory`);
 		}
 		return entry.#read(rest);
+	}
+}
+
+export class TxTar extends MapFS implements FileSystem {
+	constructor(...args: Parameters<typeof Buffer.from>) {
+		super('/');
+		const txtar = Buffer.from(...args).toString('utf-8');
+		const files = txtar.split(/^-- ([^\n]*) --$\n/gm).slice(1);
+		while (files.length > 1) {
+			const [file, content] = files.splice(0, 2);
+			this.mkdir(path.dirname(file)).set(path.basename(file), Buffer.from(content, 'utf-8'));
+		}
 	}
 }
 
