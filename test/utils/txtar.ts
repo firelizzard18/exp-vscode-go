@@ -19,7 +19,7 @@ class MapFS extends Map<string, MapFS | Uint8Array> implements FileSystem {
 				await fs.mkdir(loc);
 				await entry.copyTo(loc);
 			} else {
-				fs.writeFile(loc, entry);
+				await fs.writeFile(loc, entry);
 			}
 		}
 	}
