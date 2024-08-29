@@ -311,17 +311,6 @@ async function goTest({
 	}
 }
 
-async function mapTestItems(
-	resolver: TestItemResolver<GoTestItem>,
-	map: Map<string, TestItem>,
-	tests: Iterable<TestCase>
-) {
-	for (const test of tests) {
-		map.set(test.name, await resolver.getOrCreateAll(test));
-		await mapTestItems(resolver, map, test.getChildren());
-	}
-}
-
 function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 	// When the user clicks the run button on a package, they expect all of the
 	// tests within that package to run - they probably don't want to run the
