@@ -17,6 +17,7 @@ import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem'
 import { TestItemResolver } from './TestItemResolver';
 import { Context, doSafe, reportError, TestController, Workspace } from './testSupport';
 import { Spawner } from './utils';
+import { RunResolver } from './RunResolver';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
 	readonly original: TestRunRequest;
@@ -28,13 +29,13 @@ export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'excl
 export class GoTestRunner {
 	readonly #context: Context;
 	readonly #ctrl: TestController;
-	readonly #resolver: TestItemResolver<GoTestItem>;
+	readonly #resolver: RunResolver;
 	readonly #profile: TestRunProfile;
 
 	constructor(
 		context: Context,
 		ctrl: TestController,
-		resolver: TestItemResolver<GoTestItem>,
+		resolver: RunResolver,
 		label: string,
 		kind: TestRunProfileKind,
 		isDefault = false
@@ -47,7 +48,7 @@ export class GoTestRunner {
 			kind,
 			(request, token) =>
 				doSafe(context, 'execute test', async () => {
-					const r = await resolveRunRequest(context, resolver, request);
+					const r = await resolver.resolveRunRequest(context, request);
 					await this.#run(r, token);
 				}),
 			isDefault
@@ -75,9 +76,9 @@ export class GoTestRunner {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				const pkgItem = await this.#resolver.getOrCreateAll(pkg);
-				const include = await resolveTestItems(this.#resolver, request.include.get(pkg) || pkg.allTests());
-				const exclude = await resolveTestItems(this.#resolver, request.exclude.get(pkg) || []);
+				const pkgItem = await this.#resolver.getPackageItem(pkg);
+				const include = await this.#resolver.resolveTestItems(request.include.get(pkg) || pkg.allTests());
+				const exclude = await this.#resolver.resolveTestItems(request.exclude.get(pkg) || []);
 
 				await goTest({
 					context: this.#context,
@@ -132,7 +133,7 @@ async function goTest({
 	runAll: boolean;
 	include: Map<TestCase, TestItem>;
 	exclude: Map<TestCase, TestItem>;
-	resolver: TestItemResolver<GoTestItem>;
+	resolver: RunResolver;
 	token: CancellationToken;
 	spawn: Spawner;
 }) {
@@ -191,13 +192,7 @@ async function goTest({
 	};
 
 	// Map item to name for all tests in the package
-	const itemByName = new Map<string, TestItem>();
-	await Promise.all(
-		pkg.allTests().map(async (test) => {
-			const item = await resolver.get(test);
-			if (item) itemByName.set(test.name, item);
-		})
-	);
+	const itemByName = await resolver.testItemsByName(pkg);
 
 	const output = new Map<string, string[]>();
 	const currentLocation = new Map<string, Location>();
@@ -311,7 +306,7 @@ async function goTest({
 	}
 }
 
-function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
+export function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 	// When the user clicks the run button on a package, they expect all of the
 	// tests within that package to run - they probably don't want to run the
 	// benchmarks. So if a benchmark is not explicitly selected, don't run
@@ -328,106 +323,6 @@ function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 		}
 	}
 	return true;
-}
-
-async function resolveRunRequest(
-	{ workspace }: Context,
-	resolver: TestItemResolver<GoTestItem>,
-	request: TestRunRequest
-): Promise<GoTestRunRequest> {
-	const include = (request.include || [...resolver.roots]).map((x) => resolveGoTestItem(resolver, x));
-	const exclude = request.exclude?.map((x) => resolveGoTestItem(resolver, x)) || [];
-
-	// Get roots that aren't excluded
-	const roots = new Set(include.filter((x) => x instanceof RootItem));
-	exclude.forEach((x) => roots.delete(x as any));
-
-	// Get packages that aren't excluded
-	const packages = new Set(include.filter((x) => x instanceof Package));
-	await Promise.all(
-		[...roots].map(async (x) => {
-			for (const pkg of (await x.allPackages()) || []) {
-				packages.add(pkg);
-			}
-		})
-	);
-	exclude.forEach((x) => packages.delete(x as any));
-
-	// Get explicitly requested test items that aren't excluded
-	const tests = new Set(testCases(include));
-	for (const test of testCases(exclude)) {
-		tests.delete(test);
-	}
-
-	// Remove redundant requests for specific tests
-	for (const item of tests) {
-		const pkg = item.file.package;
-		if (!packages.has(pkg)) {
-			continue;
-		}
-
-		// If a package is selected, all tests within it will be run so ignore
-		// explicit requests for a test if its package is selected. Do the same
-		// for benchmarks, if shouldRunBenchmarks.
-		if (item.kind !== 'benchmark' || shouldRunBenchmarks(workspace, pkg)) {
-			tests.delete(item);
-		}
-	}
-
-	// Record requests for specific tests
-	const testsForPackage = new Map<Package, TestCase[]>();
-	for (const item of tests) {
-		const pkg = item.file.package;
-		packages.add(pkg);
-
-		if (!testsForPackage.has(pkg)) {
-			testsForPackage.set(pkg, []);
-		}
-		testsForPackage.get(pkg)!.push(item);
-	}
-
-	// Tests that should be excluded for each package
-	const excludeForPackage = new Map<Package, TestCase[]>();
-	for (const item of testCases(exclude)) {
-		const pkg = item.file.package;
-		if (!packages.has(pkg)) continue;
-
-		if (!excludeForPackage.has(pkg)) {
-			excludeForPackage.set(pkg, []);
-		}
-		excludeForPackage.get(pkg)!.push(item);
-	}
-
-	return {
-		...request,
-		original: request,
-		packages,
-		include: testsForPackage,
-		exclude: excludeForPackage
-	};
-}
-
-async function resolveTestItems<T extends GoTestItem>(resolver: TestItemResolver<GoTestItem>, goItems: T[]) {
-	return new Map(
-		await Promise.all(goItems.map(async (x): Promise<[T, TestItem]> => [x, await resolver.getOrCreateAll(x)]))
-	);
-}
-
-function resolveGoTestItem(resolver: TestItemResolver<GoTestItem>, item: TestItem) {
-	const pi = resolver.getProviderItem(item.id);
-	if (!pi) throw new Error(`Cannot find test item ${item.id}`);
-	return pi;
-}
-
-function* testCases(items: GoTestItem[]) {
-	for (const item of items) {
-		if (item instanceof TestCase) {
-			yield item;
-		}
-		if (item instanceof TestFile) {
-			yield* item.allTests();
-		}
-	}
 }
 
 function processPackageFailure(

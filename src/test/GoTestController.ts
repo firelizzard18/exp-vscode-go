@@ -6,6 +6,7 @@ import { safeInvalidate, TestItemResolver } from './TestItemResolver';
 import { GoTestItem } from './GoTestItem';
 import { GoTestRunner } from './GoTestRunner';
 import { GoTestItemProvider } from './GoTestItemProvider';
+import { RunResolver } from './RunResolver';
 
 export class GoTestController {
 	readonly #context: Context;
@@ -32,8 +33,10 @@ export class GoTestController {
 
 		this.#ctrl.refreshHandler = () => doSafe(this.#context, 'refresh tests', () => resolver.resolve());
 		this.#ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
-		new GoTestRunner(this.#context, this.#ctrl, resolver, 'Go', TestRunProfileKind.Run, true);
-		new GoTestRunner(this.#context, this.#ctrl, resolver, 'Go (debug)', TestRunProfileKind.Debug, true);
+
+		const runResolver = new RunResolver(resolver);
+		new GoTestRunner(this.#context, this.#ctrl, runResolver, 'Go', TestRunProfileKind.Run, true);
+		new GoTestRunner(this.#context, this.#ctrl, runResolver, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {

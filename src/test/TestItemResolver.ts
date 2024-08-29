@@ -13,7 +13,8 @@ import { TestController } from './testSupport';
 
 /**
  * Translates between VSCode's test resolver interface and a more typical tree
- * data style provider.
+ * data style provider. This is intentionally implemented in a way that is
+ * non-specific.
  */
 export class TestItemResolver<T> implements Disposable {
 	readonly #ctrl: TestController;
