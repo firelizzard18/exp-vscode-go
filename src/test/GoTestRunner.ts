@@ -136,10 +136,17 @@ async function goTest({
 	token: CancellationToken;
 	spawn: Spawner;
 }) {
+	const enqueueTest = (item: TestItem) => {
+		run.enqueued(item);
+		for (const [, child] of item.children) {
+			enqueueTest(child);
+		}
+	};
+
 	run.enqueued(pkgItem);
 	for (const [goItem, item] of include) {
 		if (!exclude.has(goItem)) {
-			run.enqueued(item);
+			enqueueTest(item);
 		}
 	}
 
@@ -247,25 +254,36 @@ async function goTest({
 
 			case 'run':
 			case 'start':
-				run.started(item || pkgItem);
+				if (!msg.Test) {
+					run.started(pkgItem);
+				} else if (item) {
+					run.started(item);
+				}
 				break;
 
 			case 'skip':
-				run.skipped(item || pkgItem);
+				if (!msg.Test) {
+					run.skipped(pkgItem);
+				} else if (item) {
+					run.skipped(item);
+				}
 				break;
 
 			case 'pass':
-				run.passed(item || pkgItem, elapsed);
+				if (!msg.Test) {
+					run.passed(pkgItem, elapsed);
+				} else if (item) {
+					run.passed(item, elapsed);
+				}
 				break;
 
 			case 'fail': {
-				if (!item) {
+				if (!msg.Test) {
 					processPackageFailure(run, pkg, pkgItem, elapsed, output.get(pkgItem.id) || [], errOutput);
-					break;
+				} else if (item) {
+					const messages = parseTestFailure(item, output.get(item.id) || []);
+					run.failed(item, messages, elapsed);
 				}
-
-				const messages = parseTestFailure(item, output.get(item.id) || []);
-				run.failed(item, messages, elapsed);
 				break;
 			}
 
