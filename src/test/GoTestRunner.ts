@@ -12,13 +12,10 @@ import {
 	TestRunRequest,
 	Uri
 } from 'vscode';
-import cp from 'child_process';
 import path from 'path';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem';
 import { TestItemResolver } from './TestItemResolver';
 import { Context, doSafe, reportError, TestController, Workspace } from './testSupport';
-import { killProcessTree } from '../utils/processUtils';
-import { LineBuffer } from '../utils/lineBuffer';
 import { Spawner } from './utils';
 
 export interface GoTestRunRequest extends Omit<TestRunRequest, 'include' | 'exclude'> {
