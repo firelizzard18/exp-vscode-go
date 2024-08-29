@@ -2,14 +2,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { CancellationToken, TestItem, TestRun, TestRunProfile, TestRunProfileKind } from 'vscode';
 import vscode from 'vscode';
-import { Package, TestCase } from './GoTestItem';
-import { Context, doSafe, reportError, TestController, Workspace } from './testSupport';
-import { Spawner } from './utils';
-import { PackageTestRun, TestRunRequest } from './GoTestRun';
+import { Package, TestCase } from './item';
+import { Context, doSafe, reportError, TestController, Workspace } from './testing';
+import { PackageTestRun, TestRunRequest } from './run';
 
 export type NewRun = (_: vscode.TestRunRequest) => Promise<TestRunRequest>;
 
-export class GoTestRunner {
+export class TestRunner {
 	readonly #context: Context;
 	readonly #ctrl: TestController;
 	readonly #profile: TestRunProfile;

@@ -1,5 +1,5 @@
 /**
- * Support for testing {@link GoTestController}
+ * Interfaces to support testing.
  */
 
 /* eslint-disable n/no-unpublished-import */

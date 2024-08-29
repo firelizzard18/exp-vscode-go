@@ -15,10 +15,10 @@ import type {
 	WorkspaceFolder
 } from 'vscode';
 import { Uri } from 'vscode';
-import { Commands, ConfigValue, Context, TestController, Workspace } from '../../../src/test/testSupport';
+import { Commands, ConfigValue, Context, TestController, Workspace } from '../../../src/test/testing';
 import { CommandInvocation, GoExtensionAPI } from '../../../src/vscode-go';
 import { Spawner } from '../../../src/test/utils';
-import { GoTestController } from '../../../src/test/GoTestController';
+import { TestManager } from '../../../src/test/manager';
 import cp from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,7 +47,7 @@ export class TestHost implements Context {
 	debug: Spawner = () => Promise.resolve();
 
 	readonly controller = new MockTestController();
-	readonly manager = new GoTestController(this);
+	readonly manager = new TestManager(this);
 
 	constructor(dir: string, ...config: HostConfig[]) {
 		this.dir = dir;

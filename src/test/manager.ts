@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { TestRunProfileKind, Uri } from 'vscode';
 import type { Disposable, TestItem } from 'vscode';
-import { Context, doSafe, TestController } from './testSupport';
-import { safeInvalidate, TestItemResolver } from './TestItemResolver';
-import { GoTestItem } from './GoTestItem';
-import { GoTestRunner, NewRun } from './GoTestRunner';
-import { GoTestItemProvider } from './GoTestItemProvider';
-import { TestRunRequest } from './GoTestRun';
+import { Context, doSafe, TestController } from './testing';
+import { safeInvalidate, TestItemResolver } from './itemResolver';
+import { GoTestItem } from './item';
+import { TestRunner, NewRun } from './runner';
+import { GoTestItemProvider } from './itemProvider';
+import { TestRunRequest } from './run';
 
-export class GoTestController {
+export class TestManager {
 	readonly #context: Context;
 	readonly #provider: GoTestItemProvider;
 	readonly #disposable: Disposable[] = [];
@@ -35,8 +35,8 @@ export class GoTestController {
 		this.#ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
 
 		const newRun: NewRun = (r) => TestRunRequest.from(this.#context, resolver, r);
-		new GoTestRunner(this.#context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
-		new GoTestRunner(this.#context, this.#ctrl, newRun, 'Go (debug)', TestRunProfileKind.Debug, true);
+		new TestRunner(this.#context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
+		new TestRunner(this.#context, this.#ctrl, newRun, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {

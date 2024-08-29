@@ -2,10 +2,10 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { Uri, Range } from 'vscode';
 import type { MarkdownString, ProviderResult, WorkspaceFolder } from 'vscode';
-import { Commands } from './testSupport';
+import { Commands } from './testing';
 import path from 'path';
-import { GoTestConfig } from './GoTestConfig';
-import { GoTestRetriever } from './GoTestRetriever';
+import { TestConfig } from './config';
+import { Commander } from './commander';
 
 export namespace GoTestItem {
 	/**
@@ -82,15 +82,15 @@ export abstract class RootItem implements GoTestItem {
 	abstract readonly label: string;
 	readonly hasChildren = true;
 
-	readonly #config: GoTestConfig;
-	readonly #retriever: GoTestRetriever;
+	readonly #config: TestConfig;
+	readonly #commander: Commander;
 	readonly #requested = new Map<string, Package>();
 
 	pkgRelations?: RelationMap<Package, Package | undefined>;
 
-	constructor(config: GoTestConfig, retriever: GoTestRetriever) {
+	constructor(config: TestConfig, retriever: Commander) {
 		this.#config = config;
-		this.#retriever = retriever;
+		this.#commander = retriever;
 	}
 
 	get dir(): Uri {
@@ -148,7 +148,7 @@ export abstract class RootItem implements GoTestItem {
 		switch (mode) {
 			case 'on': // Discover all packages
 				return Package.resolve(
-					await this.#retriever.getPackages({
+					await this.#commander.getPackages({
 						Files: [this.dir.toString()],
 						Mode: 1,
 						Recursive: true
@@ -166,7 +166,7 @@ export class Module extends RootItem implements GoTestItem {
 	readonly path: string;
 	readonly kind = 'module';
 
-	constructor(config: GoTestConfig, retriever: GoTestRetriever, mod: Commands.Module) {
+	constructor(config: TestConfig, retriever: Commander, mod: Commands.Module) {
 		super(config, retriever);
 		this.uri = Uri.parse(mod.GoMod);
 		this.path = mod.Path;
@@ -181,7 +181,7 @@ export class WorkspaceItem extends RootItem implements GoTestItem {
 	readonly ws: WorkspaceFolder;
 	readonly kind = 'workspace';
 
-	constructor(config: GoTestConfig, retriever: GoTestRetriever, ws: WorkspaceFolder) {
+	constructor(config: TestConfig, retriever: Commander, ws: WorkspaceFolder) {
 		super(config, retriever);
 		this.ws = ws;
 	}
@@ -217,7 +217,7 @@ export class Package implements GoTestItem {
 		return results;
 	}
 
-	readonly #config: GoTestConfig;
+	readonly #config: TestConfig;
 	readonly parent: RootItem;
 	readonly uri: Uri;
 	readonly path: string;
@@ -227,7 +227,7 @@ export class Package implements GoTestItem {
 
 	testRelations?: RelationMap<TestCase, TestCase | undefined>;
 
-	constructor(config: GoTestConfig, parent: RootItem, path: string, files: Commands.TestFile[]) {
+	constructor(config: TestConfig, parent: RootItem, path: string, files: Commands.TestFile[]) {
 		this.#config = config;
 		this.parent = parent;
 		this.path = path;
@@ -296,14 +296,14 @@ export class Package implements GoTestItem {
 }
 
 export class TestFile implements GoTestItem {
-	readonly #config: GoTestConfig;
+	readonly #config: TestConfig;
 	readonly package: Package;
 	readonly uri: Uri;
 	readonly kind = 'file';
 	readonly hasChildren = true;
 	readonly tests: TestCase[];
 
-	constructor(config: GoTestConfig, pkg: Package, file: Commands.TestFile) {
+	constructor(config: TestConfig, pkg: Package, file: Commands.TestFile) {
 		this.#config = config;
 		this.package = pkg;
 		this.uri = Uri.parse(file.URI);
@@ -331,14 +331,14 @@ export class TestFile implements GoTestItem {
 }
 
 export class TestCase implements GoTestItem {
-	readonly #config: GoTestConfig;
+	readonly #config: TestConfig;
 	readonly file: TestFile;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
 	readonly range: Range | undefined;
 
-	constructor(config: GoTestConfig, file: TestFile, test: Commands.TestCase) {
+	constructor(config: TestConfig, file: TestFile, test: Commands.TestCase) {
 		this.#config = config;
 		this.file = file;
 		this.uri = Uri.parse(test.Loc.uri);

@@ -20,7 +20,7 @@ import {
 	window
 } from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
-import { Context } from './testSupport';
+import { Context } from './testing';
 
 interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	run: TestRun;

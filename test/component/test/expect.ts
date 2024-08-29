@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-namespace */
 import { TestItemCollection } from 'vscode';
-import { GoTestItem } from '../../../src/test/GoTestItem';
+import { GoTestItem } from '../../../src/test/item';
 import { MockTestController, TestHost } from './host';
 import type { MatcherFunction, ExpectationResult } from 'expect';
 import { expect } from '@jest/globals';

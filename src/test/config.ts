@@ -1,7 +1,7 @@
-import { Workspace } from './testSupport';
+import { Workspace } from './testing';
 import { ConfigurationScope } from 'vscode';
 
-export class GoTestConfig {
+export class TestConfig {
 	readonly #workspace: Workspace;
 	readonly #scope?: ConfigurationScope;
 
@@ -11,7 +11,7 @@ export class GoTestConfig {
 	}
 
 	for(scope?: ConfigurationScope) {
-		return new GoTestConfig(this.#workspace, scope);
+		return new TestConfig(this.#workspace, scope);
 	}
 
 	get<T>(name: string) {

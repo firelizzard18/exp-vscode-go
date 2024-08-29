@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { commands, Event, ExtensionContext, ExtensionMode, extensions, tests, window, workspace } from 'vscode';
-import { Context, doSafe } from './testSupport';
+import { Context, doSafe } from './testing';
 import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
-import { GoTestController } from './GoTestController';
+import { TestManager } from './manager';
 
 export async function registerTestController(ctx: ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -36,30 +36,30 @@ export async function registerTestController(ctx: ExtensionContext) {
 	};
 
 	// Initialize the controller
-	const ctrl = new GoTestController(testCtx);
+	const manager = new TestManager(testCtx);
 	const setup = () => {
-		ctrl.setup({ createController: tests.createTestController });
-		window.visibleTextEditors.forEach((x) => ctrl.reload(x.document.uri));
+		manager.setup({ createController: tests.createTestController });
+		window.visibleTextEditors.forEach((x) => manager.reload(x.document.uri));
 	};
-	ctx.subscriptions.push(ctrl);
+	ctx.subscriptions.push(manager);
 
 	// [Command] Refresh
-	command('goExp.testExplorer.refresh', (item) => ctrl.enabled && ctrl.reload(item));
+	command('goExp.testExplorer.refresh', (item) => manager.enabled && manager.reload(item));
 
 	// [Event] Configuration change
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
 		if (e.affectsConfiguration('goExp.testExplorer.enable')) {
 			const enabled = workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable');
-			if (enabled === ctrl.enabled) {
+			if (enabled === manager.enabled) {
 				return;
 			}
 			if (enabled) {
 				setup();
 			} else {
-				ctrl.dispose();
+				manager.dispose();
 			}
 		}
-		if (!ctrl.enabled) {
+		if (!manager.enabled) {
 			return;
 		}
 		if (
@@ -68,28 +68,28 @@ export async function registerTestController(ctx: ExtensionContext) {
 			e.affectsConfiguration('goExp.testExplorer.nestPackages') ||
 			e.affectsConfiguration('goExp.testExplorer.nestSubtests')
 		) {
-			await ctrl.reload();
+			await manager.reload();
 		}
 	});
 
 	// [Event] File open
-	event(workspace.onDidOpenTextDocument, 'opened document', (e) => ctrl.enabled && ctrl.reload(e.uri));
+	event(workspace.onDidOpenTextDocument, 'opened document', (e) => manager.enabled && manager.reload(e.uri));
 
 	// [Event] File change
 	event(
 		workspace.onDidChangeTextDocument,
 		'updated document',
-		(e) => ctrl.enabled && ctrl.reload(e.document.uri, true)
+		(e) => manager.enabled && manager.reload(e.document.uri, true)
 	);
 
 	// [Event] Workspace change
-	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => ctrl.enabled && ctrl.reload());
+	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => manager.enabled && manager.reload());
 
 	// [Event] File created/deleted
 	const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);
 	ctx.subscriptions.push(watcher);
-	event(watcher.onDidCreate, 'created file', async (e) => ctrl.enabled && ctrl.reload(e));
-	event(watcher.onDidDelete, 'deleted file', async (e) => ctrl.enabled && ctrl.reload(e));
+	event(watcher.onDidCreate, 'created file', async (e) => manager.enabled && manager.reload(e));
+	event(watcher.onDidDelete, 'deleted file', async (e) => manager.enabled && manager.reload(e));
 
 	// Setup the controller (if enabled)
 	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {

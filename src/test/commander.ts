@@ -1,9 +1,9 @@
-import { Module, RootItem, WorkspaceItem } from './GoTestItem';
-import { Commands, Context } from './testSupport';
+import { Module, RootItem, WorkspaceItem } from './item';
+import { Commands, Context } from './testing';
 import { WorkspaceFolder } from 'vscode';
-import { GoTestConfig } from './GoTestConfig';
+import { TestConfig } from './config';
 
-export class GoTestRetriever {
+export class Commander {
 	readonly #context: Context;
 	#roots?: RootMap;
 
@@ -28,7 +28,7 @@ export class GoTestRetriever {
 				});
 
 				// Make an item for each module
-				const config = new GoTestConfig(this.#context.workspace, ws.uri);
+				const config = new TestConfig(this.#context.workspace, ws.uri);
 				let modules: RootItem[] = (Modules || []).map((x) => new Module(config, this, x));
 
 				// If the workspace is not a module, create a WorkspaceItem for it
@@ -67,7 +67,7 @@ export class GoTestRetriever {
 			if (mod) return mod;
 		}
 
-		const config = new GoTestConfig(this.#context.workspace, ws.uri);
+		const config = new TestConfig(this.#context.workspace, ws.uri);
 		return this.#roots!.getWorkspace(new WorkspaceItem(config, this, ws));
 	}
 

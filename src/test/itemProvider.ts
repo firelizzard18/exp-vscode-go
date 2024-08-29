@@ -1,9 +1,9 @@
 import { Uri } from 'vscode';
-import { TestItemData, TestItemProvider } from './TestItemResolver';
-import { Commands, Context } from './testSupport';
-import { GoTestConfig } from './GoTestConfig';
-import { GoTestRetriever } from './GoTestRetriever';
-import { GoTestItem, Package } from './GoTestItem';
+import { TestItemData, TestItemProvider } from './itemResolver';
+import { Commands, Context } from './testing';
+import { TestConfig } from './config';
+import { Commander } from './commander';
+import { GoTestItem, Package } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
@@ -13,14 +13,14 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
 
 	readonly #context: Context;
-	readonly #config: GoTestConfig;
-	readonly #retriever: GoTestRetriever;
+	readonly #config: TestConfig;
+	readonly #commander: Commander;
 	readonly #requested = new Set<string>();
 
 	constructor(context: Context) {
 		this.#context = context;
-		this.#config = new GoTestConfig(context.workspace);
-		this.#retriever = new GoTestRetriever(context);
+		this.#config = new TestConfig(context.workspace);
+		this.#commander = new Commander(context);
 	}
 
 	getTestItem(element: GoTestItem): TestItemData | Thenable<TestItemData> {
@@ -43,7 +43,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return element.getChildren();
 		}
 
-		return [...(await this.#retriever.getRoots(true))].filter((x) => {
+		return [...(await this.#commander.getRoots(true))].filter((x) => {
 			// Return a given root if discovery is on or the root (or more
 			// likely one of its children) has been explicitly requested
 			const mode = this.#config.for(x.uri).discovery();
@@ -81,7 +81,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		// Find the Module or WorkspaceItem a package belongs to.
 		const findOpts = { tryReload: true };
 		const findParent = async (pkg: Commands.Package) => {
-			return this.#retriever.getRootFor(ws, pkg, findOpts);
+			return this.#commander.getRootFor(ws, pkg, findOpts);
 		};
 
 		// With one URI and no recursion there *should* only be one result, but

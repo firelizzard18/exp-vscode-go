@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { TestItem } from 'vscode';
-import { GoTestItem, Package, RootItem, TestCase, TestFile } from './GoTestItem';
-import { TestItemResolver } from './TestItemResolver';
-import { Context } from './testSupport';
+import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
+import { TestItemResolver } from './itemResolver';
+import { Context } from './testing';
 import vscode from 'vscode';
-import { shouldRunBenchmarks } from './GoTestRunner';
+import { shouldRunBenchmarks } from './runner';
 import path from 'node:path';
 import { TestRun } from 'vscode';
 import { Location } from 'vscode';
