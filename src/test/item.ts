@@ -80,6 +80,7 @@ export abstract class RootItem implements GoTestItem {
 	abstract readonly uri: Uri;
 	abstract readonly kind: GoTestItem.Kind;
 	abstract readonly label: string;
+	abstract readonly dir: Uri;
 	readonly hasChildren = true;
 
 	readonly #config: TestConfig;
@@ -91,13 +92,6 @@ export abstract class RootItem implements GoTestItem {
 	constructor(config: TestConfig, retriever: Commander) {
 		this.#config = config;
 		this.#commander = retriever;
-	}
-
-	get dir(): Uri {
-		if (this instanceof Module) {
-			return Uri.joinPath(this.uri, '..');
-		}
-		return this.uri;
 	}
 
 	contains(uri: Uri) {
@@ -175,6 +169,10 @@ export class Module extends RootItem implements GoTestItem {
 	get label() {
 		return this.path;
 	}
+
+	get dir(): Uri {
+		return Uri.joinPath(this.uri, '..');
+	}
 }
 
 export class WorkspaceItem extends RootItem implements GoTestItem {
@@ -187,6 +185,10 @@ export class WorkspaceItem extends RootItem implements GoTestItem {
 	}
 
 	get uri() {
+		return this.ws.uri;
+	}
+
+	get dir(): Uri {
 		return this.ws.uri;
 	}
 

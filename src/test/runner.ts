@@ -55,14 +55,14 @@ export class TestRunner {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				await this.#goTest(run, pkg, token);
+				await this.#runPackage(run, pkg, token);
 			}
 		} finally {
 			run.end();
 		}
 	}
 
-	async #goTest(run: TestRun, pkg: PackageTestRun, token: CancellationToken) {
+	async #runPackage(run: TestRun, pkg: PackageTestRun, token: CancellationToken) {
 		const enqueueTest = (item: TestItem) => {
 			run.enqueued(item);
 			for (const [, child] of item.children) {

@@ -1,6 +1,6 @@
 import { Uri } from 'vscode';
 import { TestItemData, TestItemProvider } from './itemResolver';
-import { Commands, Context } from './testing';
+import { Context } from './testing';
 import { TestConfig } from './config';
 import { Commander } from './commander';
 import { GoTestItem, Package } from './item';
@@ -64,12 +64,6 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
-		const ws = this.#context.workspace.getWorkspaceFolder(uri);
-		if (!ws) {
-			// TODO: Handle tests from external packages?
-			return;
-		}
-
 		// Load tests for the given URI
 		const packages = Package.resolve(
 			await this.#context.commands.packages({
@@ -78,18 +72,17 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			})
 		);
 
-		// Find the Module or WorkspaceItem a package belongs to.
-		const findOpts = { tryReload: true };
-		const findParent = async (pkg: Commands.Package) => {
-			return this.#commander.getRootFor(ws, pkg, findOpts);
-		};
-
 		// With one URI and no recursion there *should* only be one result, but
 		// process in a loop regardless
 		const items: GoTestItem[] = [];
+		const findOpts = { tryReload: true };
 		for (const pkg of packages) {
+			// This shouldn't happen, but just in case
+			if (!pkg.TestFiles?.length) continue;
+
 			// Find the module or workspace that owns this package
-			const parent = await findParent(pkg);
+			const parent = await this.#commander.getRootFor(pkg, findOpts);
+			if (!parent) continue; // TODO: Handle tests from external packages?
 
 			// Mark the package as requested
 			this.#requested.add(parent.uri.toString());

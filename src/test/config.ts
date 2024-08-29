@@ -1,6 +1,9 @@
 import { Workspace } from './testing';
 import { ConfigurationScope } from 'vscode';
 
+/**
+ * Wrapper for accessing test explorer configuration.
+ */
 export class TestConfig {
 	readonly #workspace: Workspace;
 	readonly #scope?: ConfigurationScope;
