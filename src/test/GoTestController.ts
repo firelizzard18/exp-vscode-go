@@ -4,9 +4,9 @@ import type { Disposable, TestItem } from 'vscode';
 import { Context, doSafe, TestController } from './testSupport';
 import { safeInvalidate, TestItemResolver } from './TestItemResolver';
 import { GoTestItem } from './GoTestItem';
-import { GoTestRunner } from './GoTestRunner';
+import { GoTestRunner, NewRun } from './GoTestRunner';
 import { GoTestItemProvider } from './GoTestItemProvider';
-import { RunResolver } from './RunResolver';
+import { TestRunRequest } from './GoTestRun';
 
 export class GoTestController {
 	readonly #context: Context;
@@ -34,9 +34,9 @@ export class GoTestController {
 		this.#ctrl.refreshHandler = () => doSafe(this.#context, 'refresh tests', () => resolver.resolve());
 		this.#ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
 
-		const runResolver = new RunResolver(resolver);
-		new GoTestRunner(this.#context, this.#ctrl, runResolver, 'Go', TestRunProfileKind.Run, true);
-		new GoTestRunner(this.#context, this.#ctrl, runResolver, 'Go (debug)', TestRunProfileKind.Debug, true);
+		const newRun: NewRun = (r) => TestRunRequest.from(this.#context, resolver, r);
+		new GoTestRunner(this.#context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
+		new GoTestRunner(this.#context, this.#ctrl, newRun, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {
