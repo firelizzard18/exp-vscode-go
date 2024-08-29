@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export { Uri } from './uri';
 import type * as vscode from 'vscode';
+import { EventEmitter as EEImpl } from './../utils/eventEmitter';
 
 export enum FileType {
 	Unknown = 0,
@@ -95,25 +96,6 @@ export class Position {
 	// with(change: { line?: number; character?: number }): Position;
 }
 
-export class EventEmitter<T> implements vscode.EventEmitter<T> {
-	readonly #listeners = new Set<(_: T) => any>();
-
-	readonly event = (
-		listener: (e: T) => any,
-		thisArgs: any = {},
-		disposables?: vscode.Disposable[]
-	): vscode.Disposable => {
-		const l = (e: T) => listener.call(thisArgs, e);
-		const d = { dispose: () => this.#listeners.delete(l) };
-		this.#listeners.add(l);
-		disposables?.push(d);
-		return d;
-	};
-
-	fire = async (e: T): Promise<void> => {
-		// Return a promise to allow tests to await the result
-		await Promise.all([...this.#listeners].map((l) => l(e)));
-	};
-
+export class EventEmitter<T> extends EEImpl<T> implements vscode.EventEmitter<T> {
 	readonly dispose = () => {};
 }

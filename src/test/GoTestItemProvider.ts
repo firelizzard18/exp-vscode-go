@@ -1,9 +1,10 @@
-import { Uri, EventEmitter } from 'vscode';
+import { Uri } from 'vscode';
 import { TestItemData, TestItemProvider } from './TestItemResolver';
 import { Commands, Context } from './testSupport';
 import { GoTestConfig } from './GoTestConfig';
 import { GoTestRetriever } from './GoTestRetriever';
 import { GoTestItem, Package } from './GoTestItem';
+import { EventEmitter } from '../utils/eventEmitter';
 
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly #didChangeTestItem = new EventEmitter<GoTestItem[] | void>();
