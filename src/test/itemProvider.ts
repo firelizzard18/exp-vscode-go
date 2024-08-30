@@ -29,6 +29,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			label: element.label,
 			uri: element.uri,
 			hasChildren: element.hasChildren,
+			preloadChildren: element instanceof TestCase,
 			range: element.range,
 			error: element.error
 		};
@@ -72,29 +73,42 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			})
 		);
 
+		const updated = new Set<GoTestItem>();
+		const update = async (item: GoTestItem) => {
+			updated.add(item);
+			const parent = await item.getParent();
+			if (parent) await update(parent);
+		};
+
 		// With one URI and no recursion there *should* only be one result, but
 		// process in a loop regardless
-		const items: GoTestItem[] = [];
 		const findOpts = { tryReload: true };
 		for (const pkg of packages) {
 			// This shouldn't happen, but just in case
 			if (!pkg.TestFiles?.length) continue;
 
 			// Find the module or workspace that owns this package
-			const parent = await this.#commander.getRootFor(pkg, findOpts);
-			if (!parent) continue; // TODO: Handle tests from external packages?
+			const root = await this.#commander.getRootFor(pkg, findOpts);
+			if (!root) continue; // TODO: Handle tests from external packages?
+			update(root);
 
 			// Mark the package as requested
-			this.#requested.add(parent.uri.toString());
-			parent.markRequested(pkg);
+			this.#requested.add(root.uri.toString());
+			root.markRequested(pkg);
 
-			// Update the data model
-			items.push(parent);
+			// Find the package item
+			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
+			if (!pkgItem) continue; // This indicates an inconsistency or race condition
+			update(pkgItem);
+
+			// Find the file
+			const file = pkgItem.files.find((x) => x.uri.toString() === uri.toString());
+			if (file) update(file);
 		}
 
-		await this.#didChangeTestItem.fire(items);
+		await this.#didChangeTestItem.fire([...updated]);
 		if (invalidate) {
-			await this.#didInvalidateTestResults.fire(items);
+			await this.#didInvalidateTestResults.fire([...updated]);
 		}
 	}
 

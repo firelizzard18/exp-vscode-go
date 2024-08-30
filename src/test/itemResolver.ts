@@ -11,6 +11,8 @@ import type {
 } from 'vscode';
 import { TestController } from './testing';
 
+const debugResolve = false;
+
 /**
  * Translates between VSCode's test resolver interface and a more typical tree
  * data style provider. This is intentionally implemented in a way that is
@@ -86,6 +88,8 @@ export class TestItemResolver<T> implements Disposable {
 			);
 		} finally {
 			if (item) item.busy = false;
+
+			debugTree(this.#ctrl.items);
 		}
 	}
 
@@ -99,14 +103,8 @@ export class TestItemResolver<T> implements Disposable {
 		// Create a TestItem for each T, including its ancestors
 		const items = await Promise.all(providerItems.map((x) => this.getOrCreateAll(x)));
 
-		// For each parent (using a Set to avoid duplicate work), force a
-		// refresh by dumping its children and resolving
-		return Promise.all(
-			items.map(async (x) => {
-				x.children.replace([]);
-				return this.resolve(x);
-			})
-		);
+		// Refresh
+		await Promise.all(items.map((x) => this.resolve(x)));
 	}
 
 	async #didInvalidateTestResults(providerItems?: T[]) {
@@ -144,6 +142,11 @@ export class TestItemResolver<T> implements Disposable {
 		item.canResolveChildren = data.hasChildren;
 		item.range = data.range;
 		item.error = data.error;
+
+		if (data.preloadChildren) {
+			await this.resolve(item);
+		}
+
 		return item;
 	}
 }
@@ -171,6 +174,22 @@ export interface TestItemData {
 	sortText?: string;
 	tags?: readonly TestTag[];
 	hasChildren: boolean;
+	preloadChildren: boolean;
 	range?: Range;
 	error?: string | MarkdownString;
+}
+
+function debugTree(root: TestItemCollection) {
+	if (!debugResolve) return;
+	const s = ['Root'];
+	const add = (item: TestItem, indent: string) => {
+		s.push(`${indent}${item.label}`);
+		for (const [, child] of item.children) {
+			add(child, indent + '  ');
+		}
+	};
+	for (const [, item] of root) {
+		add(item, '  ');
+	}
+	console.log(s.join('\n'));
 }

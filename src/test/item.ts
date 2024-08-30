@@ -110,7 +110,7 @@ export abstract class RootItem implements GoTestItem {
 	}
 
 	async getChildren(): Promise<GoTestItem[]> {
-		const packages = await this.#getPackages();
+		const packages = await this.getPackages();
 		const i = packages.findIndex((x) => x.uri.toString() === this.dir.toString());
 		if (i < 0) return packages;
 
@@ -119,7 +119,7 @@ export abstract class RootItem implements GoTestItem {
 		return [...packages, ...selfPkg.getChildren()];
 	}
 
-	async #getPackages() {
+	async getPackages() {
 		const packages = await this.allPackages();
 
 		// Rebuild package relations
@@ -268,9 +268,12 @@ export class Package implements GoTestItem {
 	 * on configuration.
 	 */
 	#getTests() {
+		const nestSubtests = this.#config.nestSubtests();
+		const showFiles = this.#config.showFiles();
+
 		// Rebuild test relations
 		this.testRelations = undefined;
-		if (this.#config.nestSubtests()) {
+		if (nestSubtests) {
 			const allTests = this.allTests();
 			this.testRelations = new RelationMap(
 				allTests.map((test): [TestCase, TestCase | undefined] => {
@@ -283,10 +286,13 @@ export class Package implements GoTestItem {
 			);
 		}
 
-		if (this.#config.showFiles()) {
+		if (showFiles) {
 			return this.files;
 		}
-		return this.files.flatMap((x) => x.getChildren());
+		if (nestSubtests) {
+			return this.testRelations!.getChildren(undefined) || [];
+		}
+		return this.files.flatMap((x) => x.tests);
 	}
 
 	/**
@@ -321,7 +327,7 @@ export class TestFile implements GoTestItem {
 	}
 
 	getChildren(): GoTestItem[] {
-		return this.package.testRelations?.getChildren(undefined) || this.tests;
+		return this.tests;
 	}
 
 	/**
