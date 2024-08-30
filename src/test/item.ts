@@ -309,7 +309,7 @@ export class TestFile implements GoTestItem {
 		this.#config = config;
 		this.package = pkg;
 		this.uri = Uri.parse(file.URI);
-		this.tests = file.Tests.map((x) => new TestCase(this.#config, this, x));
+		this.tests = file.Tests.map((x) => new StaticTestCase(this.#config, this, x));
 	}
 
 	get label() {
@@ -332,23 +332,19 @@ export class TestFile implements GoTestItem {
 	}
 }
 
-export class TestCase implements GoTestItem {
+export abstract class TestCase implements GoTestItem {
 	readonly #config: TestConfig;
 	readonly file: TestFile;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
-	readonly range: Range | undefined;
 
-	constructor(config: TestConfig, file: TestFile, test: Commands.TestCase) {
+	constructor(config: TestConfig, file: TestFile, uri: Uri, kind: GoTestItem.Kind, name: string) {
 		this.#config = config;
 		this.file = file;
-		this.uri = Uri.parse(test.Loc.uri);
-		this.name = test.Name;
-		this.kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
-
-		const { start, end } = test.Loc.range;
-		this.range = new Range(start.line, start.character, end.line, end.character);
+		this.uri = uri;
+		this.kind = kind;
+		this.name = name;
 	}
 
 	get label() {
@@ -376,6 +372,31 @@ export class TestCase implements GoTestItem {
 
 	getChildren(): TestCase[] {
 		return this.file.package.testRelations?.getChildren(this) || [];
+	}
+
+	newChild(name: string) {
+		const child = new DynamicTestCase(this.#config, this, name);
+		this.file.tests.push(child);
+		return child;
+	}
+}
+
+export class StaticTestCase extends TestCase {
+	readonly range: Range | undefined;
+
+	constructor(config: TestConfig, file: TestFile, test: Commands.TestCase) {
+		const uri = Uri.parse(test.Loc.uri);
+		const kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
+		super(config, file, uri, kind, test.Name);
+
+		const { start, end } = test.Loc.range;
+		this.range = new Range(start.line, start.character, end.line, end.character);
+	}
+}
+
+export class DynamicTestCase extends TestCase {
+	constructor(config: TestConfig, parent: TestCase, name: string) {
+		super(config, parent.file, parent.uri, parent.kind, name);
 	}
 }
 

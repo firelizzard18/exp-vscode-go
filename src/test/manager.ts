@@ -34,7 +34,7 @@ export class TestManager {
 		this.#ctrl.refreshHandler = () => doSafe(this.#context, 'refresh tests', () => resolver.resolve());
 		this.#ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
 
-		const newRun: NewRun = (r) => TestRunRequest.from(this.#context, resolver, r);
+		const newRun: NewRun = (r) => TestRunRequest.from(this.#context, resolver, this.#provider, r);
 		new TestRunner(this.#context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
 		new TestRunner(this.#context, this.#ctrl, newRun, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}

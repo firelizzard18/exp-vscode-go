@@ -3,7 +3,7 @@ import { TestItemData, TestItemProvider } from './itemResolver';
 import { Context } from './testing';
 import { TestConfig } from './config';
 import { Commander } from './commander';
-import { GoTestItem, Package } from './item';
+import { GoTestItem, Package, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
@@ -96,5 +96,51 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		if (invalidate) {
 			await this.#didInvalidateTestResults.fire(items);
 		}
+	}
+
+	async resolveTestCase(pkg: Package, name: string) {
+		// Check for an exact match
+		for (const file of pkg.files) {
+			for (const test of file.tests) {
+				if (test.name === name) {
+					return test;
+				}
+			}
+		}
+
+		// Find the parent test case
+		let parent: TestCase;
+		const separators: number[] = [];
+		outer: for (let n = name; ; ) {
+			const i = n.lastIndexOf('/');
+			if (i < 0) return;
+			n = n.substring(0, i);
+			separators.push(i);
+
+			for (const file of pkg.files) {
+				for (const test of file.tests) {
+					if (test.name === n) {
+						parent = test;
+						break outer;
+					}
+				}
+			}
+		}
+		if (!parent) return;
+
+		// Depending on configuration there are many different cases for which
+		// items should be refreshed. Instead of handling all that, just refresh
+		// everything that could be affected.
+		const updates: GoTestItem[] = [parent.file.package, parent.file, parent];
+
+		for (const i of separators.slice(1).reverse()) {
+			parent = parent.newChild(name.substring(0, i));
+			updates.push(parent);
+		}
+		const test = parent.newChild(name);
+		updates.push(test);
+
+		await this.#didChangeTestItem.fire(updates);
+		return test;
 	}
 }

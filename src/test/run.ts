@@ -11,6 +11,7 @@ import { TestRun } from 'vscode';
 import { Location } from 'vscode';
 import { TestMessage } from 'vscode';
 import { Uri, Position } from 'vscode';
+import { GoTestItemProvider } from './itemProvider';
 
 /**
  * go test -json output format.
@@ -25,29 +26,40 @@ interface Event {
 	Elapsed?: number; // seconds
 }
 
+const symResolver = Symbol('resolver');
+const symProvider = Symbol('provider');
+
 export class TestRunRequest {
 	readonly source: vscode.TestRunRequest;
 	readonly #packages: Set<Package>;
 	readonly include: Map<Package, TestCase[]>;
 	readonly exclude: Map<Package, TestCase[]>;
 
-	readonly #resolver: TestItemResolver<GoTestItem>;
+	readonly [symResolver]: TestItemResolver<GoTestItem>;
+	readonly [symProvider]: GoTestItemProvider;
 
 	private constructor(
 		original: vscode.TestRunRequest,
 		packages: Set<Package>,
 		include: Map<Package, TestCase[]>,
 		exclude: Map<Package, TestCase[]>,
-		resolver: TestItemResolver<GoTestItem>
+		resolver: TestItemResolver<GoTestItem>,
+		provider: GoTestItemProvider
 	) {
 		this.source = original;
 		this.#packages = packages;
 		this.include = include;
 		this.exclude = exclude;
-		this.#resolver = resolver;
+		this[symResolver] = resolver;
+		this[symProvider] = provider;
 	}
 
-	static async from({ workspace }: Context, resolver: TestItemResolver<GoTestItem>, request: vscode.TestRunRequest) {
+	static async from(
+		{ workspace }: Context,
+		resolver: TestItemResolver<GoTestItem>,
+		provider: GoTestItemProvider,
+		request: vscode.TestRunRequest
+	) {
 		const include = (request.include || [...resolver.roots]).map((x) => resolveGoItem(resolver, x));
 		const exclude = request.exclude?.map((x) => resolveGoItem(resolver, x)) || [];
 
@@ -111,7 +123,7 @@ export class TestRunRequest {
 			excludeForPackage.get(pkg)!.push(item);
 		}
 
-		return new this(request, packages, testsForPackage, excludeForPackage, resolver);
+		return new this(request, packages, testsForPackage, excludeForPackage, resolver, provider);
 	}
 
 	get size() {
@@ -120,32 +132,20 @@ export class TestRunRequest {
 
 	async *packages(run: TestRun) {
 		for (const pkg of this.#packages) {
-			const pkgItem = await this.#resolver.getOrCreateAll(pkg);
+			const pkgItem = await this[symResolver].getOrCreateAll(pkg);
 			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.allTests());
 			const exclude = await this.#resolveTestItems(this.exclude.get(pkg) || []);
-			const itemByName = await this.#testItemsByName(pkg);
 
-			yield new PackageTestRun(this, run, pkg, pkgItem, include, exclude, itemByName);
+			yield new PackageTestRun(this, run, pkg, pkgItem, include, exclude);
 		}
 	}
 
 	async #resolveTestItems<T extends GoTestItem>(goItems: T[]) {
 		return new Map(
 			await Promise.all(
-				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this.#resolver.getOrCreateAll(x)])
+				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this[symResolver].getOrCreateAll(x)])
 			)
 		);
-	}
-
-	async #testItemsByName(pkg: Package) {
-		const itemByName = new Map<string, TestItem>();
-		await Promise.all(
-			pkg.allTests().map(async (test) => {
-				const item = await this.#resolver.get(test);
-				if (item) itemByName.set(test.name, item);
-			})
-		);
-		return itemByName;
 	}
 }
 
@@ -156,7 +156,6 @@ export class PackageTestRun {
 	readonly exclude: Map<TestCase, TestItem>;
 	readonly #request: TestRunRequest;
 	readonly #run: TestRun;
-	readonly #itemByName: Map<string, TestItem>;
 
 	constructor(
 		request: TestRunRequest,
@@ -164,8 +163,7 @@ export class PackageTestRun {
 		goItem: Package,
 		testItem: TestItem,
 		include: Map<TestCase, TestItem>,
-		exclude: Map<TestCase, TestItem>,
-		itemByName: Map<string, TestItem>
+		exclude: Map<TestCase, TestItem>
 	) {
 		this.goItem = goItem;
 		this.testItem = testItem;
@@ -173,7 +171,6 @@ export class PackageTestRun {
 		this.exclude = exclude;
 		this.#request = request;
 		this.#run = run;
-		this.#itemByName = itemByName;
 	}
 
 	readonly stderr: string[] = [];
@@ -184,7 +181,7 @@ export class PackageTestRun {
 		return !this.#request.include.has(this.goItem);
 	}
 
-	onStdout(s: string) {
+	async onStdout(s: string) {
 		// Attempt to parse the output as a test message
 		let msg: Event;
 		try {
@@ -195,7 +192,10 @@ export class PackageTestRun {
 			return;
 		}
 
-		const item = this.#itemByName.get(msg.Test!);
+		// Resolve the named test case and its associated test item
+		const test = msg.Test ? await this.#request[symProvider].resolveTestCase(this.goItem, msg.Test) : undefined;
+		const item = test && (await this.#request[symResolver].get(test));
+
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
 			case 'output': {
