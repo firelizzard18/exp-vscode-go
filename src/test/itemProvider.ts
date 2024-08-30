@@ -3,7 +3,7 @@ import { TestItemData, TestItemProvider } from './itemResolver';
 import { Context } from './testing';
 import { TestConfig } from './config';
 import { Commander } from './commander';
-import { GoTestItem, Package, TestCase } from './item';
+import { findParentTestCase, GoTestItem, Package, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
@@ -73,12 +73,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			})
 		);
 
-		const updated = new Set<GoTestItem>();
-		const update = async (item: GoTestItem) => {
-			updated.add(item);
-			const parent = await item.getParent();
-			if (parent) await update(parent);
-		};
+		const updated = new UpdateSet();
 
 		// With one URI and no recursion there *should* only be one result, but
 		// process in a loop regardless
@@ -90,7 +85,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			// Find the module or workspace that owns this package
 			const root = await this.#commander.getRootFor(pkg, findOpts);
 			if (!root) continue; // TODO: Handle tests from external packages?
-			update(root);
+			await updated.add(root);
 
 			// Mark the package as requested
 			this.#requested.add(root.uri.toString());
@@ -99,11 +94,11 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			// Find the package item
 			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
 			if (!pkgItem) continue; // This indicates an inconsistency or race condition
-			update(pkgItem);
+			await updated.add(pkgItem);
 
 			// Find the file
 			const file = pkgItem.files.find((x) => x.uri.toString() === uri.toString());
-			if (file) update(file);
+			if (file) await updated.add(file);
 		}
 
 		await this.#didChangeTestItem.fire([...updated]);
@@ -122,39 +117,34 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			}
 		}
 
-		// Find the parent test case
-		let parent: TestCase;
-		const separators: number[] = [];
-		outer: for (let n = name; ; ) {
-			const i = n.lastIndexOf('/');
-			if (i < 0) return;
-			n = n.substring(0, i);
-			separators.push(i);
-
-			for (const file of pkg.files) {
-				for (const test of file.tests) {
-					if (test.name === n) {
-						parent = test;
-						break outer;
-					}
-				}
-			}
-		}
+		// Find the parent test case and create a dynamic subtest
+		const parent = findParentTestCase(pkg.allTests(), name);
 		if (!parent) return;
 
-		// Depending on configuration there are many different cases for which
-		// items should be refreshed. Instead of handling all that, just refresh
-		// everything that could be affected.
-		const updates: GoTestItem[] = [parent.file.package, parent.file, parent];
-
-		for (const i of separators.slice(1).reverse()) {
-			parent = parent.newChild(name.substring(0, i));
-			updates.push(parent);
-		}
-		const test = parent.newChild(name);
-		updates.push(test);
-
-		await this.#didChangeTestItem.fire(updates);
+		const test = pkg.makeDynamicTestCase(parent, name);
+		await this.#didChangeTestItem.fire(await UpdateSet.for(test));
 		return test;
+	}
+}
+
+class UpdateSet {
+	readonly #items = new Set<GoTestItem>();
+
+	static async for(...items: GoTestItem[]) {
+		const set = new UpdateSet();
+		for (const item of items) {
+			await set.add(item);
+		}
+		return [...set];
+	}
+
+	async add(item: GoTestItem) {
+		this.#items.add(item);
+		const parent = await item.getParent();
+		if (parent) await this.add(parent);
+	}
+
+	[Symbol.iterator]() {
+		return this.#items.values();
 	}
 }

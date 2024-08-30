@@ -276,13 +276,10 @@ export class Package implements GoTestItem {
 		if (nestSubtests) {
 			const allTests = this.allTests();
 			this.testRelations = new RelationMap(
-				allTests.map((test): [TestCase, TestCase | undefined] => {
-					const i = test.name.lastIndexOf('/');
-					if (i < 0) return [test, undefined];
-					const name = test.name.substring(0, i);
-					const parent = allTests.find((x) => x.name === name);
-					return [test, parent];
-				})
+				allTests.map((test): [TestCase, TestCase | undefined] => [
+					test,
+					findParentTestCase(allTests, test.name)
+				])
 			);
 		}
 
@@ -300,6 +297,12 @@ export class Package implements GoTestItem {
 	 */
 	allTests() {
 		return this.files.flatMap((x) => x.allTests());
+	}
+
+	makeDynamicTestCase(parent: TestCase, name: string) {
+		const child = new DynamicTestCase(this.#config, parent, name);
+		parent.file.tests.push(child);
+		return child;
 	}
 }
 
@@ -379,12 +382,6 @@ export abstract class TestCase implements GoTestItem {
 	getChildren(): TestCase[] {
 		return this.file.package.testRelations?.getChildren(this) || [];
 	}
-
-	newChild(name: string) {
-		const child = new DynamicTestCase(this.#config, this, name);
-		this.file.tests.push(child);
-		return child;
-	}
 }
 
 export class StaticTestCase extends TestCase {
@@ -421,11 +418,34 @@ class RelationMap<Child, Parent> {
 		}
 	}
 
+	add(parent: Parent, child: Child) {
+		this.#childParent.set(child, parent);
+		const children = this.#parentChild.get(parent);
+		if (children) {
+			children.push(child);
+		} else {
+			this.#parentChild.set(parent, [child]);
+		}
+	}
+
 	getParent(child: Child) {
 		return this.#childParent.get(child);
 	}
 
 	getChildren(parent: Parent) {
 		return this.#parentChild.get(parent);
+	}
+}
+
+export function findParentTestCase(allTests: TestCase[], name: string) {
+	for (;;) {
+		const i = name.lastIndexOf('/');
+		if (i < 0) return;
+		name = name.substring(0, i);
+		for (const test of allTests) {
+			if (test.name === name) {
+				return test;
+			}
+		}
 	}
 }
