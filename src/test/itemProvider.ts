@@ -85,7 +85,6 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			// Find the module or workspace that owns this package
 			const root = await this.#commander.getRootFor(pkg, findOpts);
 			if (!root) continue; // TODO: Handle tests from external packages?
-			await updated.add(root);
 
 			// Mark the package as requested
 			this.#requested.add(root.uri.toString());
@@ -94,7 +93,11 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			// Find the package item
 			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
 			if (!pkgItem) continue; // This indicates an inconsistency or race condition
-			await updated.add(pkgItem);
+
+			if (!this.#config.for(uri).showFiles()) {
+				await updated.add(pkgItem);
+				continue;
+			}
 
 			// Find the file
 			const file = pkgItem.files.find((x) => x.uri.toString() === uri.toString());
