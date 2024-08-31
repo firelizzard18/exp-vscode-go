@@ -89,7 +89,7 @@ export class TestItemResolver<T> implements Disposable {
 		} finally {
 			if (item) item.busy = false;
 
-			debugTree(this.#ctrl.items);
+			debugTree(this.#ctrl.items, item ? `Resolving ${item.id}` : 'Resolving (root)');
 		}
 	}
 
@@ -126,22 +126,25 @@ export class TestItemResolver<T> implements Disposable {
 	async getOrCreateAll(providerItem: T): Promise<TestItem> {
 		const parent = await this.#provider.getParent(providerItem);
 		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
-		const item = await this.#getOrCreate(providerItem, children);
-		await children.add(item);
-		return item;
+		return await this.#getOrCreate(providerItem, children, true);
 	}
 
-	async #getOrCreate(providerItem: T, children: TestItemCollection): Promise<TestItem> {
+	async #getOrCreate(providerItem: T, children: TestItemCollection, add = false): Promise<TestItem> {
 		const data = await this.#provider.getTestItem(providerItem);
 		this.#items.set(data.id, providerItem);
 
-		const item = children.get(data.id) || this.#ctrl.createTestItem(data.id, data.label, data.uri);
+		const existing = children.get(data.id);
+		const item = existing || this.#ctrl.createTestItem(data.id, data.label, data.uri);
 		item.description = data.description;
 		item.sortText = data.sortText;
 		item.tags = data.tags || [];
 		item.canResolveChildren = data.hasChildren;
 		item.range = data.range;
 		item.error = data.error;
+
+		if (add) {
+			await children.add(item);
+		}
 
 		if (data.preloadChildren) {
 			await this.resolve(item);
@@ -179,9 +182,9 @@ export interface TestItemData {
 	error?: string | MarkdownString;
 }
 
-function debugTree(root: TestItemCollection) {
+function debugTree(root: TestItemCollection, label: string) {
 	if (!debugResolve) return;
-	const s = ['Root'];
+	const s = [label];
 	const add = (item: TestItem, indent: string) => {
 		s.push(`${indent}${item.label}`);
 		for (const [, child] of item.children) {

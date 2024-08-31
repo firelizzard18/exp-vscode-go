@@ -234,8 +234,7 @@ export class Package implements GoTestItem {
 	readonly kind = 'package';
 	readonly hasChildren = true;
 	readonly files: TestFile[];
-
-	testRelations?: RelationMap<TestCase, TestCase | undefined>;
+	readonly testRelations: RelationMap<TestCase, TestCase | undefined>;
 
 	constructor(config: TestConfig, parent: RootItem, path: string, files: Commands.TestFile[]) {
 		this.#config = config;
@@ -243,6 +242,11 @@ export class Package implements GoTestItem {
 		this.path = path;
 		this.uri = Uri.joinPath(Uri.parse(files[0].URI), '..');
 		this.files = files.filter((x) => x.Tests.length).map((x) => new TestFile(this.#config, this, x));
+
+		const allTests = this.files.flatMap((x) => x.allTests());
+		this.testRelations = new RelationMap(
+			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)])
+		);
 	}
 
 	get label() {
@@ -276,25 +280,10 @@ export class Package implements GoTestItem {
 	 * on configuration.
 	 */
 	#getTests() {
-		const nestSubtests = this.#config.nestSubtests();
-		const showFiles = this.#config.showFiles();
-
-		// Rebuild test relations
-		this.testRelations = undefined;
-		if (nestSubtests) {
-			const allTests = this.allTests();
-			this.testRelations = new RelationMap(
-				allTests.map((test): [TestCase, TestCase | undefined] => [
-					test,
-					findParentTestCase(allTests, test.name)
-				])
-			);
-		}
-
-		if (showFiles) {
+		if (this.#config.showFiles()) {
 			return this.files;
 		}
-		if (nestSubtests) {
+		if (this.#config.nestSubtests()) {
 			return this.testRelations!.getChildren(undefined) || [];
 		}
 		return this.files.flatMap((x) => x.tests);
@@ -414,6 +403,7 @@ export abstract class TestCase implements GoTestItem {
 	makeDynamicTestCase(name: string) {
 		const child = new DynamicTestCase(this.#config, this, name);
 		this.file.tests.push(child);
+		this.file.package.testRelations?.add(this, child);
 		return child;
 	}
 }
@@ -441,7 +431,7 @@ class RelationMap<Child, Parent> {
 	readonly #childParent = new Map<Child, Parent>();
 	readonly #parentChild = new Map<Parent, Child[]>();
 
-	constructor(relations: Iterable<[Child, Parent]>) {
+	constructor(relations: Iterable<[Child, Parent]> = []) {
 		for (const [child, parent] of relations) {
 			this.#childParent.set(child, parent);
 			if (this.#parentChild.has(parent)) {

@@ -74,8 +74,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			})
 		);
 
-		const changed = new UpdateSet();
-		const invalidated = [];
+		const updated = [];
 
 		// With one URI and no recursion there *should* only be one result, but
 		// process in a loop regardless
@@ -93,14 +92,12 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			root.markRequested(pkg);
 
 			// Find the updated items
-			const items = [...(await root.find(uri, ranges))];
-			invalidated.push(...items);
-			await Promise.all(items.map((x) => changed.add(x)));
+			updated.push(...(await root.find(uri, ranges)));
 		}
 
-		await this.#didChangeTestItem.fire([...changed]);
+		await this.#didChangeTestItem.fire(updated);
 		if (invalidate) {
-			await this.#didInvalidateTestResults.fire(invalidated);
+			await this.#didInvalidateTestResults.fire(updated);
 		}
 	}
 
@@ -119,29 +116,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		if (!parent) return;
 
 		const test = parent.makeDynamicTestCase(name);
-		await this.#didChangeTestItem.fire(await UpdateSet.for(test));
+		await this.#didChangeTestItem.fire([test]);
 		return test;
-	}
-}
-
-class UpdateSet {
-	readonly #items = new Set<GoTestItem>();
-
-	static async for(...items: GoTestItem[]) {
-		const set = new UpdateSet();
-		for (const item of items) {
-			await set.add(item);
-		}
-		return [...set];
-	}
-
-	async add(item: GoTestItem) {
-		const parent = await item.getParent();
-		if (parent) await this.add(parent);
-		this.#items.add(item);
-	}
-
-	[Symbol.iterator]() {
-		return this.#items.values();
 	}
 }
