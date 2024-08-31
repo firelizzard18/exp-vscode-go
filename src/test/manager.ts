@@ -7,6 +7,7 @@ import { GoTestItem } from './item';
 import { TestRunner, NewRun } from './runner';
 import { GoTestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
+import { Range } from 'vscode';
 
 export class TestManager {
 	readonly #context: Context;
@@ -46,9 +47,12 @@ export class TestManager {
 		this.#resolver = undefined;
 	}
 
-	async reload(item?: Uri | TestItem, invalidate = false) {
+	async reload(): Promise<void>;
+	async reload(item: TestItem): Promise<void>;
+	async reload(item: Uri, ranges?: Range[], invalidate?: boolean): Promise<void>;
+	async reload(item?: Uri | TestItem, ranges: Range[] = [], invalidate = false) {
 		if (!item || item instanceof Uri) {
-			await this.#provider.reload(item, invalidate);
+			await this.#provider.reload(item, ranges, invalidate);
 			return;
 		}
 

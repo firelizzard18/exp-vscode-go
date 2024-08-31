@@ -5,6 +5,7 @@ import { TestConfig } from './config';
 import { Commander } from './commander';
 import { findParentTestCase, GoTestItem, Package, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
+import { Range } from 'vscode';
 
 export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly #didChangeTestItem = new EventEmitter<GoTestItem[] | void>();
@@ -52,7 +53,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		});
 	}
 
-	async reload(uri?: Uri, invalidate = false) {
+	async reload(uri?: Uri, ranges: Range[] = [], invalidate = false) {
 		if (!uri) {
 			await this.#didChangeTestItem.fire();
 			if (invalidate) {
@@ -73,7 +74,8 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			})
 		);
 
-		const updated = new UpdateSet();
+		const changed = new UpdateSet();
+		const invalidated = [];
 
 		// With one URI and no recursion there *should* only be one result, but
 		// process in a loop regardless
@@ -90,23 +92,15 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			this.#requested.add(root.uri.toString());
 			root.markRequested(pkg);
 
-			// Find the package item
-			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
-			if (!pkgItem) continue; // This indicates an inconsistency or race condition
-
-			if (!this.#config.for(uri).showFiles()) {
-				await updated.add(pkgItem);
-				continue;
-			}
-
-			// Find the file
-			const file = pkgItem.files.find((x) => x.uri.toString() === uri.toString());
-			if (file) await updated.add(file);
+			// Find the updated items
+			const items = [...(await root.find(uri, ranges))];
+			invalidated.push(...items);
+			await Promise.all(items.map((x) => changed.add(x)));
 		}
 
-		await this.#didChangeTestItem.fire([...updated]);
+		await this.#didChangeTestItem.fire([...changed]);
 		if (invalidate) {
-			await this.#didInvalidateTestResults.fire([...updated]);
+			await this.#didInvalidateTestResults.fire(invalidated);
 		}
 	}
 
@@ -142,9 +136,9 @@ class UpdateSet {
 	}
 
 	async add(item: GoTestItem) {
-		this.#items.add(item);
 		const parent = await item.getParent();
 		if (parent) await this.add(parent);
+		this.#items.add(item);
 	}
 
 	[Symbol.iterator]() {

@@ -76,11 +76,23 @@ export async function registerTestController(ctx: ExtensionContext) {
 	event(workspace.onDidOpenTextDocument, 'opened document', (e) => manager.enabled && manager.reload(e.uri));
 
 	// [Event] File change
-	event(
-		workspace.onDidChangeTextDocument,
-		'updated document',
-		(e) => manager.enabled && manager.reload(e.document.uri, true)
-	);
+	event(workspace.onDidChangeTextDocument, 'updated document', (e) => {
+		if (!manager.enabled) {
+			return;
+		}
+
+		// Ignore events that don't include changes. I don't know what
+		// conditions trigger this, but we only care about actual changes.
+		if (e.contentChanges.length === 0) {
+			return;
+		}
+
+		manager.reload(
+			e.document.uri,
+			e.contentChanges.map((x) => x.range),
+			true
+		);
+	});
 
 	// [Event] Workspace change
 	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => manager.enabled && manager.reload());

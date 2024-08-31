@@ -153,6 +153,14 @@ export abstract class RootItem implements GoTestItem {
 				return [...this.#requested.values()];
 		}
 	}
+
+	find(uri: Uri, ranges: Range[]) {
+		return this.allPackages().then(function* (pkgs) {
+			for (const pkg of pkgs) {
+				yield* pkg.find(uri, ranges);
+			}
+		});
+	}
 }
 
 export class Module extends RootItem implements GoTestItem {
@@ -304,6 +312,12 @@ export class Package implements GoTestItem {
 		parent.file.tests.push(child);
 		return child;
 	}
+
+	*find(uri: Uri, ranges: Range[]) {
+		for (const file of this.files) {
+			yield* file.find(uri, ranges);
+		}
+	}
 }
 
 export class TestFile implements GoTestItem {
@@ -338,6 +352,26 @@ export class TestFile implements GoTestItem {
 	 */
 	allTests() {
 		return this.tests;
+	}
+
+	*find(uri: Uri, ranges: Range[]) {
+		if (uri.toString() !== this.uri.toString()) {
+			return;
+		}
+
+		// Return tests that intersect with the given ranges
+		let foundTest = false;
+		for (const test of this.tests) {
+			if (test instanceof StaticTestCase && test.range && ranges.some((x) => test.range!.intersection(x))) {
+				yield test;
+				foundTest = true;
+			}
+		}
+
+		// Or return all tests
+		if (!foundTest) {
+			yield* this.getChildren();
+		}
 	}
 }
 
