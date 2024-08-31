@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { TxTar } from '../../utils/txtar';
+import { TestCase } from '../../../src/test/item';
 
 describe('Go test controller', () => {
 	// NOTE: These tests assume ~/go/bin/gopls exists and has test support
@@ -442,7 +443,47 @@ describe('Go test controller', () => {
 		});
 	});
 
-	// ...
+	describe('with dynamic subtests', () => {
+		const ws = setupWorkspace(`
+			-- go.mod --
+			module foo
+
+			-- foo.go --
+			package foo
+
+			-- foo_test.go --
+			package foo
+
+			import "testing"
+
+			func TestFoo(t *testing.T)
+		`);
+
+		it.skip('shows dynamic subtests', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await host.manager.reload();
+			const tc = (await (await host.manager.rootGoTestItems)[0]?.getChildren())?.[0] as TestCase;
+			expect(tc).toBeDefined();
+			expect(tc).toBeInstanceOf(TestCase);
+
+			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
+			expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'test',
+							name: 'TestFoo',
+							uri: `${ws.uri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }]
+						}
+					]
+				}
+			]);
+		});
+	});
 });
 
 /**

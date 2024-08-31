@@ -2,8 +2,6 @@
 
 import { TestItem } from 'vscode';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
-import { TestItemResolver } from './itemResolver';
-import { Context } from './testing';
 import vscode from 'vscode';
 import { shouldRunBenchmarks } from './runner';
 import path from 'node:path';
@@ -11,7 +9,7 @@ import { TestRun } from 'vscode';
 import { Location } from 'vscode';
 import { TestMessage } from 'vscode';
 import { Uri, Position } from 'vscode';
-import { GoTestItemProvider } from './itemProvider';
+import { TestManager } from './manager';
 
 /**
  * go test -json output format.
@@ -26,42 +24,30 @@ interface Event {
 	Elapsed?: number; // seconds
 }
 
-const symResolver = Symbol('resolver');
-const symProvider = Symbol('provider');
-
 export class TestRunRequest {
+	readonly manager: TestManager;
 	readonly source: vscode.TestRunRequest;
 	readonly #packages: Set<Package>;
 	readonly include: Map<Package, TestCase[]>;
 	readonly exclude: Map<Package, TestCase[]>;
 
-	readonly [symResolver]: TestItemResolver<GoTestItem>;
-	readonly [symProvider]: GoTestItemProvider;
-
 	private constructor(
+		manager: TestManager,
 		original: vscode.TestRunRequest,
 		packages: Set<Package>,
 		include: Map<Package, TestCase[]>,
-		exclude: Map<Package, TestCase[]>,
-		resolver: TestItemResolver<GoTestItem>,
-		provider: GoTestItemProvider
+		exclude: Map<Package, TestCase[]>
 	) {
+		this.manager = manager;
 		this.source = original;
 		this.#packages = packages;
 		this.include = include;
 		this.exclude = exclude;
-		this[symResolver] = resolver;
-		this[symProvider] = provider;
 	}
 
-	static async from(
-		{ workspace }: Context,
-		resolver: TestItemResolver<GoTestItem>,
-		provider: GoTestItemProvider,
-		request: vscode.TestRunRequest
-	) {
-		const include = (request.include || [...resolver.roots]).map((x) => resolveGoItem(resolver, x));
-		const exclude = request.exclude?.map((x) => resolveGoItem(resolver, x)) || [];
+	static async from(manager: TestManager, request: vscode.TestRunRequest) {
+		const include = (request.include || [...manager.rootTestItems]).map((x) => resolveGoItem(manager, x));
+		const exclude = request.exclude?.map((x) => resolveGoItem(manager, x)) || [];
 
 		// Get roots that aren't excluded
 		const roots = new Set(include.filter((x) => x instanceof RootItem));
@@ -94,7 +80,7 @@ export class TestRunRequest {
 			// If a package is selected, all tests within it will be run so ignore
 			// explicit requests for a test if its package is selected. Do the same
 			// for benchmarks, if shouldRunBenchmarks.
-			if (item.kind !== 'benchmark' || shouldRunBenchmarks(workspace, pkg)) {
+			if (item.kind !== 'benchmark' || shouldRunBenchmarks(manager.context.workspace, pkg)) {
 				tests.delete(item);
 			}
 		}
@@ -123,7 +109,7 @@ export class TestRunRequest {
 			excludeForPackage.get(pkg)!.push(item);
 		}
 
-		return new this(request, packages, testsForPackage, excludeForPackage, resolver, provider);
+		return new this(manager, request, packages, testsForPackage, excludeForPackage);
 	}
 
 	get size() {
@@ -132,7 +118,7 @@ export class TestRunRequest {
 
 	async *packages(run: TestRun) {
 		for (const pkg of this.#packages) {
-			const pkgItem = await this[symResolver].getOrCreateAll(pkg);
+			const pkgItem = await this.manager.resolveTestItem(pkg, true);
 			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.allTests());
 			const exclude = await this.#resolveTestItems(this.exclude.get(pkg) || []);
 
@@ -143,7 +129,7 @@ export class TestRunRequest {
 	async #resolveTestItems<T extends GoTestItem>(goItems: T[]) {
 		return new Map(
 			await Promise.all(
-				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this[symResolver].getOrCreateAll(x)])
+				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, true)])
 			)
 		);
 	}
@@ -193,8 +179,8 @@ export class PackageTestRun {
 		}
 
 		// Resolve the named test case and its associated test item
-		const test = msg.Test ? await this.#request[symProvider].resolveTestCase(this.goItem, msg.Test) : undefined;
-		const item = test && (await this.#request[symResolver].get(test));
+		const test = msg.Test ? await this.#request.manager.resolveTestCase(this.goItem, msg.Test) : undefined;
+		const item = test && (await this.#request.manager.resolveTestItem(test));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
@@ -302,8 +288,8 @@ function* testCases(items: GoTestItem[]) {
 	}
 }
 
-function resolveGoItem(resolver: TestItemResolver<GoTestItem>, item: TestItem) {
-	const pi = resolver.getProviderItem(item.id);
+function resolveGoItem(mananger: TestManager, item: TestItem) {
+	const pi = mananger.resolveGoTestItem(item.id);
 	if (!pi) throw new Error(`Cannot find test item ${item.id}`);
 	return pi;
 }

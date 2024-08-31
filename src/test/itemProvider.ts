@@ -40,7 +40,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		return element.getParent();
 	}
 
-	async getChildren(element?: GoTestItem | undefined) {
+	async getChildren(element?: GoTestItem | undefined): Promise<GoTestItem[]> {
 		if (element) {
 			return element.getChildren();
 		}
@@ -118,7 +118,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		const parent = findParentTestCase(pkg.allTests(), name);
 		if (!parent) return;
 
-		const test = pkg.makeDynamicTestCase(parent, name);
+		const test = parent.makeDynamicTestCase(name);
 		await this.#didChangeTestItem.fire(await UpdateSet.for(test));
 		return test;
 	}

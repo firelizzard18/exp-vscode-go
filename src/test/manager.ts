@@ -3,19 +3,19 @@ import { TestRunProfileKind, Uri } from 'vscode';
 import type { Disposable, TestItem } from 'vscode';
 import { Context, doSafe, TestController } from './testing';
 import { safeInvalidate, TestItemResolver } from './itemResolver';
-import { GoTestItem } from './item';
+import { GoTestItem, Package } from './item';
 import { TestRunner, NewRun } from './runner';
 import { GoTestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
 import { Range } from 'vscode';
 
 export class TestManager {
-	readonly #context: Context;
+	readonly context: Context;
 	readonly #provider: GoTestItemProvider;
 	readonly #disposable: Disposable[] = [];
 
 	constructor(context: Context) {
-		this.#context = context;
+		this.context = context;
 		this.#provider = new GoTestItemProvider(context);
 	}
 
@@ -32,12 +32,12 @@ export class TestManager {
 		this.#resolver = resolver;
 		this.#disposable.push(this.#ctrl, this.#resolver);
 
-		this.#ctrl.refreshHandler = () => doSafe(this.#context, 'refresh tests', () => resolver.resolve());
-		this.#ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
+		this.#ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.resolve());
+		this.#ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
 
-		const newRun: NewRun = (r) => TestRunRequest.from(this.#context, resolver, this.#provider, r);
-		new TestRunner(this.#context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
-		new TestRunner(this.#context, this.#ctrl, newRun, 'Go (debug)', TestRunProfileKind.Debug, true);
+		const newRun: NewRun = (r) => TestRunRequest.from(this, r);
+		new TestRunner(this.context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
+		new TestRunner(this.context, this.#ctrl, newRun, 'Go (debug)', TestRunProfileKind.Debug, true);
 	}
 
 	dispose() {
@@ -60,5 +60,30 @@ export class TestManager {
 		if (invalidate && this.#ctrl) {
 			safeInvalidate(this.#ctrl, item);
 		}
+	}
+
+	resolveTestItem(goItem: GoTestItem): Promise<TestItem | undefined>;
+	resolveTestItem(goItem: GoTestItem, create: true): Promise<TestItem>;
+	resolveTestItem(goItem: GoTestItem, create = false) {
+		if (!create) {
+			return this.#resolver?.get(goItem);
+		}
+		return this.#resolver!.getOrCreateAll(goItem);
+	}
+
+	resolveGoTestItem(id: string) {
+		return this.#resolver?.getProviderItem(id);
+	}
+
+	resolveTestCase(pkg: Package, name: string) {
+		return this.#provider.resolveTestCase(pkg, name);
+	}
+
+	get rootTestItems() {
+		return this.#resolver!.roots;
+	}
+
+	get rootGoTestItems() {
+		return this.#provider.getChildren();
 	}
 }

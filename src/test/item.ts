@@ -73,7 +73,7 @@ export interface GoTestItem {
 	error?: string | MarkdownString;
 
 	getParent(): ProviderResult<GoTestItem>;
-	getChildren(): ProviderResult<GoTestItem[]>;
+	getChildren(): GoTestItem[] | Promise<GoTestItem[]>;
 }
 
 export abstract class RootItem implements GoTestItem {
@@ -307,12 +307,6 @@ export class Package implements GoTestItem {
 		return this.files.flatMap((x) => x.allTests());
 	}
 
-	makeDynamicTestCase(parent: TestCase, name: string) {
-		const child = new DynamicTestCase(this.#config, parent, name);
-		parent.file.tests.push(child);
-		return child;
-	}
-
 	*find(uri: Uri, ranges: Range[]) {
 		for (const file of this.files) {
 			yield* file.find(uri, ranges);
@@ -415,6 +409,12 @@ export abstract class TestCase implements GoTestItem {
 
 	getChildren(): TestCase[] {
 		return this.file.package.testRelations?.getChildren(this) || [];
+	}
+
+	makeDynamicTestCase(name: string) {
+		const child = new DynamicTestCase(this.#config, this, name);
+		this.file.tests.push(child);
+		return child;
 	}
 }
 
