@@ -90,6 +90,11 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			this.#requested.add(root.uri.toString());
 			root.markRequested(pkg);
 
+			// Update the package
+			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
+			if (!pkgItem) continue; // This indicates a bug
+			pkgItem.update(pkg);
+
 			// Find the updated items
 			updated.push(...(await root.find(uri, ranges)));
 		}

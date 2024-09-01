@@ -520,19 +520,27 @@ export class TestFile implements GoTestItem {
 			return;
 		}
 
-		// Return tests that intersect with the given ranges
-		let foundTest = false;
+		// Find tests that intersect with the given ranges
+		const found = new Set<TestCase>();
 		for (const test of this.tests) {
 			if (test instanceof StaticTestCase && test.range && ranges.some((x) => test.range!.intersection(x))) {
-				yield test;
-				foundTest = true;
+				found.add(test);
 			}
 		}
 
 		// Or return all tests
-		if (!foundTest) {
+		if (found.size === 0) {
 			yield* this.getChildren();
+			return;
 		}
+
+		// Return the most limited set
+		for (const test of found) {
+			const parent = test.getParent();
+			found.delete(parent as any);
+		}
+
+		yield* found;
 	}
 }
 
