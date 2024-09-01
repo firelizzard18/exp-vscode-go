@@ -2,8 +2,7 @@ import { Uri } from 'vscode';
 import { TestItemData, TestItemProvider } from './itemResolver';
 import { Context } from './testing';
 import { TestConfig } from './config';
-import { Commander } from './commander';
-import { findParentTestCase, GoTestItem, Package, TestCase } from './item';
+import { findParentTestCase, GoTestItem, Package, RootSet, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Range } from 'vscode';
 
@@ -15,13 +14,13 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 
 	readonly #context: Context;
 	readonly #config: TestConfig;
-	readonly #commander: Commander;
 	readonly #requested = new Set<string>();
+	readonly #roots: RootSet;
 
 	constructor(context: Context) {
 		this.#context = context;
 		this.#config = new TestConfig(context.workspace);
-		this.#commander = new Commander(context);
+		this.#roots = new RootSet(context);
 	}
 
 	getTestItem(element: GoTestItem): TestItemData | Thenable<TestItemData> {
@@ -45,7 +44,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return element.getChildren();
 		}
 
-		return [...(await this.#commander.getRoots(true))].filter((x) => {
+		return [...(await this.#roots.getChildren(true))].filter((x) => {
 			// Return a given root if discovery is on or the root (or more
 			// likely one of its children) has been explicitly requested
 			const mode = this.#config.for(x.uri).discovery();
@@ -84,7 +83,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			if (!pkg.TestFiles?.length) continue;
 
 			// Find the module or workspace that owns this package
-			const root = await this.#commander.getRootFor(pkg, findOpts);
+			const root = await this.#roots.getRootFor(pkg, findOpts);
 			if (!root) continue; // TODO: Handle tests from external packages?
 
 			// Mark the package as requested
@@ -112,7 +111,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		}
 
 		// Find the parent test case and create a dynamic subtest
-		const parent = findParentTestCase(pkg.allTests(), name);
+		const parent = findParentTestCase(pkg.getTests(), name);
 		if (!parent) return;
 
 		const test = parent.makeDynamicTestCase(name);

@@ -57,7 +57,7 @@ export class TestRunRequest {
 		const packages = new Set(include.filter((x) => x instanceof Package));
 		await Promise.all(
 			[...roots].map(async (x) => {
-				for (const pkg of (await x.allPackages()) || []) {
+				for (const pkg of await x.getPackages()) {
 					packages.add(pkg);
 				}
 			})
@@ -119,7 +119,7 @@ export class TestRunRequest {
 	async *packages(run: TestRun) {
 		for (const pkg of this.#packages) {
 			const pkgItem = await this.manager.resolveTestItem(pkg, true);
-			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.allTests());
+			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.getTests());
 			const exclude = await this.#resolveTestItems(this.exclude.get(pkg) || []);
 
 			yield new PackageTestRun(this, run, pkg, pkgItem, include, exclude);
@@ -283,7 +283,7 @@ function* testCases(items: GoTestItem[]) {
 			yield item;
 		}
 		if (item instanceof TestFile) {
-			yield* item.allTests();
+			yield* item.tests;
 		}
 	}
 }

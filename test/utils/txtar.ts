@@ -1,6 +1,8 @@
-import type { Uri, FileSystem as FullFileSystem } from 'vscode';
+import { Uri, FileSystem as FullFileSystem } from 'vscode';
+import { afterAll, beforeAll } from '@jest/globals';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 
 type FileSystem = Pick<FullFileSystem, 'readFile' | 'readDirectory'>;
 
@@ -108,4 +110,58 @@ enum FileType {
 	 * A symbolic link to a file.
 	 */
 	SymbolicLink = 64
+}
+
+export class Workspace {
+	path: string = '';
+	uri: Uri = Uri.file('');
+
+	private constructor() {}
+
+	/**
+	 * Dumps the txtar to a temp directory and deletes it afterwards.
+	 * @param src The txtar source
+	 * @returns The temp directory and URI
+	 */
+	static setup(src: string, wsdir?: string) {
+		// Remove common leading whitespace
+		src = removeIndentation(src);
+
+		const ws = new Workspace();
+		beforeAll(async () => {
+			const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'jest-'));
+			ws.path = wsdir ? path.join(tmp, wsdir) : tmp;
+			ws.uri = Uri.file(ws.path);
+			console.log('Workspace:', ws.path);
+
+			const txtar = new TxTar(src);
+			await txtar.copyTo(tmp);
+		});
+
+		afterAll(async () => {
+			await fs.rm(ws.path, { force: true, recursive: true });
+		});
+
+		return ws;
+	}
+
+	writeFile(file: string, content: string) {
+		content = removeIndentation(content);
+		return fs.writeFile(path.join(this.path, file), content);
+	}
+}
+
+function removeIndentation(s: string) {
+	// Remove common leading whitespace
+	const lines = s.split('\n');
+	const checkLines = lines.filter((l, i) => i > 0 && /\S/.test(l));
+	let i = 0;
+	for (; ; i++) {
+		const s = checkLines.map((l) => l.substring(i, i + 1));
+		if (s.some((s) => !/^\s*$/.test(s)) && new Set(s).size !== 1) {
+			break;
+		}
+	}
+
+	return lines.map((l) => l.replace(/^\s*/, (s) => (s.length > i ? s.substring(i) : ''))).join('\n');
 }

@@ -164,7 +164,7 @@ class FakeOutputChannel implements LogOutputChannel {
 }
 
 export class MockTestController implements TestController {
-	readonly items: TestItemCollection = new MapTestItemCollection((item) => this.resolveHandler?.(item));
+	readonly items: TestItemCollection = new MapTestItemCollection();
 
 	createTestItem(id: string, label: string, uri?: Uri): TestItem {
 		return new MockTestItem(this, id, label, uri);
@@ -186,7 +186,7 @@ export class MockTestController implements TestController {
 
 	dispose = () => {};
 
-	resolveHandler?: ((item: TestItem | undefined) => Thenable<void> | void) | undefined;
+	resolveHandler?: ((item?: TestItem) => Thenable<void> | void) | undefined;
 	refreshHandler: ((token: CancellationToken) => Thenable<void> | void) | undefined;
 }
 
@@ -229,7 +229,7 @@ class MockTestItem implements TestItem {
 	error: string | MarkdownString | undefined;
 
 	constructor(ctrl: TestController, id: string, label: string, uri?: Uri) {
-		this.children = new MapTestItemCollection((x) => ctrl.resolveHandler?.(x));
+		this.children = new MapTestItemCollection();
 		this.id = id;
 		this.label = label;
 		this.uri = uri;
@@ -238,11 +238,6 @@ class MockTestItem implements TestItem {
 
 class MapTestItemCollection implements TestItemCollection {
 	#items = new Map<string, TestItem>();
-	readonly #didAdd: (_: TestItem) => void | Thenable<void>;
-
-	constructor(didAdd: (_: TestItem) => void | Thenable<void>) {
-		this.#didAdd = didAdd;
-	}
 
 	get size() {
 		return this.#items.size;
@@ -250,7 +245,6 @@ class MapTestItemCollection implements TestItemCollection {
 
 	async replace(items: readonly TestItem[]): Promise<void> {
 		this.#items = new Map(items.map((x) => [x.id, x]));
-		await Promise.all([...items].map((x) => this.#didAdd(x)));
 	}
 
 	forEach(callback: (item: TestItem, collection: TestItemCollection) => unknown, thisArg?: any): void {
@@ -259,7 +253,6 @@ class MapTestItemCollection implements TestItemCollection {
 
 	async add(item: TestItem): Promise<void> {
 		this.#items.set(item.id, item);
-		await this.#didAdd(item);
 	}
 
 	delete(id: string): void {

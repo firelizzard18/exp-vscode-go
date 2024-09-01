@@ -146,7 +146,7 @@ export function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 	if (workspace.getConfiguration('goExp', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
 		return true;
 	}
-	for (const test of pkg.allTests()) {
+	for (const test of pkg.getTests()) {
 		if (test.kind !== 'benchmark') {
 			return false;
 		}

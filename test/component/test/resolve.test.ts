@@ -1,19 +1,17 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable n/no-unpublished-import */
 import { TestHost, withConfiguration, withWorkspace } from './host';
-import { afterAll, beforeAll, expect } from '@jest/globals';
+import { expect } from '@jest/globals';
 import './expect';
 import { Uri } from 'vscode';
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs/promises';
-import { TxTar } from '../../utils/txtar';
-import { TestCase } from '../../../src/test/item';
+import { Workspace } from '../../utils/txtar';
+import { Module, Package, TestCase } from '../../../src/test/item';
 
 describe('Go test controller', () => {
 	// NOTE: These tests assume ~/go/bin/gopls exists and has test support
 
 	describe('with no module', () => {
-		const ws = setupWorkspace(
+		const ws = Workspace.setup(
 			`-- go.mod --
 			module foo
 
@@ -33,8 +31,7 @@ describe('Go test controller', () => {
 		it('resolves tests', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			await host.manager.reload();
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'workspace',
 					uri: `${ws.uri}`,
@@ -45,7 +42,7 @@ describe('Go test controller', () => {
 	});
 
 	describe('with a simple module', () => {
-		const ws = setupWorkspace(`
+		const ws = Workspace.setup(`
 			-- go.mod --
 			module foo
 
@@ -70,8 +67,7 @@ describe('Go test controller', () => {
 		it('resolves all tests', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			await host.manager.reload();
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -95,8 +91,7 @@ describe('Go test controller', () => {
 					withConfiguration({ showFiles: true })
 				);
 
-				await host.manager.reload();
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -123,8 +118,7 @@ describe('Go test controller', () => {
 
 				// Changing config changes the resolved tests
 				host.workspace.config.showFiles = false;
-				await host.manager.reload();
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -150,12 +144,11 @@ describe('Go test controller', () => {
 				);
 
 				// Nothing is resolved initially
-				await host.manager.reload();
-				expect(host).toResolve([]);
+				await expect(host).toResolve([]);
 
 				// Opening a file (which calls reload) causes the tests within it to be resolved
 				await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar_test.go`));
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -171,8 +164,7 @@ describe('Go test controller', () => {
 
 				// Toggling the config behaves preserves which files have been opened
 				host.workspace.config.discovery = 'on';
-				await host.manager.reload();
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -188,8 +180,7 @@ describe('Go test controller', () => {
 				]);
 
 				host.workspace.config.discovery = 'off';
-				await host.manager.reload();
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -206,7 +197,7 @@ describe('Go test controller', () => {
 		});
 
 		describe('with nestPackages', () => {
-			const ws = setupWorkspace(`
+			const ws = Workspace.setup(`
 				-- go.mod --
 				module foo
 
@@ -238,8 +229,7 @@ describe('Go test controller', () => {
 					withConfiguration({ nestPackages: true })
 				);
 
-				await host.manager.reload();
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -264,8 +254,7 @@ describe('Go test controller', () => {
 
 				// Changing config changes the resolved tests
 				host.workspace.config.nestPackages = false;
-				await host.manager.reload();
-				expect(host).toResolve([
+				await expect(host).toResolve([
 					{
 						kind: 'module',
 						uri: `${ws.uri}/go.mod`,
@@ -292,7 +281,7 @@ describe('Go test controller', () => {
 		// called with `cd <dir> && gopls execute <command> <args>`, and thus
 		// gopls will only ever have one view loaded at a time
 
-		const ws = setupWorkspace(`
+		const ws = Workspace.setup(`
 			-- go.mod --
 			module foo
 
@@ -323,8 +312,7 @@ describe('Go test controller', () => {
 		it('does not cross module boundaries', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			await host.manager.reload();
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -337,7 +325,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar.go`));
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -353,7 +341,7 @@ describe('Go test controller', () => {
 	});
 
 	describe('with all test func types', () => {
-		const ws = setupWorkspace(`
+		const ws = Workspace.setup(`
 			-- go.mod --
 			module foo
 
@@ -374,8 +362,7 @@ describe('Go test controller', () => {
 		it('resolves all test funcs', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			await host.manager.reload();
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -391,7 +378,7 @@ describe('Go test controller', () => {
 	});
 
 	describe('with subtests', () => {
-		const ws = setupWorkspace(`
+		const ws = Workspace.setup(`
 			-- go.mod --
 			module foo
 
@@ -411,8 +398,7 @@ describe('Go test controller', () => {
 		it('nests subtests', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			await host.manager.reload();
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -429,8 +415,7 @@ describe('Go test controller', () => {
 
 			// Changing config changes the resolved tests
 			host.workspace.config.nestSubtests = false;
-			await host.manager.reload();
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -444,7 +429,7 @@ describe('Go test controller', () => {
 	});
 
 	describe('with dynamic subtests', () => {
-		const ws = setupWorkspace(`
+		const ws = Workspace.setup(`
 			-- go.mod --
 			module foo
 
@@ -459,16 +444,15 @@ describe('Go test controller', () => {
 			func TestFoo(t *testing.T)
 		`);
 
-		it.skip('shows dynamic subtests', async () => {
+		it('shows dynamic subtests', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			await host.manager.reload();
 			const tc = (await (await host.manager.rootGoTestItems)[0]?.getChildren())?.[0] as TestCase;
 			expect(tc).toBeDefined();
 			expect(tc).toBeInstanceOf(TestCase);
 
 			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
-			expect(host).toResolve([
+			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
@@ -484,44 +468,96 @@ describe('Go test controller', () => {
 			]);
 		});
 	});
+
+	describe('when reloading', () => {
+		const ws = Workspace.setup(`
+				-- go.mod --
+				module foo
+
+				-- foo.go --
+				package foo
+
+				-- foo_test.go --
+				package foo
+
+				import "testing"
+
+				func TestFoo(t *testing.T) {}
+			`);
+
+		it('does not recreate items', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await host.manager.reload();
+			const bMod = isa(Module, (await host.manager.rootGoTestItems)[0]);
+			const bPkg = isa(Package, (await bMod.getPackages())[0]);
+			const bTest = bPkg.getTests()?.[0];
+			expect(bTest).toBeDefined();
+
+			await host.manager.reload();
+			const aMod = isa(Module, (await host.manager.rootGoTestItems)[0]);
+			const aPkg = isa(Package, (await aMod.getPackages())[0]);
+			const aTest = aPkg.getTests()?.[0];
+			if (!Object.is(aMod, bMod)) throw new Error('Reloading recreated the module');
+			if (!Object.is(aPkg, bPkg)) throw new Error('Reloading recreated the package');
+			if (!Object.is(aTest, bTest)) throw new Error('Reloading recreated the test');
+		});
+	});
+
+	describe('when updating a file', () => {
+		const ws = Workspace.setup(`
+				-- go.mod --
+				module foo
+
+				-- foo.go --
+				package foo
+
+				-- foo_test.go --
+				package foo
+
+				import "testing"
+
+				func TestFoo(t *testing.T) {}
+			`);
+
+		it('detects new tests', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+				}
+			]);
+
+			await ws.writeFile(
+				'foo_test.go',
+				`
+				package foo
+
+				import "testing"
+
+				func TestFoo(t *testing.T) {}
+				func TestBar(t *testing.T) {}`
+			);
+			await host.manager.reload(Uri.parse(`${ws.uri}/foo_test.go`), [], true);
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/foo_test.go` },
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
+		});
+	});
 });
 
-/**
- * Dumps the txtar to a temp directory and deletes it afterwards.
- * @param src The txtar source
- * @returns The temp directory and URI
- */
-function setupWorkspace(src: string, wsdir?: string) {
-	const ws = {
-		path: '',
-		uri: Uri.file('')
-	};
-
-	// Remove common leading whitespace
-	const lines = src.split('\n');
-	const checkLines = lines.filter((l, i) => i > 0 && /\S/.test(l));
-	let i = 0;
-	for (; ; i++) {
-		const s = checkLines.map((l) => l.substring(i, i + 1));
-		if (s.some((s) => !/^\s*$/.test(s)) && new Set(s).size !== 1) {
-			break;
-		}
-	}
-	src = lines.map((l) => l.replace(/^\s*/, (s) => (s.length > i ? s.substring(i) : ''))).join('\n');
-
-	beforeAll(async () => {
-		const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'jest-'));
-		ws.path = wsdir ? path.join(tmp, wsdir) : tmp;
-		ws.uri = Uri.file(ws.path);
-		console.log('Workspace:', ws.path);
-
-		const txtar = new TxTar(src);
-		await txtar.copyTo(tmp);
-	});
-
-	afterAll(async () => {
-		await fs.rm(ws.path, { force: true, recursive: true });
-	});
-
-	return ws;
+function isa<T extends new (...args: any[]) => any>(expected: T, value: any): InstanceType<T> {
+	expect(value).toBeDefined();
+	expect(value).toBeInstanceOf(expected);
+	return value as InstanceType<T>;
 }

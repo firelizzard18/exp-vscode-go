@@ -2,10 +2,10 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { Uri, Range } from 'vscode';
 import type { MarkdownString, ProviderResult, WorkspaceFolder } from 'vscode';
-import { Commands } from './testing';
+import { Commands, Context } from './testing';
 import path from 'path';
 import { TestConfig } from './config';
-import { Commander } from './commander';
+import deepEqual from 'deep-equal';
 
 export namespace GoTestItem {
 	/**
@@ -64,6 +64,7 @@ export namespace GoTestItem {
 }
 
 export interface GoTestItem {
+	readonly key: string;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly label: string;
@@ -76,22 +77,168 @@ export interface GoTestItem {
 	getChildren(): GoTestItem[] | Promise<GoTestItem[]>;
 }
 
+export class RootSet {
+	#didLoad = false;
+	readonly #context: Context;
+	readonly #roots = new Map<string, ItemSet<RootItem>>();
+
+	constructor(context: Context) {
+		this.#context = context;
+	}
+
+	async getChildren(reload = false): Promise<RootItem[]> {
+		if ((!reload && this.#didLoad) || !this.#context.workspace.workspaceFolders) {
+			return [...this.#roots.values()].flatMap((x) => [...x.values()]);
+		}
+
+		this.#didLoad = true;
+		await Promise.all(
+			this.#context.workspace.workspaceFolders.map(async (ws) => {
+				const roots = await this.#getWorkspaceRoots(ws);
+				const set = this.#roots.get(`${ws.uri}`);
+				if (set) {
+					set.replace(roots);
+				} else {
+					this.#roots.set(`${ws.uri}`, new ItemSet(roots));
+				}
+			})
+		);
+
+		return [...this.#roots.values()].flatMap((x) => [...x.values()]);
+	}
+
+	/**
+	 * Retrieves the workspace roots for a given workspace folder.
+	 *
+	 * @param ws - The workspace folder to retrieve the roots for.
+	 * @returns An array of `RootItem` objects representing the workspace roots.
+	 */
+	async #getWorkspaceRoots(ws: WorkspaceFolder) {
+		const config = new TestConfig(this.#context.workspace, ws.uri);
+		const roots: RootItem[] = [];
+
+		// Ask gopls
+		const { Modules } = await this.#context.commands.modules({
+			Dir: ws.uri.toString(),
+			MaxDepth: -1
+		});
+
+		// Create an item for the workspace unless it's the root of a module
+		if (!Modules?.some((x) => Uri.joinPath(Uri.parse(x.GoMod), '..').toString() === ws.uri.toString())) {
+			roots.push(new WorkspaceItem(config, this.#context, ws));
+		}
+
+		// Make an item for each module
+		if (Modules) {
+			roots.push(...Modules.map((x) => new Module(config, this.#context, x)));
+		}
+
+		return roots;
+	}
+
+	/**
+	 * Retrieves the root a given package belongs to.
+	 *
+	 * @param pkg - The package for which to retrieve the root.
+	 * @param opts - Options for retrieving the root.
+	 * @param opts.tryReload - Specifies whether to try reloading the roots.
+	 * @returns The root for the package or undefined if the package does not belong to any workspace.
+	 * @throws Error if the package contains no test files.
+	 */
+	async getRootFor(pkg: Commands.Package, opts: { tryReload: boolean }) {
+		if (!pkg.TestFiles?.length) {
+			throw new Error('package contains no test files');
+		}
+
+		const ws = this.#context.workspace.getWorkspaceFolder(Uri.parse(pkg.TestFiles[0].URI));
+		if (!ws) {
+			return;
+		}
+
+		// If the roots haven't been loaded, load them
+		if (!this.#didLoad) {
+			opts.tryReload = false;
+			await this.getChildren();
+		}
+
+		if (pkg.ModulePath) {
+			// Does the package belong to a module and do we have it?
+			let mod = this.#getModule(pkg.ModulePath);
+			if (mod) return mod;
+
+			// If not, reload the roots and check again, but only reload once
+			// per reloadPackages call
+			if (opts.tryReload) {
+				opts.tryReload = false;
+				await this.getChildren(true);
+			}
+
+			// Check again
+			mod = this.#getModule(pkg.ModulePath);
+			if (mod) return mod;
+		}
+
+		const config = new TestConfig(this.#context.workspace, ws.uri);
+		return this.#getWorkspace(new WorkspaceItem(config, this.#context, ws));
+	}
+
+	/**
+	 * Retrieves a module with the specified path.
+	 *
+	 * @param path - The path of the module to retrieve.
+	 * @returns The module with the specified path, or `undefined` if not found.
+	 */
+	#getModule(path: string) {
+		for (const items of this.#roots.values()) {
+			for (const item of items.values()) {
+				if (item instanceof Module && item.path === path) {
+					return item;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Get or create an item for the root directory of a workspace.
+	 */
+	#getWorkspace(item: WorkspaceItem) {
+		const wsKey = item.uri.toString();
+		const roots = this.#roots.get(wsKey);
+		if (!roots) {
+			this.#roots.set(wsKey, new ItemSet([item]));
+			return item;
+		}
+
+		if (roots.has(item)) {
+			return roots.get(item)!;
+		}
+
+		roots.add(item);
+		return item;
+	}
+}
+
 export abstract class RootItem implements GoTestItem {
 	abstract readonly uri: Uri;
 	abstract readonly kind: GoTestItem.Kind;
 	abstract readonly label: string;
 	abstract readonly dir: Uri;
 	readonly hasChildren = true;
+	readonly pkgRelations = new RelationMap<Package, Package | undefined>();
 
+	#didLoad = false;
 	readonly #config: TestConfig;
-	readonly #commander: Commander;
-	readonly #requested = new Map<string, Package>();
+	readonly #context: Context;
+	readonly #requested = new Set<string>();
+	readonly #packages = new ItemSet<Package>();
 
-	pkgRelations?: RelationMap<Package, Package | undefined>;
-
-	constructor(config: TestConfig, retriever: Commander) {
+	constructor(config: TestConfig, context: Context) {
 		this.#config = config;
-		this.#commander = retriever;
+		this.#context = context;
+	}
+
+	get key() {
+		return `${this.uri}`;
 	}
 
 	contains(uri: Uri) {
@@ -101,8 +248,7 @@ export abstract class RootItem implements GoTestItem {
 	}
 
 	markRequested(pkg: Commands.Package) {
-		const item = new Package(this.#config, this as any, pkg.Path, pkg.TestFiles!);
-		this.#requested.set(pkg.Path, item);
+		this.#requested.add(pkg.Path);
 	}
 
 	getParent() {
@@ -110,52 +256,63 @@ export abstract class RootItem implements GoTestItem {
 	}
 
 	async getChildren(): Promise<GoTestItem[]> {
-		const packages = await this.getPackages();
+		const allPkgs = await this.getPackages(true);
+		const packages = (this.#config.nestPackages() && this.pkgRelations.getChildren(undefined)) || allPkgs;
 		const i = packages.findIndex((x) => x.uri.toString() === this.dir.toString());
 		if (i < 0) return packages;
 
 		const selfPkg = packages[i];
-		packages.splice(i, 1);
-		return [...packages, ...selfPkg.getChildren()];
+		return [...packages.filter((_, j) => j !== i), ...selfPkg.getChildren()];
 	}
 
-	async getPackages() {
-		const packages = await this.allPackages();
+	async getPackages(reload = false) {
+		if (reload || !this.#didLoad) {
+			this.#didLoad = true;
+			this.#packages.replaceWith(
+				Package.resolve(
+					await this.#context.commands.packages({
+						Files: [this.dir.toString()],
+						Mode: 1,
+						Recursive: true
+					})
+				),
+				(src) => src.Path,
+				(src) => new Package(this.#config, this, src),
+				(src, pkg) => pkg.update(src)
+			);
 
-		// Rebuild package relations
-		this.pkgRelations = undefined;
-		if (this.#config.nestPackages()) {
-			this.pkgRelations = new RelationMap(
-				packages.map((pkg): [Package, Package | undefined] => {
-					const ancestors = packages.filter((x) => pkg.path.startsWith(`${x.path}/`));
+			// Rebuild package relations
+			const pkgs = [...this.#packages.values()];
+			this.pkgRelations.replace(
+				pkgs.map((pkg): [Package, Package | undefined] => {
+					const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
 					ancestors.sort((a, b) => a.path.length - b.path.length);
 					return [pkg, ancestors[0]];
 				})
 			);
 		}
 
-		return this.pkgRelations?.getChildren(undefined) || packages;
-	}
-
-	async allPackages() {
 		const mode = this.#config.discovery();
 		switch (mode) {
-			case 'on': // Discover all packages
-				return Package.resolve(
-					await this.#commander.getPackages({
-						Files: [this.dir.toString()],
-						Mode: 1,
-						Recursive: true
-					})
-				).map((x) => new Package(this.#config, this as any, x.Path, x.TestFiles!));
+			case 'on':
+				// Return all packages
+				return [...this.#packages.values()];
 
-			default: // Return only specifically requested packages
-				return [...this.#requested.values()];
+			default: {
+				// Return only specifically requested packages
+				const packages = [];
+				for (const pkg of this.#packages.values()) {
+					if (this.#requested.has(pkg.path)) {
+						packages.push(pkg);
+					}
+				}
+				return packages;
+			}
 		}
 	}
 
 	find(uri: Uri, ranges: Range[]) {
-		return this.allPackages().then(function* (pkgs) {
+		return this.getPackages().then(function* (pkgs) {
 			for (const pkg of pkgs) {
 				yield* pkg.find(uri, ranges);
 			}
@@ -168,8 +325,8 @@ export class Module extends RootItem implements GoTestItem {
 	readonly path: string;
 	readonly kind = 'module';
 
-	constructor(config: TestConfig, retriever: Commander, mod: Commands.Module) {
-		super(config, retriever);
+	constructor(config: TestConfig, context: Context, mod: Commands.Module) {
+		super(config, context);
 		this.uri = Uri.parse(mod.GoMod);
 		this.path = mod.Path;
 	}
@@ -187,8 +344,8 @@ export class WorkspaceItem extends RootItem implements GoTestItem {
 	readonly ws: WorkspaceFolder;
 	readonly kind = 'workspace';
 
-	constructor(config: TestConfig, retriever: Commander, ws: WorkspaceFolder) {
-		super(config, retriever);
+	constructor(config: TestConfig, context: Context, ws: WorkspaceFolder) {
+		super(config, context);
 		this.ws = ws;
 	}
 
@@ -233,20 +390,40 @@ export class Package implements GoTestItem {
 	readonly path: string;
 	readonly kind = 'package';
 	readonly hasChildren = true;
-	readonly files: TestFile[];
-	readonly testRelations: RelationMap<TestCase, TestCase | undefined>;
+	readonly files = new ItemSet<TestFile>();
+	readonly testRelations = new RelationMap<TestCase, TestCase | undefined>();
 
-	constructor(config: TestConfig, parent: RootItem, path: string, files: Commands.TestFile[]) {
+	#src?: Commands.Package;
+
+	constructor(config: TestConfig, parent: RootItem, src: Commands.Package) {
 		this.#config = config;
 		this.parent = parent;
-		this.path = path;
-		this.uri = Uri.joinPath(Uri.parse(files[0].URI), '..');
-		this.files = files.filter((x) => x.Tests.length).map((x) => new TestFile(this.#config, this, x));
+		this.path = src.Path;
+		this.uri = Uri.joinPath(Uri.parse(src.TestFiles![0].URI), '..');
+		this.update(src);
+	}
 
-		const allTests = this.files.flatMap((x) => x.allTests());
-		this.testRelations = new RelationMap(
+	update(src: Commands.Package) {
+		if (deepEqual(src, this.#src)) {
+			return;
+		}
+		this.#src = src;
+
+		this.files.replaceWith(
+			src.TestFiles!.filter((x) => x.Tests.length),
+			(src) => src.URI,
+			(src) => new TestFile(this.#config, this, src),
+			(src, file) => file.update(src)
+		);
+
+		const allTests = this.getTests();
+		this.testRelations.replace(
 			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)])
 		);
+	}
+
+	get key() {
+		return this.path;
 	}
 
 	get label() {
@@ -268,32 +445,20 @@ export class Package implements GoTestItem {
 	}
 
 	getChildren(): GoTestItem[] {
+		const tests = this.#config.showFiles()
+			? [...this.files]
+			: this.#config.nestSubtests()
+				? this.testRelations.getChildren(undefined) || []
+				: this.getTests();
 		if (!this.#config.nestPackages()) {
-			return this.#getTests();
+			return tests;
 		}
 
-		return [...(this.parent.pkgRelations?.getChildren(this) || []), ...this.#getTests()];
+		return [...(this.parent.pkgRelations?.getChildren(this) || []), ...tests];
 	}
 
-	/**
-	 * Returns the {@link TestCase} or {@link TestFile} children of this package, depending
-	 * on configuration.
-	 */
-	#getTests() {
-		if (this.#config.showFiles()) {
-			return this.files;
-		}
-		if (this.#config.nestSubtests()) {
-			return this.testRelations!.getChildren(undefined) || [];
-		}
-		return this.files.flatMap((x) => x.tests);
-	}
-
-	/**
-	 * Returns all of the package's tests, ignoring configuration.
-	 */
-	allTests() {
-		return this.files.flatMap((x) => x.allTests());
+	getTests() {
+		return [...this.files].flatMap((x) => [...x.tests]);
 	}
 
 	*find(uri: Uri, ranges: Range[]) {
@@ -309,13 +474,33 @@ export class TestFile implements GoTestItem {
 	readonly uri: Uri;
 	readonly kind = 'file';
 	readonly hasChildren = true;
-	readonly tests: TestCase[];
+	readonly tests = new ItemSet<TestCase>();
 
-	constructor(config: TestConfig, pkg: Package, file: Commands.TestFile) {
+	#src?: Commands.TestFile;
+
+	constructor(config: TestConfig, pkg: Package, src: Commands.TestFile) {
 		this.#config = config;
 		this.package = pkg;
-		this.uri = Uri.parse(file.URI);
-		this.tests = file.Tests.map((x) => new StaticTestCase(this.#config, this, x));
+		this.uri = Uri.parse(src.URI);
+		this.update(src);
+	}
+
+	update(src: Commands.TestFile) {
+		if (deepEqual(src, this.#src)) {
+			return;
+		}
+		this.#src = src;
+
+		this.tests.replaceWith(
+			src.Tests,
+			(src) => src.Name,
+			(src) => new StaticTestCase(this.#config, this, src),
+			(src, test) => (test as StaticTestCase).update(src)
+		);
+	}
+
+	get key() {
+		return `${this.uri}`;
 	}
 
 	get label() {
@@ -327,14 +512,7 @@ export class TestFile implements GoTestItem {
 	}
 
 	getChildren(): GoTestItem[] {
-		return this.tests;
-	}
-
-	/**
-	 * Returns all of the file's tests, ignoring configuration.
-	 */
-	allTests() {
-		return this.tests;
+		return [...this.tests];
 	}
 
 	*find(uri: Uri, ranges: Range[]) {
@@ -373,12 +551,16 @@ export abstract class TestCase implements GoTestItem {
 		this.name = name;
 	}
 
-	get label() {
-		const parent = this.file.package.testRelations?.getParent(this);
-		if (!parent) {
-			return this.name;
+	get key() {
+		return this.name;
+	}
+
+	get label(): string {
+		const parent = this.getParent();
+		if (parent instanceof TestCase) {
+			return this.name.replace(`${parent.name}/`, '');
 		}
-		return this.name.replace(`${parent.name}/`, '');
+		return this.name;
 	}
 
 	get hasChildren() {
@@ -386,7 +568,7 @@ export abstract class TestCase implements GoTestItem {
 	}
 
 	getParent() {
-		const parentTest = this.file.package.testRelations?.getParent(this);
+		const parentTest = this.#config.nestSubtests() && this.file.package.testRelations.getParent(this);
 		if (parentTest) {
 			return parentTest;
 		}
@@ -397,26 +579,35 @@ export abstract class TestCase implements GoTestItem {
 	}
 
 	getChildren(): TestCase[] {
-		return this.file.package.testRelations?.getChildren(this) || [];
+		return (this.#config.nestSubtests() && this.file.package.testRelations.getChildren(this)) || [];
 	}
 
 	makeDynamicTestCase(name: string) {
 		const child = new DynamicTestCase(this.#config, this, name);
-		this.file.tests.push(child);
-		this.file.package.testRelations?.add(this, child);
+		this.file.tests.add(child);
+		this.file.package.testRelations.add(this, child);
 		return child;
 	}
 }
 
 export class StaticTestCase extends TestCase {
-	readonly range: Range | undefined;
+	range?: Range;
+	#src?: Commands.TestCase;
 
-	constructor(config: TestConfig, file: TestFile, test: Commands.TestCase) {
-		const uri = Uri.parse(test.Loc.uri);
-		const kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
-		super(config, file, uri, kind, test.Name);
+	constructor(config: TestConfig, file: TestFile, src: Commands.TestCase) {
+		const uri = Uri.parse(src.Loc.uri);
+		const kind = src.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
+		super(config, file, uri, kind, src.Name);
+		this.update(src);
+	}
 
-		const { start, end } = test.Loc.range;
+	update(src: Commands.TestCase) {
+		if (deepEqual(src, this.#src)) {
+			return;
+		}
+		this.#src = src;
+
+		const { start, end } = src.Loc.range;
 		this.range = new Range(start.line, start.character, end.line, end.character);
 	}
 }
@@ -433,12 +624,7 @@ class RelationMap<Child, Parent> {
 
 	constructor(relations: Iterable<[Child, Parent]> = []) {
 		for (const [child, parent] of relations) {
-			this.#childParent.set(child, parent);
-			if (this.#parentChild.has(parent)) {
-				this.#parentChild.get(parent)?.push(child);
-			} else {
-				this.#parentChild.set(parent, [child]);
-			}
+			this.add(parent, child);
 		}
 	}
 
@@ -449,6 +635,14 @@ class RelationMap<Child, Parent> {
 			children.push(child);
 		} else {
 			this.#parentChild.set(parent, [child]);
+		}
+	}
+
+	replace(relations: Iterable<[Child, Parent]>) {
+		this.#childParent.clear();
+		this.#parentChild.clear();
+		for (const [child, parent] of relations) {
+			this.add(parent, child);
 		}
 	}
 
@@ -469,6 +663,83 @@ export function findParentTestCase(allTests: TestCase[], name: string) {
 		for (const test of allTests) {
 			if (test.name === name) {
 				return test;
+			}
+		}
+	}
+}
+
+export class ItemSet<T extends GoTestItem> {
+	readonly #items: Map<string, T>;
+
+	constructor(items: T[] = []) {
+		this.#items = new Map(items.map((x) => [x.key, x]));
+	}
+
+	*keys() {
+		yield* this.#items.keys();
+	}
+
+	*values() {
+		yield* this.#items.values();
+	}
+
+	[Symbol.iterator]() {
+		return this.#items.values();
+	}
+
+	get size() {
+		return this.#items.size;
+	}
+
+	has(item: string | T) {
+		return this.#items.has(typeof item === 'string' ? item : item.key);
+	}
+
+	get(item: string | T) {
+		return this.#items.get(typeof item === 'string' ? item : item.key);
+	}
+
+	add(...items: T[]) {
+		for (const item of items) {
+			if (this.has(item)) continue;
+			this.#items.set(item.key, item);
+		}
+	}
+
+	remove(item: string | T) {
+		this.#items.delete(typeof item === 'string' ? item : item.key);
+	}
+
+	replace(items: T[]) {
+		// Insert new items
+		this.add(...items);
+
+		// Delete items that are no longer present
+		const keep = new Set(items.map((x) => `${x.uri}`));
+		for (const key of this.keys()) {
+			if (!keep.has(key)) {
+				this.remove(key);
+			}
+		}
+	}
+
+	replaceWith<S>(src: S[], id: (_: S) => string, make: (_: S) => T, update: (_1: S, _2: T) => void) {
+		// Delete items that are no longer present
+		const keep = new Set(src.map(id));
+		for (const key of this.keys()) {
+			if (!keep.has(key)) {
+				this.remove(key);
+			}
+		}
+
+		// Update and insert items
+		for (const item of src) {
+			const key = id(item);
+			const existing = this.get(key);
+			if (existing) {
+				update(item, existing);
+			} else {
+				this.add(make(item));
 			}
 		}
 	}

@@ -186,6 +186,9 @@ function debugTree(root: TestItemCollection, label: string) {
 	if (!debugResolve) return;
 	const s = [label];
 	const add = (item: TestItem, indent: string) => {
+		if (indent === '  ' && item.children.size > 2) {
+			console.error('wtf');
+		}
 		s.push(`${indent}${item.label}`);
 		for (const [, child] of item.children) {
 			add(child, indent + '  ');

@@ -123,6 +123,8 @@
     "vscode-languageserver-types": "^3.17.5"
   },
   "dependencies": {
+    "@types/deep-equal": "^1.0.4",
+    "deep-equal": "^2.2.3",
     "tree-kill": "^1.2.2"
   }
 }
