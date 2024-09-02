@@ -1,7 +1,7 @@
 import vscode from 'vscode';
 import { Context } from './testing';
 import { TestConfig } from './config';
-import { StaticTestCase, TestCase } from './item';
+import { GoTestItem, StaticTestCase, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { TestManager } from './manager';
 
@@ -29,42 +29,47 @@ export class CodeLensProvider implements vscode.CodeLensProvider<CodeLens> {
 
 		const lenses = [];
 		for await (const test of this.#manager.find(document.uri)) {
-			if (test instanceof StaticTestCase && test.range) {
-				const run = new CodeLens(test.range, test, 'run');
-				const debug = new CodeLens(test.range, test, 'debug');
-				switch (mode) {
-					case 'run':
-						lenses.push(run);
-						break;
-					case 'debug':
-						lenses.push(debug);
-						break;
-					default:
-						lenses.push(run, debug);
-						break;
-				}
+			if (!(test instanceof StaticTestCase) || !test.range) {
+				continue;
+			}
+
+			const run = new CodeLens(test.range, test, 'run');
+			const debug = new CodeLens(test.range, test, 'debug');
+			switch (mode) {
+				case 'run':
+					lenses.push(run);
+					break;
+				case 'debug':
+					lenses.push(debug);
+					break;
+				default:
+					lenses.push(run, debug);
+					break;
 			}
 		}
 		return lenses;
 	}
 
-	async resolveCodeLens(codeLens: CodeLens): Promise<CodeLens> {
-		codeLens.command = {
-			title: `${codeLens.kind} test`,
-			command: `goExp.test.${codeLens.kind}`,
-			arguments: [await this.#manager.resolveTestItem(codeLens.test)]
+	async resolveCodeLens(lens: CodeLens): Promise<CodeLens> {
+		lens.command = {
+			title: `${lens.kind} ${lens.item.kind}`,
+			command: `goExp.test.${lens.kind}`,
+			arguments: [await this.#manager.resolveTestItem(lens.item)]
 		};
-		return codeLens;
+		if (!(lens.item instanceof TestCase)) {
+			lens.command.title += ' files';
+		}
+		return lens;
 	}
 }
 
 class CodeLens extends vscode.CodeLens {
-	readonly test: TestCase;
+	readonly item: GoTestItem;
 	readonly kind: 'run' | 'debug';
 
-	constructor(range: vscode.Range, test: TestCase, kind: 'run' | 'debug') {
+	constructor(range: vscode.Range, item: GoTestItem, kind: 'run' | 'debug') {
 		super(range);
-		this.test = test;
+		this.item = item;
 		this.kind = kind;
 	}
 }
