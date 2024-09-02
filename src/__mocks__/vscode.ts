@@ -99,3 +99,14 @@ export class Position {
 export class EventEmitter<T> extends EEImpl<T> implements vscode.EventEmitter<T> {
 	readonly dispose = () => {};
 }
+
+export class CodeLens {
+	range: Range;
+	command?: vscode.Command;
+	readonly isResolved = false;
+
+	constructor(range: Range, command?: vscode.Command) {
+		this.range = range;
+		this.command = command;
+	}
+}

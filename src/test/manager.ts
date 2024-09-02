@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TestRunProfileKind, Uri } from 'vscode';
+import { TestRunProfileKind, Uri, Range } from 'vscode';
 import type { Disposable, TestItem } from 'vscode';
+import type vscode from 'vscode';
 import { Context, doSafe, TestController } from './testing';
 import { safeInvalidate, TestItemResolver } from './itemResolver';
 import { GoTestItem, Package } from './item';
 import { TestRunner, NewRun } from './runner';
 import { GoTestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
-import { Range } from 'vscode';
 import { CodeLensProvider } from './codeLens';
 import { DocumentSelector } from 'vscode';
 
@@ -34,7 +34,7 @@ export class TestManager {
 
 	setup(args: {
 		createTestController(id: string, label: string): TestController;
-		registerCodeLensProvider(selector: DocumentSelector, provider: CodeLensProvider): Disposable;
+		registerCodeLensProvider(selector: DocumentSelector, provider: vscode.CodeLensProvider): Disposable;
 	}) {
 		this.#disposable.push(
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens)

@@ -4,8 +4,9 @@ import { TestConfig } from './config';
 import { GoTestItem, StaticTestCase, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { TestManager } from './manager';
+import { CodeLens, TextDocument, Range } from 'vscode';
 
-export class CodeLensProvider implements vscode.CodeLensProvider<CodeLens> {
+export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	readonly #didChangeCodeLenses = new EventEmitter<void>();
 	readonly onDidChangeCodeLenses = this.#didChangeCodeLenses.event;
 
@@ -21,7 +22,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<CodeLens> {
 		await this.#didChangeCodeLenses.fire();
 	}
 
-	async provideCodeLenses(document: vscode.TextDocument): Promise<CodeLens[]> {
+	async provideCodeLenses(document: TextDocument): Promise<GoCodeLens[]> {
 		const mode = new TestConfig(this.#context.workspace).codeLens();
 		if (mode === 'off') {
 			return [];
@@ -33,8 +34,8 @@ export class CodeLensProvider implements vscode.CodeLensProvider<CodeLens> {
 				continue;
 			}
 
-			const run = new CodeLens(test.range, test, 'run');
-			const debug = new CodeLens(test.range, test, 'debug');
+			const run = new GoCodeLens(test.range, test, 'run');
+			const debug = new GoCodeLens(test.range, test, 'debug');
 			switch (mode) {
 				case 'run':
 					lenses.push(run);
@@ -50,7 +51,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<CodeLens> {
 		return lenses;
 	}
 
-	async resolveCodeLens(lens: CodeLens): Promise<CodeLens> {
+	async resolveCodeLens(lens: GoCodeLens): Promise<GoCodeLens> {
 		lens.command = {
 			title: `${lens.kind} ${lens.item.kind}`,
 			command: `goExp.test.${lens.kind}`,
@@ -63,11 +64,11 @@ export class CodeLensProvider implements vscode.CodeLensProvider<CodeLens> {
 	}
 }
 
-class CodeLens extends vscode.CodeLens {
+class GoCodeLens extends CodeLens {
 	readonly item: GoTestItem;
 	readonly kind: 'run' | 'debug';
 
-	constructor(range: vscode.Range, item: GoTestItem, kind: 'run' | 'debug') {
+	constructor(range: Range, item: GoTestItem, kind: 'run' | 'debug') {
 		super(range);
 		this.item = item;
 		this.kind = kind;
