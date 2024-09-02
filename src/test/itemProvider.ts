@@ -61,6 +61,15 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
+		// Only support the file: URIs. It is necessary to exclude git: URIs
+		// because gopls will not handle them. Excluding everything except file:
+		// may not be strictly necessary, but vscode-go currently has no support
+		// for remote workspaces so it is safe for now.
+		if (uri.scheme !== 'file') {
+			return;
+		}
+
+		// Ignore anything that's not a Go file
 		if (!uri.path.endsWith('.go')) {
 			return;
 		}
