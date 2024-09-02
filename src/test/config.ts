@@ -26,5 +26,6 @@ export class TestConfig {
 	readonly showFiles = () => this.get<boolean>('showFiles');
 	readonly nestPackages = () => this.get<boolean>('nestPackages');
 	readonly nestSubtests = () => this.get<boolean>('nestSubtests');
+	readonly codeLens = () => this.get<'on' | 'off' | 'run' | 'debug'>('codeLens');
 	readonly runPackageBenchmarks = () => this.get<boolean>('runPackageBenchmarks');
 }

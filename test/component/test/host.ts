@@ -52,7 +52,10 @@ export class TestHost implements Context {
 	constructor(dir: string, ...config: HostConfig[]) {
 		this.dir = dir;
 		config.forEach((x) => x(this));
-		this.manager.setup({ createController: () => this.controller });
+		this.manager.setup({
+			createTestController: () => this.controller,
+			registerCodeLensProvider: () => ({ dispose: () => {} })
+		});
 	}
 }
 

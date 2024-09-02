@@ -5,6 +5,7 @@ import vscode from 'vscode';
 import { Package, TestCase } from './item';
 import { Context, doSafe, reportError, TestController, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
+import { CancellationTokenSource } from 'vscode';
 
 export type NewRun = (_: vscode.TestRunRequest) => Promise<TestRunRequest>;
 
@@ -12,6 +13,7 @@ export class TestRunner {
 	readonly #context: Context;
 	readonly #ctrl: TestController;
 	readonly #profile: TestRunProfile;
+	readonly #newRun: NewRun;
 
 	constructor(
 		context: Context,
@@ -23,6 +25,7 @@ export class TestRunner {
 	) {
 		this.#context = context;
 		this.#ctrl = ctrl;
+		this.#newRun = newRun;
 		this.#profile = ctrl.createRunProfile(
 			label,
 			kind,
@@ -32,6 +35,12 @@ export class TestRunner {
 				}),
 			isDefault
 		);
+	}
+
+	async run(item: vscode.TestItem) {
+		const cancel = new CancellationTokenSource();
+		await this.#run(await this.#newRun(new vscode.TestRunRequest([item], [], this.#profile)), cancel.token);
+		cancel.cancel();
 	}
 
 	async #run(request: TestRunRequest, token: CancellationToken) {

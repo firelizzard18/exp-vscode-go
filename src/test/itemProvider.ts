@@ -74,38 +74,9 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
-		// Load tests for the given URI
-		const packages = Package.resolve(
-			await this.#context.commands.packages({
-				Files: [uri.toString()],
-				Mode: 1
-			})
-		);
-
 		const updated = [];
-
-		// With one URI and no recursion there *should* only be one result, but
-		// process in a loop regardless
-		const findOpts = { tryReload: true };
-		for (const pkg of packages) {
-			// This shouldn't happen, but just in case
-			if (!pkg.TestFiles?.length) continue;
-
-			// Find the module or workspace that owns this package
-			const root = await this.#roots.getRootFor(pkg, findOpts);
-			if (!root) continue; // TODO: Handle tests from external packages?
-
-			// Mark the package as requested
-			this.#requested.add(root.uri.toString());
-			root.markRequested(pkg);
-
-			// Update the package
-			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
-			if (!pkgItem) continue; // This indicates a bug
-			pkgItem.update(pkg);
-
-			// Find the updated items
-			updated.push(...(await root.find(uri, ranges)));
+		for await (const test of this.find(uri, ranges)) {
+			updated.push(test);
 		}
 
 		await this.#didChangeTestItem.fire(updated);
@@ -131,5 +102,38 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		const test = parent.makeDynamicTestCase(name);
 		await this.#didChangeTestItem.fire([test]);
 		return test;
+	}
+
+	async *find(uri: Uri, ranges: Range[] = []) {
+		const packages = Package.resolve(
+			await this.#context.commands.packages({
+				Files: [uri.toString()],
+				Mode: 1
+			})
+		);
+
+		// With one URI and no recursion there *should* only be one result, but
+		// process in a loop regardless
+		const findOpts = { tryReload: true };
+		for (const pkg of packages) {
+			// This shouldn't happen, but just in case
+			if (!pkg.TestFiles?.length) continue;
+
+			// Find the module or workspace that owns this package
+			const root = await this.#roots.getRootFor(pkg, findOpts);
+			if (!root) continue; // TODO: Handle tests from external packages?
+
+			// Mark the package as requested
+			this.#requested.add(root.uri.toString());
+			root.markRequested(pkg);
+
+			// Update the package
+			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
+			if (!pkgItem) continue; // This indicates a bug
+			pkgItem.update(pkg);
+
+			// Find the updated items
+			yield* await root.find(uri, ranges);
+		}
 	}
 }

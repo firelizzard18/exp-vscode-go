@@ -55,6 +55,18 @@
           "scope": "resource",
           "description": "Nest subtests"
         },
+        "goExp.testExplorer.codeLens": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off",
+            "debug",
+            "run"
+          ],
+          "default": "off",
+          "scope": "resource",
+          "description": "Show code lenses for running and debugging tests"
+        },
         "goExp.testExplorer.runPackageBenchmarks": {
           "type": "boolean",
           "default": false,
@@ -63,17 +75,38 @@
         }
       }
     },
-    "commands": {
-      "command": "goExp.testExplorer.refresh",
-      "title": "Go Test: Refresh",
-      "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
-      "category": "Test",
-      "icon": "$(refresh)"
-    },
+    "commands": [
+      {
+        "command": "goExp.testExplorer.refresh",
+        "title": "Go Test: Refresh",
+        "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
+        "category": "Test",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "goExp.test.run",
+        "title": "Go: Run Test",
+        "category": "Test"
+      },
+      {
+        "command": "goExp.test.debug",
+        "title": "Go: Debug Test",
+        "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
+        "category": "Test"
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
           "command": "goExp.testExplorer.refresh",
+          "when": "false"
+        },
+        {
+          "command": "goExp.test.run",
+          "when": "false"
+        },
+        {
+          "command": "goExp.test.debug",
           "when": "false"
         }
       ],

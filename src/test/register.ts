@@ -4,6 +4,7 @@ import { Context, doSafe } from './testing';
 import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
+import { languages } from 'vscode';
 
 export async function registerTestController(ctx: ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -38,13 +39,20 @@ export async function registerTestController(ctx: ExtensionContext) {
 	// Initialize the controller
 	const manager = new TestManager(testCtx);
 	const setup = () => {
-		manager.setup({ createController: tests.createTestController });
+		manager.setup({
+			createTestController: tests.createTestController,
+			registerCodeLensProvider: languages.registerCodeLensProvider
+		});
 		window.visibleTextEditors.forEach((x) => manager.reload(x.document.uri));
 	};
 	ctx.subscriptions.push(manager);
 
 	// [Command] Refresh
 	command('goExp.testExplorer.refresh', (item) => manager.enabled && manager.reload(item));
+
+	// [Command] Run Test, Debug Test
+	command('goExp.test.run', (item) => manager.enabled && manager.runTest(item));
+	command('goExp.test.debug', (item) => manager.enabled && manager.debugTest(item));
 
 	// [Event] Configuration change
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
