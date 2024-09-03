@@ -447,7 +447,7 @@ describe('Go test controller', () => {
 		it('shows dynamic subtests', async () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
-			const tc = (await (await host.manager.rootGoTestItems)[0]?.getChildren())?.[0] as TestCase;
+			const tc = (await (await host.manager.rootGoTestItems())[0]?.getChildren())?.[0] as TestCase;
 			expect(tc).toBeDefined();
 			expect(tc).toBeInstanceOf(TestCase);
 
@@ -489,13 +489,13 @@ describe('Go test controller', () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await host.manager.reload();
-			const bMod = isa(Module, (await host.manager.rootGoTestItems)[0]);
+			const bMod = isa(Module, (await host.manager.rootGoTestItems())[0]);
 			const bPkg = isa(Package, (await bMod.getPackages())[0]);
 			const bTest = bPkg.getTests()?.[0];
 			expect(bTest).toBeDefined();
 
 			await host.manager.reload();
-			const aMod = isa(Module, (await host.manager.rootGoTestItems)[0]);
+			const aMod = isa(Module, (await host.manager.rootGoTestItems())[0]);
 			const aPkg = isa(Package, (await aMod.getPackages())[0]);
 			const aTest = aPkg.getTests()?.[0];
 			if (!Object.is(aMod, bMod)) throw new Error('Reloading recreated the module');

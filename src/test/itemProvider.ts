@@ -2,7 +2,7 @@ import { Uri } from 'vscode';
 import { TestItemData, TestItemProvider } from './itemResolver';
 import { Context } from './testing';
 import { TestConfig } from './config';
-import { findParentTestCase, GoTestItem, Package, RootSet, TestCase } from './item';
+import { findParentTestCase, GoTestItem, Package, RootItem, RootSet, TestCase } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Range } from 'vscode';
 
@@ -39,6 +39,8 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		return element.getParent();
 	}
 
+	getChildren(): Promise<RootItem[]>;
+	getChildren(element: GoTestItem): Promise<GoTestItem[]>;
 	async getChildren(element?: GoTestItem | undefined): Promise<GoTestItem[]> {
 		if (element) {
 			return element.getChildren();
@@ -74,15 +76,63 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
-		const updated = [];
-		for await (const test of this.find(uri, ranges)) {
-			updated.push(test);
+		const packages = Package.resolve(
+			await this.#context.commands.packages({
+				Files: [uri.toString()],
+				Mode: 1
+			})
+		);
+
+		// With one URI and no recursion there *should* only be one result, but
+		// process in a loop regardless
+		const findOpts = { tryReload: true };
+		const updated = new Set<GoTestItem>();
+		for (const pkg of packages) {
+			// This shouldn't happen, but just in case
+			if (!pkg.TestFiles?.length) continue;
+
+			// Find the module or workspace that owns this package
+			const root = await this.#roots.getRootFor(pkg, findOpts);
+			if (!root) continue; // TODO: Handle tests from external packages?
+
+			// Mark the package as requested
+			this.#requested.add(root.uri.toString());
+			root.markRequested(pkg);
+
+			// Find the package
+			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
+			if (!pkgItem) continue; // This indicates a bug
+
+			// Find the updated items
+			for (const item of this.#reload(pkgItem, uri, ranges)) {
+				updated.add(item);
+			}
+
+			// Update the package
+			pkgItem.update(pkg);
 		}
 
-		await this.#didChangeTestItem.fire(updated);
+		await this.#didChangeTestItem.fire([...updated]);
 		if (invalidate) {
-			await this.#didInvalidateTestResults.fire(updated);
+			await this.#didInvalidateTestResults.fire([...updated]);
 		}
+	}
+
+	#reload(pkg: Package, uri: Uri, ranges: Range[]) {
+		const file = [...pkg.files].find((x) => `${x.uri}` === `${uri}`);
+		if (!file) {
+			return [];
+		}
+
+		const tests = file.find(ranges);
+		if (tests.length) {
+			return tests;
+		}
+
+		if (this.#config.for(uri).showFiles()) {
+			return [file];
+		}
+		return [file.getParent()];
 	}
 
 	async resolveTestCase(pkg: Package, name: string) {
@@ -104,36 +154,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		return test;
 	}
 
-	async *find(uri: Uri, ranges: Range[] = []) {
-		const packages = Package.resolve(
-			await this.#context.commands.packages({
-				Files: [uri.toString()],
-				Mode: 1
-			})
-		);
-
-		// With one URI and no recursion there *should* only be one result, but
-		// process in a loop regardless
-		const findOpts = { tryReload: true };
-		for (const pkg of packages) {
-			// This shouldn't happen, but just in case
-			if (!pkg.TestFiles?.length) continue;
-
-			// Find the module or workspace that owns this package
-			const root = await this.#roots.getRootFor(pkg, findOpts);
-			if (!root) continue; // TODO: Handle tests from external packages?
-
-			// Mark the package as requested
-			this.#requested.add(root.uri.toString());
-			root.markRequested(pkg);
-
-			// Update the package
-			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
-			if (!pkgItem) continue; // This indicates a bug
-			pkgItem.update(pkg);
-
-			// Find the updated items
-			yield* await root.find(uri, ranges);
-		}
+	*roots() {
+		yield* this.#roots;
 	}
 }

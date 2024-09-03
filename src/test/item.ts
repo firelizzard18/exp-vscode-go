@@ -64,7 +64,6 @@ export namespace GoTestItem {
 }
 
 export interface GoTestItem {
-	readonly key: string;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly label: string;
@@ -84,6 +83,12 @@ export class RootSet {
 
 	constructor(context: Context) {
 		this.#context = context;
+	}
+
+	*[Symbol.iterator]() {
+		for (const ws of this.#roots.values()) {
+			yield* ws;
+		}
 	}
 
 	async getChildren(reload = false): Promise<RootItem[]> {
@@ -218,7 +223,17 @@ export class RootSet {
 	}
 }
 
-export abstract class RootItem implements GoTestItem {
+abstract class BaseItem implements GoTestItem {
+	abstract key: string;
+	abstract uri: Uri;
+	abstract kind: GoTestItem.Kind;
+	abstract label: string;
+	abstract hasChildren: boolean;
+	abstract getParent(): ProviderResult<GoTestItem>;
+	abstract getChildren(): BaseItem[] | Promise<BaseItem[]>;
+}
+
+export abstract class RootItem extends BaseItem {
 	abstract readonly uri: Uri;
 	abstract readonly kind: GoTestItem.Kind;
 	abstract readonly label: string;
@@ -233,6 +248,7 @@ export abstract class RootItem implements GoTestItem {
 	readonly #packages = new ItemSet<Package>();
 
 	constructor(config: TestConfig, context: Context) {
+		super();
 		this.#config = config;
 		this.#context = context;
 	}
@@ -255,14 +271,11 @@ export abstract class RootItem implements GoTestItem {
 		return null;
 	}
 
-	async getChildren(): Promise<GoTestItem[]> {
+	async getChildren(): Promise<BaseItem[]> {
 		const allPkgs = await this.getPackages(true);
 		const packages = (this.#config.nestPackages() && this.pkgRelations.getChildren(undefined)) || allPkgs;
-		const i = packages.findIndex((x) => x.uri.toString() === this.dir.toString());
-		if (i < 0) return packages;
-
-		const selfPkg = packages[i];
-		return [...packages.filter((_, j) => j !== i), ...selfPkg.getChildren()];
+		const selfPkg = packages.find((x) => x.isSelfPkg);
+		return [...packages.filter((x) => x !== selfPkg), ...(selfPkg?.getChildren() || [])];
 	}
 
 	async getPackages(reload = false) {
@@ -310,17 +323,9 @@ export abstract class RootItem implements GoTestItem {
 			}
 		}
 	}
-
-	find(uri: Uri, ranges: Range[]) {
-		return this.getPackages().then(function* (pkgs) {
-			for (const pkg of pkgs) {
-				yield* pkg.find(uri, ranges);
-			}
-		});
-	}
 }
 
-export class Module extends RootItem implements GoTestItem {
+export class Module extends RootItem {
 	readonly uri: Uri;
 	readonly path: string;
 	readonly kind = 'module';
@@ -340,7 +345,7 @@ export class Module extends RootItem implements GoTestItem {
 	}
 }
 
-export class WorkspaceItem extends RootItem implements GoTestItem {
+export class WorkspaceItem extends RootItem {
 	readonly ws: WorkspaceFolder;
 	readonly kind = 'workspace';
 
@@ -362,7 +367,7 @@ export class WorkspaceItem extends RootItem implements GoTestItem {
 	}
 }
 
-export class Package implements GoTestItem {
+export class Package extends BaseItem {
 	static resolve({ Packages: all = [] }: Commands.PackagesResults) {
 		if (!all) return [];
 
@@ -396,6 +401,7 @@ export class Package implements GoTestItem {
 	#src?: Commands.Package;
 
 	constructor(config: TestConfig, parent: RootItem, src: Commands.Package) {
+		super();
 		this.#config = config;
 		this.parent = parent;
 		this.path = src.Path;
@@ -427,7 +433,7 @@ export class Package implements GoTestItem {
 	}
 
 	get label() {
-		const pkgParent = this.parent.pkgRelations?.getParent(this);
+		const pkgParent = this.parent.pkgRelations.getParent(this);
 		if (pkgParent && this.#config.nestPackages()) {
 			return this.path.substring(pkgParent.path.length + 1);
 		}
@@ -437,14 +443,18 @@ export class Package implements GoTestItem {
 		return this.path;
 	}
 
+	get isSelfPkg() {
+		return `${this.uri}` === `${this.parent.dir}`;
+	}
+
 	getParent() {
 		if (!this.#config.nestPackages()) {
 			return this.parent;
 		}
-		return this.parent.pkgRelations?.getParent(this) || this.parent;
+		return this.parent.pkgRelations.getParent(this) || this.parent;
 	}
 
-	getChildren(): GoTestItem[] {
+	getChildren(): BaseItem[] {
 		const tests = this.#config.showFiles()
 			? [...this.files]
 			: this.#config.nestSubtests()
@@ -454,21 +464,15 @@ export class Package implements GoTestItem {
 			return tests;
 		}
 
-		return [...(this.parent.pkgRelations?.getChildren(this) || []), ...tests];
+		return [...(this.parent.pkgRelations.getChildren(this) || []), ...tests];
 	}
 
 	getTests() {
 		return [...this.files].flatMap((x) => [...x.tests]);
 	}
-
-	*find(uri: Uri, ranges: Range[]) {
-		for (const file of this.files) {
-			yield* file.find(uri, ranges);
-		}
-	}
 }
 
-export class TestFile implements GoTestItem {
+export class TestFile extends BaseItem {
 	readonly #config: TestConfig;
 	readonly package: Package;
 	readonly uri: Uri;
@@ -479,6 +483,7 @@ export class TestFile implements GoTestItem {
 	#src?: Commands.TestFile;
 
 	constructor(config: TestConfig, pkg: Package, src: Commands.TestFile) {
+		super();
 		this.#config = config;
 		this.package = pkg;
 		this.uri = Uri.parse(src.URI);
@@ -508,30 +513,23 @@ export class TestFile implements GoTestItem {
 	}
 
 	getParent() {
+		if (this.package.isSelfPkg) {
+			return this.package.getParent();
+		}
 		return this.package;
 	}
 
-	getChildren(): GoTestItem[] {
+	getChildren(): TestCase[] {
 		return [...this.tests];
 	}
 
-	*find(uri: Uri, ranges: Range[]) {
-		if (uri.toString() !== this.uri.toString()) {
-			return;
-		}
-
+	find(ranges: Range[]) {
 		// Find tests that intersect with the given ranges
 		const found = new Set<TestCase>();
 		for (const test of this.tests) {
-			if (test instanceof StaticTestCase && test.range && ranges.some((x) => test.range!.intersection(x))) {
+			if (ranges.some((x) => test.contains(x))) {
 				found.add(test);
 			}
-		}
-
-		// Or return all tests
-		if (found.size === 0) {
-			yield* this.getChildren();
-			return;
 		}
 
 		// Return the most limited set
@@ -540,11 +538,11 @@ export class TestFile implements GoTestItem {
 			found.delete(parent as any);
 		}
 
-		yield* found;
+		return [...found];
 	}
 }
 
-export abstract class TestCase implements GoTestItem {
+export abstract class TestCase extends BaseItem {
 	readonly #config: TestConfig;
 	readonly file: TestFile;
 	readonly uri: Uri;
@@ -552,12 +550,15 @@ export abstract class TestCase implements GoTestItem {
 	readonly name: string;
 
 	constructor(config: TestConfig, file: TestFile, uri: Uri, kind: GoTestItem.Kind, name: string) {
+		super();
 		this.#config = config;
 		this.file = file;
 		this.uri = uri;
 		this.kind = kind;
 		this.name = name;
 	}
+
+	abstract contains(range: Range): boolean;
 
 	get key() {
 		return this.name;
@@ -583,7 +584,7 @@ export abstract class TestCase implements GoTestItem {
 		if (this.#config.showFiles()) {
 			return this.file;
 		}
-		return this.file.package;
+		return this.file.getParent();
 	}
 
 	getChildren(): TestCase[] {
@@ -618,11 +619,27 @@ export class StaticTestCase extends TestCase {
 		const { start, end } = src.Loc.range;
 		this.range = new Range(start.line, start.character, end.line, end.character);
 	}
+
+	contains(range: Range): boolean {
+		// The range of the test must be defined
+		if (!this.range) return false;
+
+		// The test must contain the given range
+		if (!this.range.contains(range)) return false;
+
+		// The intersection must not be empty
+		const r = this.range.intersection(range);
+		return !!r && !r.isEmpty;
+	}
 }
 
 export class DynamicTestCase extends TestCase {
 	constructor(config: TestConfig, parent: TestCase, name: string) {
 		super(config, parent.file, parent.uri, parent.kind, name);
+	}
+
+	contains(): boolean {
+		return false;
 	}
 }
 
@@ -676,7 +693,7 @@ export function findParentTestCase(allTests: TestCase[], name: string) {
 	}
 }
 
-export class ItemSet<T extends GoTestItem> {
+export class ItemSet<T extends BaseItem> {
 	readonly #items: Map<string, T>;
 
 	constructor(items: T[] = []) {

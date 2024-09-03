@@ -1,7 +1,7 @@
 import vscode from 'vscode';
 import { Context } from './testing';
 import { TestConfig } from './config';
-import { GoTestItem, StaticTestCase, TestCase } from './item';
+import { GoTestItem, StaticTestCase, TestCase, TestFile } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { TestManager } from './manager';
 import { CodeLens, TextDocument, Range } from 'vscode';
@@ -23,32 +23,45 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	}
 
 	async provideCodeLenses(document: TextDocument): Promise<GoCodeLens[]> {
-		const mode = new TestConfig(this.#context.workspace).codeLens();
-		if (mode === 'off') {
+		if (this.#mode() === 'off') {
 			return [];
 		}
 
-		const lenses = [];
-		for await (const test of this.#manager.find(document.uri)) {
-			if (!(test instanceof StaticTestCase) || !test.range) {
-				continue;
-			}
-
-			const run = new GoCodeLens(test.range, test, 'run');
-			const debug = new GoCodeLens(test.range, test, 'debug');
-			switch (mode) {
-				case 'run':
-					lenses.push(run);
-					break;
-				case 'debug':
-					lenses.push(debug);
-					break;
-				default:
-					lenses.push(run, debug);
-					break;
+		for (const root of await this.#manager.rootGoTestItems()) {
+			for (const pkg of await root.getPackages()) {
+				for (const file of await pkg.files) {
+					if (`${file.uri}` === `${document.uri}`) {
+						return [...this.#fileCodeLenses(file)];
+					}
+				}
 			}
 		}
-		return lenses;
+		return [];
+	}
+
+	*#fileCodeLenses(file: TestFile) {
+		const mode = this.#mode(file.uri);
+		for (const test of file.tests) {
+			if (test instanceof StaticTestCase && test.range) {
+				const run = new GoCodeLens(test.range, test, 'run');
+				const debug = new GoCodeLens(test.range, test, 'debug');
+				switch (mode) {
+					case 'run':
+						yield run;
+						break;
+					case 'debug':
+						yield debug;
+						break;
+					default:
+						yield run, debug;
+						break;
+				}
+			}
+		}
+	}
+
+	#mode(uri?: vscode.Uri) {
+		return new TestConfig(this.#context.workspace, uri).codeLens();
 	}
 
 	async resolveCodeLens(lens: GoCodeLens): Promise<GoCodeLens> {

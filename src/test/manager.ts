@@ -112,11 +112,7 @@ export class TestManager {
 		return this.#resolver!.roots;
 	}
 
-	get rootGoTestItems() {
+	rootGoTestItems() {
 		return this.#provider.getChildren();
-	}
-
-	find(uri: Uri, range: Range[] = []) {
-		return this.#provider.find(uri, range);
 	}
 }
