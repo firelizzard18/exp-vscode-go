@@ -597,6 +597,14 @@ export abstract class TestCase extends BaseItem {
 		this.file.package.testRelations.add(this, child);
 		return child;
 	}
+
+	removeDynamicTestCases() {
+		for (const item of this.file.package.testRelations.getChildren(this) || []) {
+			item.removeDynamicTestCases();
+			this.file.tests.remove(item);
+		}
+		this.file.package.testRelations.removeChildren(this);
+	}
 }
 
 export class StaticTestCase extends TestCase {
@@ -669,6 +677,13 @@ class RelationMap<Child, Parent> {
 		for (const [child, parent] of relations) {
 			this.add(parent, child);
 		}
+	}
+
+	removeChildren(parent: Parent) {
+		for (const child of this.#parentChild.get(parent) || []) {
+			this.#childParent.delete(child);
+		}
+		this.#parentChild.delete(parent);
 	}
 
 	getParent(child: Child) {

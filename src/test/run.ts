@@ -180,7 +180,7 @@ export class PackageTestRun {
 
 		// Resolve the named test case and its associated test item
 		const test = msg.Test ? await this.#request.manager.resolveTestCase(this.goItem, msg.Test) : undefined;
-		const item = test && (await this.#request.manager.resolveTestItem(test));
+		const item = test && (await this.#request.manager.resolveTestItem(test, true));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {

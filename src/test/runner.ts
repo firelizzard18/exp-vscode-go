@@ -83,6 +83,7 @@ export class TestRunner {
 		for (const [goItem, item] of pkg.include) {
 			if (!pkg.exclude.has(goItem)) {
 				enqueueTest(item);
+				goItem.removeDynamicTestCases();
 			}
 		}
 
