@@ -274,6 +274,106 @@ describe('Go test controller', () => {
 				]);
 			});
 		});
+
+		it('does not recreate items when reloading', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			await host.manager.reload();
+			const bMod = isa(Module, (await host.manager.rootGoTestItems())[0]);
+			const bPkg = isa(Package, (await bMod.getPackages())[0]);
+			const bTest = bPkg.getTests()?.[0];
+			expect(bTest).toBeDefined();
+
+			await host.manager.reload();
+			const aMod = isa(Module, (await host.manager.rootGoTestItems())[0]);
+			const aPkg = isa(Package, (await aMod.getPackages())[0]);
+			const aTest = aPkg.getTests()?.[0];
+			if (!Object.is(aMod, bMod)) throw new Error('Reloading recreated the module');
+			if (!Object.is(aPkg, bPkg)) throw new Error('Reloading recreated the package');
+			if (!Object.is(aTest, bTest)) throw new Error('Reloading recreated the test');
+		});
+
+		it('shows dynamic subtests', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			const items = await (await host.manager.rootGoTestItems())[0]?.getChildren();
+			const tc = items.find((x) => x.label === 'TestFoo') as TestCase;
+			expect(tc).toBeDefined();
+			expect(tc).toBeInstanceOf(TestCase);
+
+			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{
+							kind: 'test',
+							name: 'TestFoo',
+							uri: `${ws.uri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }]
+						}
+					]
+				}
+			]);
+		});
+
+		it('resets dynamic subtests between runs', async () => {
+			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+
+			const items = await (await host.manager.rootGoTestItems())[0]?.getChildren();
+			const tc = items.find((x) => x.label === 'TestFoo') as TestCase;
+			expect(tc).toBeDefined();
+			expect(tc).toBeInstanceOf(TestCase);
+
+			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{
+							kind: 'test',
+							name: 'TestFoo',
+							uri: `${ws.uri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }]
+						}
+					]
+				}
+			]);
+
+			tc.removeDynamicTestCases();
+			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Baz');
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{
+							kind: 'test',
+							name: 'TestFoo',
+							uri: `${ws.uri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo/Baz', uri: `${ws.uri}/foo_test.go` }]
+						}
+					]
+				}
+			]);
+		});
 	});
 
 	describe.skip('with a nested module', () => {
@@ -425,82 +525,6 @@ describe('Go test controller', () => {
 					]
 				}
 			]);
-		});
-	});
-
-	describe('with dynamic subtests', () => {
-		const ws = Workspace.setup(`
-			-- go.mod --
-			module foo
-
-			-- foo.go --
-			package foo
-
-			-- foo_test.go --
-			package foo
-
-			import "testing"
-
-			func TestFoo(t *testing.T)
-		`);
-
-		it('shows dynamic subtests', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
-
-			const tc = (await (await host.manager.rootGoTestItems())[0]?.getChildren())?.[0] as TestCase;
-			expect(tc).toBeDefined();
-			expect(tc).toBeInstanceOf(TestCase);
-
-			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
-			await expect(host).toResolve([
-				{
-					kind: 'module',
-					uri: `${ws.uri}/go.mod`,
-					children: [
-						{
-							kind: 'test',
-							name: 'TestFoo',
-							uri: `${ws.uri}/foo_test.go`,
-							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }]
-						}
-					]
-				}
-			]);
-		});
-	});
-
-	describe('when reloading', () => {
-		const ws = Workspace.setup(`
-				-- go.mod --
-				module foo
-
-				-- foo.go --
-				package foo
-
-				-- foo_test.go --
-				package foo
-
-				import "testing"
-
-				func TestFoo(t *testing.T) {}
-			`);
-
-		it('does not recreate items', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
-
-			await host.manager.reload();
-			const bMod = isa(Module, (await host.manager.rootGoTestItems())[0]);
-			const bPkg = isa(Package, (await bMod.getPackages())[0]);
-			const bTest = bPkg.getTests()?.[0];
-			expect(bTest).toBeDefined();
-
-			await host.manager.reload();
-			const aMod = isa(Module, (await host.manager.rootGoTestItems())[0]);
-			const aPkg = isa(Package, (await aMod.getPackages())[0]);
-			const aTest = aPkg.getTests()?.[0];
-			if (!Object.is(aMod, bMod)) throw new Error('Reloading recreated the module');
-			if (!Object.is(aPkg, bPkg)) throw new Error('Reloading recreated the package');
-			if (!Object.is(aTest, bTest)) throw new Error('Reloading recreated the test');
 		});
 	});
 
