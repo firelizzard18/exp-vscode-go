@@ -53,7 +53,8 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 						yield debug;
 						break;
 					default:
-						yield run, debug;
+						yield run;
+						yield debug;
 						break;
 				}
 			}
