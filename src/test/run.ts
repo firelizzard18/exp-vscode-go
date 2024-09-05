@@ -275,6 +275,22 @@ export class PackageTestRun {
 		output = output.replace(/\n/g, '\r\n');
 		this.#run.appendOutput(output, location, test);
 	}
+
+	report(fn: (item: TestItem, goItem?: TestCase) => void) {
+		const recurse = (item: TestItem, goItem?: TestCase) => {
+			fn(item, goItem);
+			for (const [, child] of item.children) {
+				recurse(child);
+			}
+		};
+
+		fn(this.testItem);
+		for (const [goItem, item] of this.include) {
+			if (!this.exclude.has(goItem)) {
+				recurse(item, goItem);
+			}
+		}
+	}
 }
 
 function* testCases(items: GoTestItem[]) {

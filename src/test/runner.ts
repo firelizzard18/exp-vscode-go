@@ -6,6 +6,7 @@ import { Package, TestCase } from './item';
 import { Context, doSafe, reportError, TestController, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
 import { CancellationTokenSource } from 'vscode';
+import { TestMessage } from 'vscode';
 
 export type NewRun = (_: vscode.TestRunRequest) => Promise<TestRunRequest>;
 
@@ -44,20 +45,24 @@ export class TestRunner {
 	}
 
 	async #run(request: TestRunRequest, token: CancellationToken) {
-		if (request.size > 1 && this.#profile.kind === TestRunProfileKind.Debug) {
-			reportError(this.#context, new Error('debugging multiple packages is not supported'));
-			return;
-		}
-
 		// Save all files to ensure `go test` tests the latest changes
 		await this.#context.workspace.saveAll(false);
 
-		const run = this.#ctrl.createTestRun(request.source);
-
 		// Execute the tests
+		const run = this.#ctrl.createTestRun(request.source);
 		try {
+			const invalid = request.size > 1 && this.#profile.kind === TestRunProfileKind.Debug;
 			let first = true;
 			for await (const pkg of request.packages(run)) {
+				if (invalid) {
+					pkg.report((item) =>
+						run.errored(item, {
+							message: 'Debugging multiple test packages is not supported'
+						})
+					);
+					continue;
+				}
+
 				if (first) {
 					first = false;
 				} else {
@@ -71,27 +76,19 @@ export class TestRunner {
 		}
 	}
 
-	async #runPackage(run: TestRun, pkg: PackageTestRun, token: CancellationToken) {
-		const enqueueTest = (item: TestItem) => {
+	async #runPackage(run: TestRun, pkg: PackageTestRun, token: CancellationToken, error?: TestMessage) {
+		pkg.report((item, goItem) => {
 			run.enqueued(item);
-			for (const [, child] of item.children) {
-				enqueueTest(child);
-			}
-		};
-
-		run.enqueued(pkg.testItem);
-		for (const [goItem, item] of pkg.include) {
-			if (!pkg.exclude.has(goItem)) {
-				enqueueTest(item);
-				goItem.removeDynamicTestCases();
-			}
-		}
+			goItem?.removeDynamicTestCases();
+		});
 
 		const { binPath: goRuntimePath } = this.#context.go.settings.getExecutionCommand('go', pkg.goItem.uri) || {};
 		if (!goRuntimePath) {
-			run.failed(pkg.testItem, {
-				message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
-			});
+			pkg.report((item) =>
+				run.errored(item, {
+					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
+				})
+			);
 			return;
 		}
 		const flags: string[] = [
