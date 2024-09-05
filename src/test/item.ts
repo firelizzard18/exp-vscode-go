@@ -640,9 +640,12 @@ export class StaticTestCase extends TestCase {
 		// The test must contain the given range
 		if (!this.range.contains(range)) return false;
 
-		// The intersection must not be empty
-		const r = this.range.intersection(range);
-		return !!r && !r.isEmpty;
+		// The intersection must be strictly within the test range. If the
+		// intersection is an empty range at the very start or end of the test's
+		// range, reject it.
+		const r = this.range.intersection(range)!;
+		if (!r.isEmpty) return true;
+		return !r.start.isEqual(this.range.start) && !r.end.isEqual(this.range.end);
 	}
 }
 

@@ -1,55 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, TestItem, TestRun, TestRunProfile, TestRunProfileKind } from 'vscode';
-import vscode from 'vscode';
+import { CancellationToken, TestRun, TestRunProfile, TestRunProfileKind } from 'vscode';
 import { Package, TestCase } from './item';
-import { Context, doSafe, reportError, TestController, Workspace } from './testing';
+import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
-import { CancellationTokenSource } from 'vscode';
 import { TestMessage } from 'vscode';
-
-export type NewRun = (_: vscode.TestRunRequest) => Promise<TestRunRequest>;
 
 export class TestRunner {
 	readonly #context: Context;
-	readonly #ctrl: TestController;
 	readonly #profile: TestRunProfile;
-	readonly #newRun: NewRun;
 
-	constructor(
-		context: Context,
-		ctrl: TestController,
-		newRun: NewRun,
-		label: string,
-		kind: TestRunProfileKind,
-		isDefault = false
-	) {
+	constructor(context: Context, profile: (_: TestRunner) => TestRunProfile) {
 		this.#context = context;
-		this.#ctrl = ctrl;
-		this.#newRun = newRun;
-		this.#profile = ctrl.createRunProfile(
-			label,
-			kind,
-			(request, token) =>
-				doSafe(context, 'execute test', async () => {
-					await this.#run(await newRun(request), token);
-				}),
-			isDefault
-		);
+		this.#profile = profile(this);
 	}
 
-	async run(item: vscode.TestItem) {
-		const cancel = new CancellationTokenSource();
-		await this.#run(await this.#newRun(new vscode.TestRunRequest([item], [], this.#profile)), cancel.token);
-		cancel.cancel();
-	}
-
-	async #run(request: TestRunRequest, token: CancellationToken) {
+	async run(request: TestRunRequest, run: TestRun, token: CancellationToken) {
 		// Save all files to ensure `go test` tests the latest changes
 		await this.#context.workspace.saveAll(false);
 
 		// Execute the tests
-		const run = this.#ctrl.createTestRun(request.source);
 		try {
 			const invalid = request.size > 1 && this.#profile.kind === TestRunProfileKind.Debug;
 			let first = true;

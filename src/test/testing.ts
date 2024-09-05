@@ -4,7 +4,7 @@
 
 /* eslint-disable n/no-unpublished-import */
 /* eslint-disable @typescript-eslint/no-namespace */
-import type * as vscode from 'vscode';
+import type vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
 import type { GoExtensionAPI } from '../vscode-go';
 import type { Spawner } from './utils';
@@ -44,7 +44,14 @@ export interface ConfigValue {
 
 export type TestController = Pick<
 	vscode.TestController,
-	'items' | 'createTestItem' | 'createRunProfile' | 'createTestRun' | 'dispose' | 'resolveHandler' | 'refreshHandler'
+	| 'items'
+	| 'createTestItem'
+	| 'createRunProfile'
+	| 'createTestRun'
+	| 'dispose'
+	| 'resolveHandler'
+	| 'refreshHandler'
+	| 'invalidateTestResults'
 >;
 
 export interface Commands {

@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TestRunProfileKind, Uri, Range } from 'vscode';
-import type { Disposable, TestItem } from 'vscode';
+import { TestRunProfileKind, Uri, Range, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
+import type { CancellationToken, Disposable, TestItem } from 'vscode';
 import type vscode from 'vscode';
 import { Context, doSafe, TestController } from './testing';
-import { safeInvalidate, TestItemResolver } from './itemResolver';
+import { TestItemResolver } from './itemResolver';
 import { GoTestItem, Package } from './item';
-import { TestRunner, NewRun } from './runner';
+import { TestRunner } from './runner';
 import { GoTestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
 import { CodeLensProvider } from './codeLens';
@@ -40,23 +40,28 @@ export class TestManager {
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens)
 		);
 
-		this.#ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new TestItemResolver(this.#ctrl, this.#provider);
+		const ctrl = args.createTestController('goExp', 'Go (experimental)');
+		const resolver = new TestItemResolver(ctrl, this.#provider);
+		this.#ctrl = ctrl;
 		this.#resolver = resolver;
-		this.#disposable.push(this.#ctrl, this.#resolver);
+		this.#disposable.push(ctrl, this.#resolver);
 
-		this.#ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.resolve());
-		this.#ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
+		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.resolve());
+		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
 
-		const newRun: NewRun = (r) => TestRunRequest.from(this, r);
-		this.#testRunner = new TestRunner(this.context, this.#ctrl, newRun, 'Go', TestRunProfileKind.Run, true);
-		this.#testDebugger = new TestRunner(
-			this.context,
-			this.#ctrl,
-			newRun,
-			'Go (debug)',
-			TestRunProfileKind.Debug,
-			true
+		// Normal and debug test runners
+		this.#testRunner = new TestRunner(this.context, (r) =>
+			ctrl.createRunProfile(
+				'Go',
+				TestRunProfileKind.Run,
+				(rq, token) => this.#run(r, rq, token),
+				true,
+				undefined
+				// TODO: Enable continuous testing
+			)
+		);
+		this.#testDebugger = new TestRunner(this.context, (r) =>
+			ctrl.createRunProfile('Go (debug)', TestRunProfileKind.Debug, (rq, token) => this.#run(r, rq, token))
 		);
 	}
 
@@ -70,11 +75,36 @@ export class TestManager {
 	}
 
 	runTest(item: TestItem) {
-		this.#testRunner?.run(item);
+		const cancel = new CancellationTokenSource();
+		this.#run(this.#testRunner!, new VSCTestRunRequest([item]), cancel.token);
 	}
 
 	debugTest(item: TestItem) {
-		this.#testDebugger?.run(item);
+		const cancel = new CancellationTokenSource();
+		this.#run(this.#testDebugger!, new VSCTestRunRequest([item]), cancel.token);
+	}
+
+	async #run(runner: TestRunner, rq: VSCTestRunRequest, token: CancellationToken) {
+		if (rq.continuous) {
+			// TODO:
+			//  - Filter based on the original request
+			//  - Don't run tests until the user hits Ctrl+S, but remember which tests need to be re-run
+
+			const sub = this.#provider.onDidInvalidateTestResults(async (items) => {
+				if (!items) {
+					await this.#run(runner, new VSCTestRunRequest(), token);
+					return;
+				}
+
+				const x = await Promise.all(items.map((x) => this.#resolver?.get(x)));
+				await this.#run(runner, new VSCTestRunRequest(x.filter((x) => x) as TestItem[]), token);
+			});
+			token.onCancellationRequested(() => sub.dispose());
+		}
+
+		const request = await TestRunRequest.from(this, rq);
+		const run = this.#ctrl!.createTestRun(rq);
+		await runner.run(request, run, token);
 	}
 
 	async reload(): Promise<void>;
@@ -85,9 +115,7 @@ export class TestManager {
 			await this.#provider.reload(item, ranges, invalidate);
 		} else {
 			await this.#resolver?.resolve(item);
-			if (invalidate && this.#ctrl) {
-				safeInvalidate(this.#ctrl, item);
-			}
+			invalidate && this.#ctrl?.invalidateTestResults?.(item);
 		}
 	}
 

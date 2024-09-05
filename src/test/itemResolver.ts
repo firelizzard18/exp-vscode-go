@@ -108,8 +108,7 @@ export class TestItemResolver<T> implements Disposable {
 	}
 
 	async #didInvalidateTestResults(providerItems?: T[]) {
-		safeInvalidate(
-			this.#ctrl,
+		this.#ctrl.invalidateTestResults?.(
 			providerItems && (await Promise.all(providerItems.map((x) => this.getOrCreateAll(x))))
 		);
 	}
@@ -151,13 +150,6 @@ export class TestItemResolver<T> implements Disposable {
 		}
 
 		return item;
-	}
-}
-
-export function safeInvalidate(ctrl: TestController, item: TestItem | TestItem[] | undefined) {
-	// invalidateTestResults is not present in vscode 1.75, hence the check
-	if (ctrl && 'invalidateTestResults' in ctrl && typeof ctrl.invalidateTestResults === 'function') {
-		ctrl.invalidateTestResults(item);
 	}
 }
 
