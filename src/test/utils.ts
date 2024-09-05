@@ -59,7 +59,9 @@ export function spawnProcess(ctx: Context, command: string, flags: readonly stri
 			...rest,
 			stdio: 'pipe'
 		});
-		cancel.onCancellationRequested(() => killProcessTree(tp));
+		cancel.onCancellationRequested(() => {
+			killProcessTree(tp);
+		});
 
 		tp.stdout.on('data', (chunk) => outbuf.append(chunk.toString('utf-8')));
 		tp.stderr.on('data', (chunk) => errbuf.append(chunk.toString('utf-8')));

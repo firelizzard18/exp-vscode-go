@@ -592,6 +592,11 @@ export abstract class TestCase extends BaseItem {
 	}
 
 	makeDynamicTestCase(name: string) {
+		const limit = this.#config.dynamicSubtestLimit();
+		if (limit && limit > 0 && (this.file.package.testRelations.getChildren(this)?.length || 0) >= limit) {
+			// TODO: Give some indication to the user?
+			return;
+		}
 		const child = new DynamicTestCase(this.#config, this, name);
 		this.file.tests.add(child);
 		this.file.package.testRelations.add(this, child);

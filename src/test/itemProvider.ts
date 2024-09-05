@@ -150,6 +150,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		if (!parent) return;
 
 		const test = parent.makeDynamicTestCase(name);
+		if (!test) return;
 		await this.#didChangeTestItem.fire([test]);
 		return test;
 	}

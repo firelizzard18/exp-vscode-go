@@ -28,4 +28,5 @@ export class TestConfig {
 	readonly nestSubtests = () => this.get<boolean>('nestSubtests');
 	readonly codeLens = () => this.get<'on' | 'off' | 'run' | 'debug'>('codeLens');
 	readonly runPackageBenchmarks = () => this.get<boolean>('runPackageBenchmarks');
+	readonly dynamicSubtestLimit = () => this.get<number>('dynamicSubtestLimit');
 }

@@ -67,6 +67,12 @@
           "scope": "resource",
           "description": "Show code lenses for running and debugging tests"
         },
+        "goExp.testExplorer.dynamicSubtestLimit": {
+          "type": "integer",
+          "default": 50,
+          "scope": "resource",
+          "description": "Limits the number of subtests that are included in the test explorer. Set to 0 to include all subtests."
+        },
         "goExp.testExplorer.runPackageBenchmarks": {
           "type": "boolean",
           "default": false,
