@@ -33,7 +33,8 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			hasChildren: element.hasChildren,
 			preloadChildren: element instanceof TestCase,
 			range: element.range,
-			error: element.error
+			error: element.error,
+			tags: element instanceof RootItem ? [] : [{ id: 'canDebug' }]
 		};
 	}
 

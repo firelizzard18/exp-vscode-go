@@ -63,7 +63,8 @@ export class TestManager {
 			'Go (debug)',
 			TestRunProfileKind.Debug,
 			(rq, token) => this.#run(this.#debugProfile, rq, token),
-			false
+			false,
+			{ id: 'canDebug' }
 		);
 		this.#disposable.push(this.#debugProfile, this.#runProfile);
 	}
