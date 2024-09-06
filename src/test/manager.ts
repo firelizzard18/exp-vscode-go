@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { TestRunProfileKind, Uri, Range, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
-import type { CancellationToken, Disposable, TestItem } from 'vscode';
+import type { CancellationToken, Disposable, TestItem, TestRunProfile } from 'vscode';
 import type vscode from 'vscode';
 import { Context, doSafe, TestController } from './testing';
 import { TestItemResolver } from './itemResolver';
@@ -10,8 +10,9 @@ import { GoTestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
 import { CodeLensProvider } from './codeLens';
 import { DocumentSelector } from 'vscode';
-
+import { EventEmitter } from '../utils/eventEmitter';
 export class TestManager {
+	readonly #didSave = new EventEmitter<Uri>();
 	readonly context: Context;
 	readonly #provider: GoTestItemProvider;
 	readonly #codeLens: CodeLensProvider;
@@ -25,8 +26,8 @@ export class TestManager {
 
 	#ctrl?: TestController;
 	#resolver?: TestItemResolver<GoTestItem>;
-	#testRunner?: TestRunner;
-	#testDebugger?: TestRunner;
+	#runProfile?: TestRunProfile;
+	#debugProfile?: TestRunProfile;
 
 	get enabled() {
 		return !!this.#ctrl;
@@ -50,19 +51,21 @@ export class TestManager {
 		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
 
 		// Normal and debug test runners
-		this.#testRunner = new TestRunner(this.context, (r) =>
-			ctrl.createRunProfile(
-				'Go',
-				TestRunProfileKind.Run,
-				(rq, token) => this.#run(r, rq, token),
-				true,
-				undefined
-				// TODO: Enable continuous testing
-			)
+		this.#runProfile = ctrl.createRunProfile(
+			'Go',
+			TestRunProfileKind.Run,
+			(rq, token) => this.#run(this.#runProfile, rq, token),
+			true,
+			undefined,
+			true
 		);
-		this.#testDebugger = new TestRunner(this.context, (r) =>
-			ctrl.createRunProfile('Go (debug)', TestRunProfileKind.Debug, (rq, token) => this.#run(r, rq, token))
+		this.#debugProfile = ctrl.createRunProfile(
+			'Go (debug)',
+			TestRunProfileKind.Debug,
+			(rq, token) => this.#run(this.#debugProfile, rq, token),
+			false
 		);
+		this.#disposable.push(this.#debugProfile, this.#runProfile);
 	}
 
 	dispose() {
@@ -70,41 +73,51 @@ export class TestManager {
 		this.#disposable.splice(0, this.#disposable.length);
 		this.#ctrl = undefined;
 		this.#resolver = undefined;
-		this.#testRunner = undefined;
-		this.#testDebugger = undefined;
+		this.#runProfile = undefined;
+		this.#debugProfile = undefined;
 	}
 
 	runTest(item: TestItem) {
-		const cancel = new CancellationTokenSource();
-		this.#run(this.#testRunner!, new VSCTestRunRequest([item]), cancel.token);
+		this.#run(this.#runProfile, new VSCTestRunRequest([item]));
 	}
 
 	debugTest(item: TestItem) {
-		const cancel = new CancellationTokenSource();
-		this.#run(this.#testDebugger!, new VSCTestRunRequest([item]), cancel.token);
+		this.#run(this.#debugProfile, new VSCTestRunRequest([item]));
 	}
 
-	async #run(runner: TestRunner, rq: VSCTestRunRequest, token: CancellationToken) {
-		if (rq.continuous) {
-			// TODO:
-			//  - Filter based on the original request
-			//  - Don't run tests until the user hits Ctrl+S, but remember which tests need to be re-run
+	async #run(profile: TestRunProfile | undefined, rq: VSCTestRunRequest, token?: CancellationToken) {
+		if (!profile) {
+			return;
+		}
 
-			const sub = this.#provider.onDidInvalidateTestResults(async (items) => {
-				if (!items) {
-					await this.#run(runner, new VSCTestRunRequest(), token);
-					return;
-				}
+		if (!token && rq.continuous) {
+			throw new Error('Continuous test runs require a CancellationToken');
+		}
 
-				const x = await Promise.all(items.map((x) => this.#resolver?.get(x)));
-				await this.#run(runner, new VSCTestRunRequest(x.filter((x) => x) as TestItem[]), token);
-			});
-			token.onCancellationRequested(() => sub.dispose());
+		let cancel: CancellationTokenSource | undefined;
+		if (!token) {
+			cancel = new CancellationTokenSource();
+			token = cancel.token;
 		}
 
 		const request = await TestRunRequest.from(this, rq);
-		const run = this.#ctrl!.createTestRun(rq);
-		await runner.run(request, run, token);
+		const runner = new TestRunner(
+			this.context,
+			profile,
+			(rq) => this.#ctrl!.createTestRun(rq.source),
+			request,
+			token
+		);
+
+		if (rq.continuous) {
+			const s1 = this.#provider.onShouldRerunTests(async (items) => await runner.invalidate(items));
+			const s2 = this.#didSave.event(() => doSafe(this.context, 'run continuous', () => runner.runContinuous()));
+			token.onCancellationRequested(() => (s1.dispose(), s2.dispose()));
+		} else {
+			await runner.run();
+		}
+
+		cancel?.cancel();
 	}
 
 	async reload(): Promise<void>;
@@ -115,8 +128,11 @@ export class TestManager {
 			await this.#provider.reload(item, ranges, invalidate);
 		} else {
 			await this.#resolver?.resolve(item);
-			invalidate && this.#ctrl?.invalidateTestResults?.(item);
 		}
+	}
+
+	didSave(uri: Uri) {
+		this.#didSave.fire(uri);
 	}
 
 	resolveTestItem(goItem: GoTestItem): Promise<TestItem | undefined>;

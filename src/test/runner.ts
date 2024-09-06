@@ -1,23 +1,73 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, TestRun, TestRunProfile, TestRunProfileKind } from 'vscode';
-import { Package, TestCase } from './item';
+import { CancellationToken, TestRunProfile, TestRunProfileKind } from 'vscode';
+import type vscode from 'vscode';
+import { Package, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
-import { TestMessage } from 'vscode';
+import { SpawnOptions } from './utils';
 
 export class TestRunner {
 	readonly #context: Context;
 	readonly #profile: TestRunProfile;
+	readonly #createRun: (_: TestRunRequest) => vscode.TestRun;
+	readonly #request: TestRunRequest;
+	readonly #token: CancellationToken;
 
-	constructor(context: Context, profile: (_: TestRunner) => TestRunProfile) {
+	#continuous?: (TestCase | TestFile)[] | 'all';
+
+	constructor(
+		context: Context,
+		profile: TestRunProfile,
+		createRun: (_: TestRunRequest) => vscode.TestRun,
+		request: TestRunRequest,
+		token: CancellationToken
+	) {
 		this.#context = context;
-		this.#profile = profile(this);
+		this.#profile = profile;
+		this.#createRun = createRun;
+		this.#request = request;
+		this.#token = token;
 	}
 
-	async run(request: TestRunRequest, run: TestRun, token: CancellationToken) {
+	async run() {
 		// Save all files to ensure `go test` tests the latest changes
 		await this.#context.workspace.saveAll(false);
+
+		await this.#run(this.#request);
+	}
+
+	async invalidate(items: (TestCase | TestFile)[] | void) {
+		if (!items) {
+			this.#continuous = 'all';
+			return;
+		}
+
+		if (this.#continuous !== 'all') {
+			if (this.#continuous) {
+				this.#continuous.push(...items);
+			} else {
+				this.#continuous = items;
+			}
+		}
+	}
+
+	async runContinuous() {
+		const items = this.#continuous;
+		if (!items) {
+			return;
+		}
+
+		this.#continuous = undefined;
+		if (items === 'all') {
+			await this.#run(this.#request);
+		} else {
+			await this.#run(await this.#request.with(items));
+		}
+	}
+
+	async #run(request: TestRunRequest) {
+		const run = this.#createRun(request);
 
 		// Execute the tests
 		try {
@@ -39,14 +89,14 @@ export class TestRunner {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				await this.#runPackage(run, pkg, token);
+				await this.#runPkg(pkg, run);
 			}
 		} finally {
 			run.end();
 		}
 	}
 
-	async #runPackage(run: TestRun, pkg: PackageTestRun, token: CancellationToken, error?: TestMessage) {
+	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun) {
 		pkg.report((item, goItem) => {
 			run.enqueued(item);
 			goItem?.removeDynamicTestCases();
@@ -85,11 +135,10 @@ export class TestRunner {
 			undefined,
 			pkg.testItem
 		);
-		const spawn = this.#profile.kind === TestRunProfileKind.Debug ? this.#context.debug : this.#context.spawn;
-		const r = await spawn(this.#context, goRuntimePath, flags, {
-			run,
+		const r = await this.#spawn(goRuntimePath, flags, {
+			run: run,
 			cwd: pkg.goItem.uri.fsPath,
-			cancel: token,
+			cancel: this.#token,
 			stdout: (s: string | null) => {
 				if (!s) return;
 				this.#context.output.debug(`stdout> ${s}`);
@@ -108,6 +157,15 @@ export class TestRunner {
 					...(r.signal ? [`signal ${r.signal}`] : [])
 				].join(', ')}`
 			});
+		}
+	}
+
+	#spawn(command: string, flags: readonly string[], options: SpawnOptions) {
+		switch (this.#profile.kind) {
+			case TestRunProfileKind.Debug:
+				return this.#context.debug(this.#context, command, flags, options);
+			default:
+				return this.#context.spawn(this.#context, command, flags, options);
 		}
 	}
 }

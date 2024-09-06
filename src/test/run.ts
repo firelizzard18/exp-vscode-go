@@ -112,6 +112,66 @@ export class TestRunRequest {
 		return new this(manager, request, packages, testsForPackage, excludeForPackage);
 	}
 
+	async with(tests: (TestCase | TestFile)[]) {
+		// Determine which tests cases may be included
+		const candidates = new Set<TestCase>();
+		for (const pkg of this.#packages) {
+			(this.include.get(pkg) || pkg.getTests()).forEach((x) => candidates.add(x));
+			(this.exclude.get(pkg) || []).forEach((x) => candidates.delete(x));
+		}
+
+		// Create the package and include sets for the new request
+		const packages = new Set<Package>();
+		const include = new Map<Package, TestCase[]>();
+		const add = (item: TestCase) => {
+			if (!candidates.has(item)) {
+				return;
+			}
+			const items = include.get(item.file.package) || [];
+			if (items.includes(item)) {
+				return;
+			}
+			packages.add(item.file.package);
+			items.push(item);
+			include.set(item.file.package, items);
+		};
+
+		for (const item of tests) {
+			if (item instanceof TestCase) {
+				add(item);
+			} else {
+				for (const test of item.tests) {
+					add(test);
+				}
+			}
+		}
+
+		// Resolve test items
+		const testItems: TestItem[] = [];
+		await Promise.all(
+			[...include.values()].map((x) =>
+				Promise.all(
+					x.map(async (y) => {
+						const item = await this.manager.resolveTestItem(y, true);
+						testItems.push(item);
+					})
+				)
+			)
+		);
+
+		return new TestRunRequest(
+			this.manager,
+			{
+				include: testItems,
+				exclude: [],
+				profile: this.source.profile
+			},
+			packages,
+			include,
+			new Map()
+		);
+	}
+
 	get size() {
 		return this.#packages.size;
 	}

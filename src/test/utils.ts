@@ -22,7 +22,7 @@ import {
 import { killProcessTree } from '../utils/processUtils';
 import { Context } from './testing';
 
-interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
+export interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	run: TestRun;
 	cwd: string;
 	cancel: CancellationToken;

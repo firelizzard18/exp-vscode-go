@@ -2,7 +2,7 @@ import { Uri } from 'vscode';
 import { TestItemData, TestItemProvider } from './itemResolver';
 import { Context } from './testing';
 import { TestConfig } from './config';
-import { findParentTestCase, GoTestItem, Package, RootItem, RootSet, TestCase } from './item';
+import { findParentTestCase, GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Range } from 'vscode';
 
@@ -11,6 +11,8 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 	readonly #didInvalidateTestResults = new EventEmitter<GoTestItem[] | void>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
+	readonly shouldRerunTests = new EventEmitter<(TestCase | TestFile)[] | void>();
+	readonly onShouldRerunTests = this.shouldRerunTests.event;
 
 	readonly #context: Context;
 	readonly #config: TestConfig;
@@ -83,10 +85,29 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			})
 		);
 
+		const updated = new Set<GoTestItem>();
+		const toRun = new Set<TestCase | TestFile>();
+		const mark = (pkg: Package) => {
+			const file = [...pkg.files].find((x) => `${x.uri}` === `${uri}`);
+			if (!file) return;
+
+			const tests = file.find(ranges);
+			if (tests.length) {
+				tests.forEach((x) => (updated.add(x), toRun.add(x)));
+				return;
+			}
+
+			toRun.add(file);
+			if (this.#config.for(uri).showFiles()) {
+				updated.add(file);
+			} else {
+				updated.add(file.getParent());
+			}
+		};
+
 		// With one URI and no recursion there *should* only be one result, but
 		// process in a loop regardless
 		const findOpts = { tryReload: true };
-		const updated = new Set<GoTestItem>();
 		for (const pkg of packages) {
 			// This shouldn't happen, but just in case
 			if (!pkg.TestFiles?.length) continue;
@@ -103,36 +124,19 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
 			if (!pkgItem) continue; // This indicates a bug
 
-			// Find the updated items
-			for (const item of this.#reload(pkgItem, uri, ranges)) {
-				updated.add(item);
-			}
+			// Mark the updated items
+			mark(pkgItem);
 
-			// Update the package
+			// Update the package. This must happen after finding the update
+			// items since this update may change what items overlap the ranges.
 			pkgItem.update(pkg);
 		}
 
 		await this.#didChangeTestItem.fire([...updated]);
+		await this.shouldRerunTests.fire([...toRun]);
 		if (invalidate) {
 			await this.#didInvalidateTestResults.fire([...updated]);
 		}
-	}
-
-	#reload(pkg: Package, uri: Uri, ranges: Range[]) {
-		const file = [...pkg.files].find((x) => `${x.uri}` === `${uri}`);
-		if (!file) {
-			return [];
-		}
-
-		const tests = file.find(ranges);
-		if (tests.length) {
-			return tests;
-		}
-
-		if (this.#config.for(uri).showFiles()) {
-			return [file];
-		}
-		return [file.getParent()];
 	}
 
 	async resolveTestCase(pkg: Package, name: string) {

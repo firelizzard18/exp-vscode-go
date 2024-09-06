@@ -102,6 +102,9 @@ export async function registerTestController(ctx: ExtensionContext) {
 		);
 	});
 
+	// [Event] File save
+	event(workspace.onDidSaveTextDocument, 'saved document', (e) => manager.enabled && manager.didSave(e.uri));
+
 	// [Event] Workspace change
 	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => manager.enabled && manager.reload());
 
