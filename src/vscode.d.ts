@@ -76,13 +76,13 @@ declare module 'vscode' {
 		/**
 		 * Adds coverage for a file in the run.
 		 */
-		addCoverage(fileCoverage: FileCoverage): void;
+		addCoverage?(fileCoverage: FileCoverage): void;
 
 		/**
 		 * An event fired when the editor is no longer interested in data
 		 * associated with the test run.
 		 */
-		onDidDispose: Event<void>;
+		onDidDispose?: Event<void>;
 	}
 
 	/**
