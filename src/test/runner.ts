@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, TestRunProfile, TestRunProfileKind } from 'vscode';
+import { CancellationToken, TestRunProfile, TestRunProfileKind, Uri } from 'vscode';
 import type vscode from 'vscode';
 import { Package, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
@@ -14,7 +14,7 @@ export class TestRunner {
 	readonly #request: TestRunRequest;
 	readonly #token: CancellationToken;
 
-	#continuous?: (TestCase | TestFile)[] | 'all';
+	readonly #continuous = new Set<TestCase | TestFile>();
 
 	constructor(
 		context: Context,
@@ -37,31 +37,23 @@ export class TestRunner {
 		await this.#run(this.#request);
 	}
 
-	async invalidate(items: (TestCase | TestFile)[] | void) {
-		if (!items) {
-			this.#continuous = 'all';
-			return;
-		}
-
-		if (this.#continuous !== 'all') {
-			if (this.#continuous) {
-				this.#continuous.push(...items);
-			} else {
-				this.#continuous = items;
-			}
+	async invalidate(items: Iterable<TestCase | TestFile>) {
+		for (const item of items) {
+			this.#continuous.add(item);
 		}
 	}
 
-	async runContinuous() {
-		const items = this.#continuous;
-		if (!items) {
-			return;
+	async runContinuous(uri: Uri) {
+		const items = new Set<TestCase | TestFile>();
+		for (const item of this.#continuous) {
+			const file = item instanceof TestFile ? item : item.file;
+			if (`${file.uri}` === `${uri}`) {
+				items.add(item);
+				this.#continuous.delete(item);
+			}
 		}
 
-		this.#continuous = undefined;
-		if (items === 'all') {
-			await this.#run(this.#request);
-		} else {
+		if (items.size) {
 			await this.#run(await this.#request.with(items));
 		}
 	}

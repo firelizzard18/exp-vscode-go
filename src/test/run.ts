@@ -112,7 +112,7 @@ export class TestRunRequest {
 		return new this(manager, request, packages, testsForPackage, excludeForPackage);
 	}
 
-	async with(tests: (TestCase | TestFile)[]) {
+	async with(tests: Iterable<TestCase | TestFile>) {
 		// Determine which tests cases may be included
 		const candidates = new Set<TestCase>();
 		for (const pkg of this.#packages) {

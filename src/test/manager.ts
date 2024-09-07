@@ -112,7 +112,7 @@ export class TestManager {
 
 		if (rq.continuous) {
 			const s1 = this.#provider.onShouldRerunTests(async (items) => await runner.invalidate(items));
-			const s2 = this.#didSave.event(() => doSafe(this.context, 'run continuous', () => runner.runContinuous()));
+			const s2 = this.#didSave.event((e) => doSafe(this.context, 'run', () => runner.runContinuous(e)));
 			token.onCancellationRequested(() => (s1.dispose(), s2.dispose()));
 		} else {
 			await runner.run();

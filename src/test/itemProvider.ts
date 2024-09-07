@@ -11,8 +11,8 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 	readonly #didInvalidateTestResults = new EventEmitter<GoTestItem[] | void>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
-	readonly shouldRerunTests = new EventEmitter<(TestCase | TestFile)[] | void>();
-	readonly onShouldRerunTests = this.shouldRerunTests.event;
+	readonly #shouldRerunTests = new EventEmitter<(TestCase | TestFile)[]>();
+	readonly onShouldRerunTests = this.#shouldRerunTests.event;
 
 	readonly #context: Context;
 	readonly #config: TestConfig;
@@ -134,7 +134,7 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		}
 
 		await this.#didChangeTestItem.fire([...updated]);
-		await this.shouldRerunTests.fire([...toRun]);
+		await this.#shouldRerunTests.fire([...toRun]);
 		if (invalidate) {
 			await this.#didInvalidateTestResults.fire([...updated]);
 		}
