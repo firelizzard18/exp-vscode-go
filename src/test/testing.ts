@@ -35,7 +35,7 @@ export interface Context {
 // The subset of vscode.workspace that is used by the test explorer.
 export type Workspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
 	// Only allow reading the goExp config
-	getConfiguration(section: 'goExp', scope?: vscode.ConfigurationScope | null): ConfigValue;
+	getConfiguration(section: string, scope?: vscode.ConfigurationScope | null): ConfigValue;
 };
 
 export interface ConfigValue {

@@ -28,6 +28,7 @@ const config = pkg.contributes.configuration.properties;
 
 interface Configuration {
 	enable: boolean;
+	exclude: Record<string, boolean>;
 	discovery: 'on' | 'off';
 	showFiles: boolean;
 	nestPackages: boolean;
@@ -105,6 +106,7 @@ class TestWorkspace implements Workspace {
 	readonly workspaceFolders: WorkspaceFolder[] = [];
 	readonly config: Configuration = {
 		enable: config['goExp.testExplorer.enable'].default,
+		exclude: config['goExp.testExplorer.exclude'].default,
 		discovery: config['goExp.testExplorer.discovery'].default as any,
 		showFiles: config['goExp.testExplorer.showFiles'].default,
 		nestPackages: config['goExp.testExplorer.nestPackages'].default,
@@ -122,7 +124,10 @@ class TestWorkspace implements Workspace {
 		);
 	}
 
-	getConfiguration(): ConfigValue {
+	getConfiguration(section: string): ConfigValue {
+		if (section !== 'goExp') {
+			return { get: () => undefined };
+		}
 		return {
 			get: <T>(section: string) => {
 				const prefix = 'testExplorer.';

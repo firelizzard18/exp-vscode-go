@@ -71,6 +71,8 @@ export async function registerTestController(ctx: ExtensionContext) {
 			return;
 		}
 		if (
+			e.affectsConfiguration('files.exclude') ||
+			e.affectsConfiguration('goExp.testExplorer.exclude') ||
 			e.affectsConfiguration('goExp.testExplorer.discovery') ||
 			e.affectsConfiguration('goExp.testExplorer.showFiles') ||
 			e.affectsConfiguration('goExp.testExplorer.nestPackages') ||

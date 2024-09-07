@@ -79,7 +79,14 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 			return;
 		}
 
+		const ws = this.#context.workspace.getWorkspaceFolder(uri);
+		if (!ws) {
+			return;
+		}
+
 		const packages = Package.resolve(
+			ws.uri,
+			this.#config,
 			await this.#context.commands.packages({
 				Files: [uri.toString()],
 				Mode: 1

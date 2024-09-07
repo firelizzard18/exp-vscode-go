@@ -1,5 +1,7 @@
 import { Workspace } from './testing';
 import { ConfigurationScope } from 'vscode';
+import { Minimatch } from 'minimatch';
+import deepEqual from 'deep-equal';
 
 /**
  * Wrapper for accessing test explorer configuration.
@@ -29,4 +31,27 @@ export class TestConfig {
 	readonly codeLens = () => this.get<'on' | 'off' | 'run' | 'debug'>('codeLens');
 	readonly runPackageBenchmarks = () => this.get<boolean>('runPackageBenchmarks');
 	readonly dynamicSubtestLimit = () => this.get<number>('dynamicSubtestLimit');
+
+	#excludeValue?: string[];
+	#excludeCompiled?: Minimatch[];
+
+	readonly exclude = () => {
+		const a = this.get<Record<string, boolean>>('exclude') || {};
+		const b = this.#workspace.getConfiguration('files', this.#scope).get<Record<string, boolean>>('exclude') || {};
+		const v = Object.assign({}, b, a);
+
+		// List enabled patterns
+		const patterns = Object.entries(v)
+			.filter(([, v]) => v)
+			.map(([k]) => k);
+
+		// Only recompile if the patterns have changed
+		if (deepEqual(patterns, this.#excludeValue)) {
+			return this.#excludeCompiled;
+		}
+
+		this.#excludeValue = patterns;
+		this.#excludeCompiled = patterns.map((x) => new Minimatch(x));
+		return this.#excludeCompiled;
+	};
 }

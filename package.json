@@ -27,6 +27,15 @@
           "scope": "window",
           "description": "Enable the Go test explorer"
         },
+        "goExp.testExplorer.exclude": {
+          "type": "object",
+          "default": {},
+          "description": "Exclude directories and/or files from the test explorer. The value of `go.testExplorer.exclude` is merged with `files.exclude`. `go.testExplorer.exclude` takes precedence if an entry appears in both. If `files.exclude` contains `\"examples\": true` and `go.testExplorer.exclude` contains `\"examples\": false`, the latter will take precedence - matching entries will be excluded from the file explorer but included in the test explorer. Otherwise if either `go.testExplorer.exclude` or `files.exclude` contains an entry with a value of `true`, tests and/or packages matching that entry will be excluded from the test explorer.",
+          "scope": "resource",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
         "goExp.testExplorer.discovery": {
           "type": "string",
           "default": "on",
@@ -164,6 +173,7 @@
   "dependencies": {
     "@types/deep-equal": "^1.0.4",
     "deep-equal": "^2.2.3",
+    "minimatch": "^10.0.1",
     "tree-kill": "^1.2.2"
   }
 }

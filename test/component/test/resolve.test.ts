@@ -83,196 +83,113 @@ describe('Go test controller', () => {
 			]);
 		});
 
-		describe('with showFiles', () => {
-			it('resolves files', async () => {
-				const host = new TestHost(
-					ws.path,
-					withWorkspace('foo', `${ws.uri}`),
-					withConfiguration({ showFiles: true })
-				);
+		it('resolves files with showFiles', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ showFiles: true })
+			);
 
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [
-									{
-										kind: 'file',
-										uri: `${ws.uri}/bar/bar_test.go`,
-										children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-									}
-								]
-							},
-							{
-								kind: 'file',
-								uri: `${ws.uri}/foo_test.go`,
-								children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-							}
-						]
-					}
-				]);
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [
+								{
+									kind: 'file',
+									uri: `${ws.uri}/bar/bar_test.go`,
+									children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+								}
+							]
+						},
+						{
+							kind: 'file',
+							uri: `${ws.uri}/foo_test.go`,
+							children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+						}
+					]
+				}
+			]);
 
-				// Changing config changes the resolved tests
-				host.workspace.config.showFiles = false;
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-							},
-							{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-						]
-					}
-				]);
-			});
+			// Changing config changes the resolved tests
+			host.workspace.config.showFiles = false;
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
 		});
 
-		describe('without discovery', () => {
-			it('resolves on-demand', async () => {
-				const host = new TestHost(
-					ws.path,
-					withWorkspace('foo', `${ws.uri}`),
-					withConfiguration({ discovery: 'off' })
-				);
+		it('resolves on-demand without discovery', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ discovery: 'off' })
+			);
 
-				// Nothing is resolved initially
-				await expect(host).toResolve([]);
+			// Nothing is resolved initially
+			await expect(host).toResolve([]);
 
-				// Opening a file (which calls reload) causes the tests within it to be resolved
-				await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar_test.go`));
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-							}
-						]
-					}
-				]);
+			// Opening a file (which calls reload) causes the tests within it to be resolved
+			await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar_test.go`));
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						}
+					]
+				}
+			]);
 
-				// Toggling the config behaves preserves which files have been opened
-				host.workspace.config.discovery = 'on';
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-							},
-							{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-						]
-					}
-				]);
+			// Toggling the config behaves preserves which files have been opened
+			host.workspace.config.discovery = 'on';
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
 
-				host.workspace.config.discovery = 'off';
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-							}
-						]
-					}
-				]);
-			});
-		});
-
-		describe('with nestPackages', () => {
-			const ws = Workspace.setup(`
-				-- go.mod --
-				module foo
-
-				-- bar/bar.go --
-				package bar
-
-				-- bar/bar_test.go --
-				package bar
-
-				import "testing"
-
-				func TestBar(t *testing.T)
-
-				-- bar/baz/baz.go --
-				package baz
-
-				-- bar/baz/baz_test.go --
-				package baz
-
-				import "testing"
-
-				func TestBaz(t *testing.T)
-			`);
-
-			it('resolves tests in nested packages', async () => {
-				const host = new TestHost(
-					ws.path,
-					withWorkspace('foo', `${ws.uri}`),
-					withConfiguration({ nestPackages: true })
-				);
-
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [
-									{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` },
-									{
-										kind: 'package',
-										uri: `${ws.uri}/bar/baz`,
-										children: [
-											{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }
-										]
-									}
-								]
-							}
-						]
-					}
-				]);
-
-				// Changing config changes the resolved tests
-				host.workspace.config.nestPackages = false;
-				await expect(host).toResolve([
-					{
-						kind: 'module',
-						uri: `${ws.uri}/go.mod`,
-						children: [
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar`,
-								children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-							},
-							{
-								kind: 'package',
-								uri: `${ws.uri}/bar/baz`,
-								children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }]
-							}
-						]
-					}
-				]);
-			});
+			host.workspace.config.discovery = 'off';
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						}
+					]
+				}
+			]);
 		});
 
 		it('does not recreate items when reloading', async () => {
@@ -374,6 +291,178 @@ describe('Go test controller', () => {
 				}
 			]);
 		});
+
+		it('omits excluded files', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ exclude: { 'foo_test.go': true } })
+			);
+
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						}
+					]
+				}
+			]);
+
+			// Changing config changes the resolved tests
+			host.workspace.config.exclude = {};
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
+		});
+
+		it('omits excluded packages', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ exclude: { 'bar/**': true } })
+			);
+
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+				}
+			]);
+
+			// Changing config changes the resolved tests
+			host.workspace.config.exclude = {};
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
+		});
+
+		it('ignores disabled exclusions', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ exclude: { 'foo_test.go': false } })
+			);
+
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
+					]
+				}
+			]);
+		});
+	});
+
+	describe('with a nested package', () => {
+		const ws = Workspace.setup(`
+			-- go.mod --
+			module foo
+
+			-- bar/bar.go --
+			package bar
+
+			-- bar/bar_test.go --
+			package bar
+
+			import "testing"
+
+			func TestBar(t *testing.T)
+
+			-- bar/baz/baz.go --
+			package baz
+
+			-- bar/baz/baz_test.go --
+			package baz
+
+			import "testing"
+
+			func TestBaz(t *testing.T)
+		`);
+
+		it('resolves tests in nested packages with nestPackages', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ nestPackages: true })
+			);
+
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [
+								{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` },
+								{
+									kind: 'package',
+									uri: `${ws.uri}/bar/baz`,
+									children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }]
+								}
+							]
+						}
+					]
+				}
+			]);
+
+			// Changing config changes the resolved tests
+			host.workspace.config.nestPackages = false;
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar`,
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+						},
+						{
+							kind: 'package',
+							uri: `${ws.uri}/bar/baz`,
+							children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }]
+						}
+					]
+				}
+			]);
+		});
 	});
 
 	describe.skip('with a nested module', () => {
@@ -425,6 +514,38 @@ describe('Go test controller', () => {
 			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar.go`));
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+				},
+				{
+					kind: 'module',
+					uri: `${ws.uri}/bar/go.mod`,
+					children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+				}
+			]);
+		});
+
+		it('omits excluded modules', async () => {
+			const host = new TestHost(
+				ws.path,
+				withWorkspace('foo', `${ws.uri}`),
+				withConfiguration({ exclude: { 'bar/**': true } })
+			);
+
+			await host.manager.reload(Uri.parse(`${ws.uri}/bar/bar.go`));
+			await expect(host).toResolve([
+				{
+					kind: 'module',
+					uri: `${ws.uri}/go.mod`,
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+				}
+			]);
+
+			// Changing config changes the resolved tests
+			host.workspace.config.exclude = {};
 			await expect(host).toResolve([
 				{
 					kind: 'module',

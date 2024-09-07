@@ -123,20 +123,22 @@ export class RootSet {
 		const roots: RootItem[] = [];
 
 		// Ask gopls
-		const { Modules } = await this.#context.commands.modules({
-			Dir: ws.uri.toString(),
-			MaxDepth: -1
-		});
+		const modules = Module.resolve(
+			ws.uri,
+			config,
+			await this.#context.commands.modules({
+				Dir: ws.uri.toString(),
+				MaxDepth: -1
+			})
+		);
 
 		// Create an item for the workspace unless it's the root of a module
-		if (!Modules?.some((x) => Uri.joinPath(Uri.parse(x.GoMod), '..').toString() === ws.uri.toString())) {
+		if (!modules.some((x) => Uri.joinPath(Uri.parse(x.GoMod), '..').toString() === ws.uri.toString())) {
 			roots.push(new WorkspaceItem(config, this.#context, ws));
 		}
 
 		// Make an item for each module
-		if (Modules) {
-			roots.push(...Modules.map((x) => new Module(config, this.#context, x)));
-		}
+		roots.push(...modules.map((x) => new Module(ws.uri, config, this.#context, x)));
 
 		return roots;
 	}
@@ -238,6 +240,7 @@ export abstract class RootItem extends BaseItem {
 	abstract readonly kind: GoTestItem.Kind;
 	abstract readonly label: string;
 	abstract readonly dir: Uri;
+	abstract readonly root: Uri;
 	readonly hasChildren = true;
 	readonly pkgRelations = new RelationMap<Package, Package | undefined>();
 
@@ -283,6 +286,8 @@ export abstract class RootItem extends BaseItem {
 			this.#didLoad = true;
 			this.#packages.replaceWith(
 				Package.resolve(
+					this.root,
+					this.#config,
 					await this.#context.commands.packages({
 						Files: [this.dir.toString()],
 						Mode: 1,
@@ -326,12 +331,24 @@ export abstract class RootItem extends BaseItem {
 }
 
 export class Module extends RootItem {
+	readonly root: Uri;
 	readonly uri: Uri;
 	readonly path: string;
 	readonly kind = 'module';
 
-	constructor(config: TestConfig, context: Context, mod: Commands.Module) {
+	static resolve(root: Uri, config: TestConfig, { Modules }: Commands.ModulesResult) {
+		if (!Modules) return [];
+
+		const exclude = config.exclude() || [];
+		return Modules.filter((m) => {
+			const p = path.relative(root.fsPath, m.Path);
+			return !exclude.some((x) => x.match(p));
+		});
+	}
+
+	constructor(root: Uri, config: TestConfig, context: Context, mod: Commands.Module) {
 		super(config, context);
+		this.root = root;
 		this.uri = Uri.parse(mod.GoMod);
 		this.path = mod.Path;
 	}
@@ -362,26 +379,36 @@ export class WorkspaceItem extends RootItem {
 		return this.ws.uri;
 	}
 
+	get root(): Uri {
+		return this.ws.uri;
+	}
+
 	get label() {
 		return `${this.ws.name} (workspace)`;
 	}
 }
 
 export class Package extends BaseItem {
-	static resolve({ Packages: all = [] }: Commands.PackagesResults) {
+	static resolve(root: Uri, config: TestConfig, { Packages: all = [] }: Commands.PackagesResults) {
 		if (!all) return [];
 
 		// Consolidate `foo` and `foo_test` into a single Package
 		const paths = new Set(all.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
 		const results: Commands.Package[] = [];
-		for (const path of paths) {
-			const pkgs = all.filter((x) => x.Path === path || x.ForTest === path);
-			const files = pkgs.flatMap((x) => x.TestFiles || []);
+		const exclude = config.exclude() || [];
+		for (const pkgPath of paths) {
+			const pkgs = all.filter((x) => x.Path === pkgPath || x.ForTest === pkgPath);
+			const files = pkgs
+				.flatMap((x) => x.TestFiles || [])
+				.filter((m) => {
+					const p = path.relative(root.fsPath, Uri.parse(m.URI).fsPath);
+					return !exclude.some((x) => x.match(p));
+				});
 			if (!files.length) {
 				continue;
 			}
 			results.push({
-				Path: path,
+				Path: pkgPath,
 				ModulePath: pkgs[0].ModulePath,
 				TestFiles: files
 			});
