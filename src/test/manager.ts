@@ -43,7 +43,7 @@ export class TestManager {
 		);
 
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new TestItemProviderAdapter(ctrl, this.#provider);
+		const resolver = new TestItemProviderAdapter(this.context, ctrl, this.#provider);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 
@@ -117,8 +117,12 @@ export class TestManager {
 		);
 
 		if (rq.continuous) {
-			const s1 = this.#provider.onShouldRerunTests(async (items) => await runner.invalidate(items));
-			const s2 = this.#didSave.event((e) => doSafe(this.context, 'run', () => runner.runContinuous(e)));
+			const s1 = this.#provider.onDidInvalidateTestResults(
+				async (items) => items && (await runner.invalidate(items))
+			);
+			const s2 = this.#didSave.event((e) =>
+				doSafe(this.context, 'run continuous', () => runner.runContinuous(e))
+			);
 			token.onCancellationRequested(() => (s1.dispose(), s2.dispose()));
 		} else {
 			await runner.run();

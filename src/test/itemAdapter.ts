@@ -1,7 +1,8 @@
 import type { TestItem, TestItemCollection } from 'vscode';
-import { TestController } from './testing';
-import { GoTestItem, RootItem, TestCase } from './item';
+import { Context, TestController } from './testing';
+import { GoTestItem, RootItem, TestCase, TestFile } from './item';
 import { TestItemProvider } from './itemProvider';
+import { TestConfig } from './config';
 
 const debugResolve = false;
 
@@ -21,14 +22,17 @@ const debugResolve = false;
  * (and hard to maintain) code.
  */
 export class TestItemProviderAdapter {
+	readonly #context: Context;
 	readonly #ctrl: TestController;
 	readonly #provider: TestItemProvider;
 	readonly #items = new Map<string, GoTestItem>();
 
-	constructor(ctrl: TestController, provider: TestItemProvider) {
+	constructor(context: Context, ctrl: TestController, provider: TestItemProvider) {
+		this.#context = context;
 		this.#ctrl = ctrl;
 		this.#provider = provider;
 	}
+
 	getGoItem(id: string) {
 		return this.#items.get(id);
 	}
@@ -67,21 +71,19 @@ export class TestItemProviderAdapter {
 		}
 	}
 
-	async didChangeTestItem(goItems?: GoTestItem[]) {
+	async didChangeTestItem(goItems?: Iterable<TestCase | TestFile>) {
 		if (!goItems) {
 			// Force a refresh by dumping all the roots and resolving
 			this.#ctrl.items.replace([]);
 			return this.resolve();
 		}
 
-		// Create a TestItem for each GoTestItem, including its ancestors
-		const items = await Promise.all(goItems.map((x) => this.getOrCreateAll(x)));
-
-		// Refresh
+		// Create a TestItem for each GoTestItem, including its ancestors, and refresh
+		const items = await this.#getAll(goItems, true);
 		await Promise.all(items.map((x) => this.resolve(x)));
 	}
 
-	async invalidateTestResults(goItems?: GoTestItem[]) {
+	async invalidateTestResults(goItems?: Iterable<TestCase | TestFile>) {
 		if (!this.#ctrl.invalidateTestResults) {
 			return; // Older versions of VS Code don't support this
 		}
@@ -89,8 +91,34 @@ export class TestItemProviderAdapter {
 			this.#ctrl.invalidateTestResults();
 			return;
 		}
-		const items = await Promise.all(goItems.map((x) => this.get(x)));
-		this.#ctrl.invalidateTestResults(items.filter((x) => x) as TestItem[]);
+		const items = await this.#getAll(goItems);
+		this.#ctrl.invalidateTestResults(items);
+	}
+
+	async #getAll(goItems: Iterable<TestCase | TestFile>, create = false) {
+		// If showFiles is disabled we need to reload the parent of each file
+		// instead of the file
+		const toReload = [];
+		const config = new TestConfig(this.#context.workspace);
+		for (const item of goItems) {
+			if (item instanceof TestCase) {
+				toReload.push(item);
+				continue;
+			}
+
+			if (config.for(item.uri).showFiles()) {
+				toReload.push(item);
+			} else {
+				toReload.push(item.getParent());
+			}
+		}
+
+		if (create) {
+			return await Promise.all(toReload.map((x) => this.getOrCreateAll(x)));
+		}
+
+		const items = await Promise.all(toReload.map((x) => this.get(x)));
+		return items.filter((x) => x) as TestItem[];
 	}
 
 	async get(goItem: GoTestItem): Promise<TestItem | undefined> {

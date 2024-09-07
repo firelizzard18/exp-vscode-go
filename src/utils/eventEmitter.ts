@@ -21,8 +21,8 @@ export class EventEmitter<F extends (e: any) => void | Promise<void>> {
 		return d;
 	};
 
-	readonly fire = <F>(async (e: Parameters<F>[0]): Promise<void> => {
+	readonly fire = async (...args: Parameters<F>): Promise<void> => {
 		// Return a promise to allow tests to await the result
-		await Promise.all([...this.#listeners].map((l) => l(e)));
-	});
+		await Promise.all([...this.#listeners].map((l) => l.call(null, ...args)));
+	};
 }

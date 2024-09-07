@@ -7,12 +7,10 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { Range } from 'vscode';
 
 export class TestItemProvider {
-	readonly #didChangeTestItem = new EventEmitter<(_?: GoTestItem[]) => void>();
+	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
-	readonly #didInvalidateTestResults = new EventEmitter<(_?: GoTestItem[]) => void>();
+	readonly #didInvalidateTestResults = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
-	readonly #shouldRerunTests = new EventEmitter<(_: (TestCase | TestFile)[]) => void>();
-	readonly onShouldRerunTests = this.#shouldRerunTests.event;
 
 	readonly #context: Context;
 	readonly #config: TestConfig;
@@ -80,23 +78,16 @@ export class TestItemProvider {
 			})
 		);
 
-		const updated = new Set<GoTestItem>();
-		const toRun = new Set<TestCase | TestFile>();
+		const updated = new Set<TestCase | TestFile>();
 		const mark = (pkg: Package) => {
 			const file = [...pkg.files].find((x) => `${x.uri}` === `${uri}`);
 			if (!file) return;
 
 			const tests = file.find(ranges);
 			if (tests.length) {
-				tests.forEach((x) => (updated.add(x), toRun.add(x)));
-				return;
-			}
-
-			toRun.add(file);
-			if (this.#config.for(uri).showFiles()) {
-				updated.add(file);
+				tests.forEach((x) => updated.add(x));
 			} else {
-				updated.add(file.getParent());
+				updated.add(file);
 			}
 		};
 
@@ -127,10 +118,9 @@ export class TestItemProvider {
 			pkgItem.update(pkg);
 		}
 
-		await this.#didChangeTestItem.fire([...updated]);
-		await this.#shouldRerunTests.fire([...toRun]);
+		await this.#didChangeTestItem.fire(updated);
 		if (invalidate) {
-			await this.#didInvalidateTestResults.fire([...updated]);
+			await this.#didInvalidateTestResults.fire(updated);
 		}
 	}
 
