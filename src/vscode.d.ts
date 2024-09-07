@@ -2,6 +2,10 @@
  * Features that are available in newer versions of VSCode.
  */
 declare module 'vscode' {
+	export interface DebugSessionOptions {
+		testRun?: TestRun;
+	}
+
 	export interface TestController {
 		/**
 		 * Marks an item's results as being outdated. This is commonly called when

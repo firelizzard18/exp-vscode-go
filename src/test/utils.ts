@@ -186,13 +186,9 @@ export async function debugProcess(
 		env,
 		args: ['-test.v', ...flags.map((x) => x.replace(/^-/, '-test.'))]
 	};
-	const dbgOpts: DebugSessionOptions = {};
-
-	// This is necessary because testRun is not available in 1.75 so tsc complains
-	Object.assign(dbgOpts, { testRun: run });
 
 	try {
-		if (!(await debug.startDebugging(ws, config, dbgOpts))) {
+		if (!(await debug.startDebugging(ws, config, { testRun: run }))) {
 			return;
 		}
 		await didStart;
