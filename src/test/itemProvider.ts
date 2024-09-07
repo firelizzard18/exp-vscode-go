@@ -1,17 +1,17 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Uri } from 'vscode';
-import { TestItemData, TestItemProvider } from './itemResolver';
 import { Context } from './testing';
 import { TestConfig } from './config';
 import { findParentTestCase, GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Range } from 'vscode';
 
-export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
-	readonly #didChangeTestItem = new EventEmitter<GoTestItem[] | void>();
+export class TestItemProvider {
+	readonly #didChangeTestItem = new EventEmitter<(_?: GoTestItem[]) => void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
-	readonly #didInvalidateTestResults = new EventEmitter<GoTestItem[] | void>();
+	readonly #didInvalidateTestResults = new EventEmitter<(_?: GoTestItem[]) => void>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
-	readonly #shouldRerunTests = new EventEmitter<(TestCase | TestFile)[]>();
+	readonly #shouldRerunTests = new EventEmitter<(_: (TestCase | TestFile)[]) => void>();
 	readonly onShouldRerunTests = this.#shouldRerunTests.event;
 
 	readonly #context: Context;
@@ -23,19 +23,6 @@ export class GoTestItemProvider implements TestItemProvider<GoTestItem> {
 		this.#context = context;
 		this.#config = new TestConfig(context.workspace);
 		this.#roots = new RootSet(context);
-	}
-
-	getTestItem(element: GoTestItem): TestItemData | Thenable<TestItemData> {
-		return {
-			id: GoTestItem.id(element.uri, element.kind, element.name),
-			label: element.label,
-			uri: element.uri,
-			hasChildren: element.hasChildren,
-			preloadChildren: element instanceof TestCase,
-			range: element.range,
-			error: element.error,
-			tags: element instanceof RootItem ? [] : [{ id: 'canDebug' }]
-		};
 	}
 
 	getParent(element: GoTestItem) {

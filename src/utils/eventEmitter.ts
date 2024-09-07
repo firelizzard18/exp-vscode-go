@@ -10,19 +10,19 @@ interface Disposable {
  * promise returned by fire does not resolve until all listeners have finished
  * executing.
  */
-export class EventEmitter<T> {
-	readonly #listeners = new Set<(_: T) => any>();
+export class EventEmitter<F extends (e: any) => void | Promise<void>> {
+	readonly #listeners = new Set<F>();
 
-	readonly event = (listener: (e: T) => any, thisArgs: any = {}, disposables?: Disposable[]): Disposable => {
-		const l = (e: T) => listener.call(thisArgs, e);
-		const d = { dispose: () => this.#listeners.delete(l) };
-		this.#listeners.add(l);
+	readonly event = (listener: F, thisArgs: any = {}, disposables?: Disposable[]): Disposable => {
+		const l = (...args: Parameters<F>) => listener.call(thisArgs, ...args);
+		const d = { dispose: () => this.#listeners.delete(<F>l) };
+		this.#listeners.add(<F>l);
 		disposables?.push(d);
 		return d;
 	};
 
-	fire = async (e: T): Promise<void> => {
+	readonly fire = <F>(async (e: Parameters<F>[0]): Promise<void> => {
 		// Return a promise to allow tests to await the result
 		await Promise.all([...this.#listeners].map((l) => l(e)));
-	};
+	});
 }

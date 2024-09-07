@@ -13,7 +13,7 @@ import type { Spawner } from './utils';
 // to be processed.
 declare module 'vscode' {
 	export interface EventEmitter<T> {
-		fire(data: T): Promise<void>;
+		fire(data: T): void | Promise<void>;
 	}
 
 	export interface TestItemCollection {

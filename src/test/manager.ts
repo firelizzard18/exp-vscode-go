@@ -1,31 +1,32 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { TestRunProfileKind, Uri, Range, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
 import type { CancellationToken, Disposable, TestItem, TestRunProfile } from 'vscode';
 import type vscode from 'vscode';
 import { Context, doSafe, TestController } from './testing';
-import { TestItemResolver } from './itemResolver';
+import { TestItemProviderAdapter } from './itemAdapter';
 import { GoTestItem, Package } from './item';
 import { TestRunner } from './runner';
-import { GoTestItemProvider } from './itemProvider';
+import { TestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
 import { CodeLensProvider } from './codeLens';
 import { DocumentSelector } from 'vscode';
 import { EventEmitter } from '../utils/eventEmitter';
 export class TestManager {
-	readonly #didSave = new EventEmitter<Uri>();
+	readonly #didSave = new EventEmitter<(_: Uri) => void>();
 	readonly context: Context;
-	readonly #provider: GoTestItemProvider;
+	readonly #provider: TestItemProvider;
 	readonly #codeLens: CodeLensProvider;
 	readonly #disposable: Disposable[] = [];
 
 	constructor(context: Context) {
 		this.context = context;
-		this.#provider = new GoTestItemProvider(context);
+		this.#provider = new TestItemProvider(context);
 		this.#codeLens = new CodeLensProvider(context, this);
 	}
 
 	#ctrl?: TestController;
-	#resolver?: TestItemResolver<GoTestItem>;
+	#resolver?: TestItemProviderAdapter;
 	#runProfile?: TestRunProfile;
 	#debugProfile?: TestRunProfile;
 
@@ -42,10 +43,15 @@ export class TestManager {
 		);
 
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new TestItemResolver(ctrl, this.#provider);
+		const resolver = new TestItemProviderAdapter(ctrl, this.#provider);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
-		this.#disposable.push(ctrl, this.#resolver);
+
+		this.#disposable.push(
+			ctrl,
+			this.#provider.onDidChangeTestItem((e) => resolver.didChangeTestItem(e)),
+			this.#provider.onDidInvalidateTestResults((e) => resolver.invalidateTestResults(e))
+		);
 
 		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.resolve());
 		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
@@ -146,7 +152,7 @@ export class TestManager {
 	}
 
 	resolveGoTestItem(id: string) {
-		return this.#resolver?.getProviderItem(id);
+		return this.#resolver?.getGoItem(id);
 	}
 
 	resolveTestCase(pkg: Package, name: string) {

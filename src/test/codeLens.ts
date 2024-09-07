@@ -7,7 +7,7 @@ import { TestManager } from './manager';
 import { CodeLens, TextDocument, Range } from 'vscode';
 
 export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
-	readonly #didChangeCodeLenses = new EventEmitter<void>();
+	readonly #didChangeCodeLenses = new EventEmitter<() => void>();
 	readonly onDidChangeCodeLenses = this.#didChangeCodeLenses.event;
 
 	readonly #context: Context;

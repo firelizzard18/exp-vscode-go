@@ -96,7 +96,7 @@ export class Position {
 	// with(change: { line?: number; character?: number }): Position;
 }
 
-export class EventEmitter<T> extends EEImpl<T> implements vscode.EventEmitter<T> {
+export class EventEmitter<T> extends EEImpl<(_: T) => void> implements vscode.EventEmitter<T> {
 	readonly dispose = () => {};
 }
 
