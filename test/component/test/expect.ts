@@ -10,7 +10,7 @@ import { expect } from '@jest/globals';
 
 export type ExpectedTestItem =
 	| {
-			kind: 'module' | 'workspace' | 'package' | 'file';
+			kind: 'module' | 'workspace' | 'package' | 'file' | 'profile';
 			uri: string;
 			children: ExpectedTestItem[];
 	  }

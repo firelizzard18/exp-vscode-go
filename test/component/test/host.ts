@@ -4,6 +4,7 @@ import type {
 	CancellationToken,
 	LogOutputChannel,
 	MarkdownString,
+	Memento,
 	Range,
 	TestItem,
 	TestItemCollection,
@@ -15,12 +16,13 @@ import type {
 	WorkspaceFolder
 } from 'vscode';
 import { Uri } from 'vscode';
-import { Commands, ConfigValue, Context, TestController, Workspace } from '../../../src/test/testing';
+import { Commands, ConfigValue, Context, TestController, Workspace, FileSystem } from '../../../src/test/testing';
 import { CommandInvocation, GoExtensionAPI } from '../../../src/vscode-go';
 import { Spawner } from '../../../src/test/utils';
 import { TestManager } from '../../../src/test/manager';
 import cp from 'node:child_process';
 import os from 'node:os';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import pkg from '../../../package.json';
 
@@ -43,6 +45,8 @@ export class TestHost implements Context {
 	readonly commands = new TestCommands(this);
 	readonly workspace = new TestWorkspace();
 	readonly output = new FakeOutputChannel();
+	readonly state = new MockMemento();
+	readonly storageUri: undefined;
 
 	spawn: Spawner = () => Promise.resolve();
 	debug: Spawner = () => Promise.resolve();
@@ -55,7 +59,8 @@ export class TestHost implements Context {
 		config.forEach((x) => x(this));
 		this.manager.setup({
 			createTestController: () => this.controller,
-			registerCodeLensProvider: () => ({ dispose: () => {} })
+			registerCodeLensProvider: () => ({ dispose: () => {} }),
+			showQuickPick: () => Promise.resolve(undefined)
 		});
 	}
 }
@@ -114,6 +119,8 @@ class TestWorkspace implements Workspace {
 		runPackageBenchmarks: config['goExp.testExplorer.runPackageBenchmarks'].default
 	};
 
+	readonly fs = new MockFileSystem();
+
 	saveAll(): Thenable<boolean> {
 		return Promise.resolve(true);
 	}
@@ -137,6 +144,16 @@ class TestWorkspace implements Workspace {
 				return this.config[section.substring(prefix.length) as keyof Configuration] as T;
 			}
 		};
+	}
+}
+
+class MockFileSystem implements FileSystem {
+	async delete(uri: Uri, options?: { recursive?: boolean; useTrash?: boolean }): Promise<void> {
+		await fs.rm(uri.fsPath, { recursive: options?.recursive });
+	}
+
+	async createDirectory(uri: Uri): Promise<void> {
+		await fs.mkdir(uri.fsPath, { recursive: true });
 	}
 }
 
@@ -169,6 +186,24 @@ class FakeOutputChannel implements LogOutputChannel {
 	show = () => {};
 	hide = () => {};
 	dispose = () => {};
+}
+
+class MockMemento implements Memento {
+	readonly #data: Record<string, any> = {};
+
+	keys(): readonly string[] {
+		return Object.keys(this.#data);
+	}
+
+	get<T>(key: string): T | undefined;
+	get<T>(key: string, defaultValue: T): T;
+	get<T>(key: unknown, defaultValue?: unknown): T | T | undefined {
+		return this.#data[key as string] ?? defaultValue;
+	}
+
+	async update(key: string, value: any): Promise<void> {
+		this.#data[key] = value;
+	}
 }
 
 export class MockTestController implements TestController {

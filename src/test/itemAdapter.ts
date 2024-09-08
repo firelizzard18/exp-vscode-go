@@ -1,8 +1,9 @@
 import type { TestItem, TestItemCollection } from 'vscode';
 import { Context, TestController } from './testing';
-import { GoTestItem, RootItem, TestCase, TestFile } from './item';
+import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
 import { TestItemProvider } from './itemProvider';
 import { TestConfig } from './config';
+import { CapturedProfile } from './profile';
 
 const debugResolve = false;
 
@@ -71,7 +72,7 @@ export class TestItemProviderAdapter {
 		}
 	}
 
-	async didChangeTestItem(goItems?: Iterable<TestCase | TestFile>) {
+	async didChangeTestItem(goItems?: Iterable<TestCase | TestFile | Package>) {
 		if (!goItems) {
 			// Force a refresh by dumping all the roots and resolving
 			this.#ctrl.items.replace([]);
@@ -95,9 +96,10 @@ export class TestItemProviderAdapter {
 		this.#ctrl.invalidateTestResults(items);
 	}
 
-	async #getAll(goItems: Iterable<TestCase | TestFile>, create = false) {
+	async #getAll(goItems: Iterable<TestCase | TestFile | Package>, create = false) {
 		// If showFiles is disabled we need to reload the parent of each file
-		// instead of the file
+		// instead of the file. If an item is a package and is the self-package
+		// of a root, we need to reload the root instead of the package.
 		const toReload = [];
 		const config = new TestConfig(this.#context.workspace);
 		for (const item of goItems) {
@@ -106,10 +108,10 @@ export class TestItemProviderAdapter {
 				continue;
 			}
 
-			if (config.for(item.uri).showFiles()) {
-				toReload.push(item);
-			} else {
+			if (item instanceof Package ? item.isSelfPkg : !config.for(item.uri).showFiles()) {
 				toReload.push(item.getParent());
+			} else {
+				toReload.push(item);
 			}
 		}
 
@@ -140,15 +142,20 @@ export class TestItemProviderAdapter {
 		const id = GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
 		this.#items.set(id, goItem);
 
+		const tags = [];
+		if (!(goItem instanceof CapturedProfile)) {
+			tags.push({ id: 'canRun' });
+			if (!(goItem instanceof RootItem)) {
+				tags.push({ id: 'canDebug' });
+			}
+		}
+
 		const existing = children.get(id);
 		const item = existing || this.#ctrl.createTestItem(id, goItem.label, goItem.uri);
 		item.canResolveChildren = goItem.hasChildren;
 		item.range = goItem.range;
 		item.error = goItem.error;
-
-		if (!(goItem instanceof RootItem)) {
-			item.tags = [{ id: 'canDebug' }];
-		}
+		item.tags = tags;
 
 		if (add) {
 			await children.add(item);

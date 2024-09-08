@@ -20,6 +20,8 @@ export async function registerTestController(ctx: ExtensionContext) {
 		spawn: spawnProcess,
 		debug: debugProcess,
 		testing: ctx.extensionMode === ExtensionMode.Test,
+		state: ctx.workspaceState,
+		storageUri: ctx.storageUri,
 		output: window.createOutputChannel('Go Tests (experimental)', { log: true }),
 		commands: {
 			modules: (args) => commands.executeCommand('gopls.modules', args),
@@ -41,7 +43,8 @@ export async function registerTestController(ctx: ExtensionContext) {
 	const setup = () => {
 		manager.setup({
 			createTestController: tests.createTestController,
-			registerCodeLensProvider: languages.registerCodeLensProvider
+			registerCodeLensProvider: languages.registerCodeLensProvider,
+			showQuickPick: window.showQuickPick
 		});
 		window.visibleTextEditors.forEach((x) => manager.reload(x.document.uri));
 	};

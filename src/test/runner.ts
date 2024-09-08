@@ -1,15 +1,66 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, TestRunProfile, TestRunProfileKind, Uri } from 'vscode';
+import { CancellationToken, Memento, QuickPickItem, TestRunProfile, TestRunProfileKind, Uri } from 'vscode';
 import type vscode from 'vscode';
 import { Package, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
 import { SpawnOptions } from './utils';
+import { getTempDirPath } from '../utils/util';
+import { makeProfileTypeSet } from './profile';
+import { TestItemProvider } from './itemProvider';
+
+const settingsMemento = 'runnerSettings';
+
+interface StoredSettings {
+	profile?: string[];
+}
+
+export interface RunConfig {
+	profile?: TestRunProfile;
+	readonly settings: RunnerSettings;
+}
+
+export class RunnerSettings {
+	readonly profile = makeProfileTypeSet();
+
+	constructor(id: string, state: Memento) {
+		this.id = id;
+		this.state = state;
+
+		const { profile = [] } = state.get<StoredSettings>(`${settingsMemento}[${id}]`) || {};
+		this.profile.forEach((x) => (x.enabled = profile.includes(x.id)));
+	}
+
+	readonly id: string;
+	readonly state: Memento;
+
+	async configure(args: Pick<typeof vscode.window, 'showQuickPick'>) {
+		switch (await args.showQuickPick(['Profiling'], { title: 'Go tests' })) {
+			case 'Profiling': {
+				this.profile.forEach((x) => (x.picked = x.enabled));
+				const r = await args.showQuickPick(this.profile, {
+					title: 'Profile',
+					canPickMany: true
+				});
+				if (!r) return;
+				this.profile.forEach((x) => (x.enabled = r.includes(x)));
+				await this.#update();
+			}
+		}
+	}
+
+	async #update() {
+		await this.state.update(`runnerSettings[${this.id}]`, {
+			profile: this.profile.filter((x) => x.enabled).map((x) => x.id)
+		} satisfies StoredSettings);
+	}
+}
 
 export class TestRunner {
 	readonly #context: Context;
-	readonly #profile: TestRunProfile;
+	readonly #provider: TestItemProvider;
+	readonly #config: Required<RunConfig>;
 	readonly #createRun: (_: TestRunRequest) => vscode.TestRun;
 	readonly #request: TestRunRequest;
 	readonly #token: CancellationToken;
@@ -18,13 +69,15 @@ export class TestRunner {
 
 	constructor(
 		context: Context,
-		profile: TestRunProfile,
+		provider: TestItemProvider,
+		config: Required<RunConfig>,
 		createRun: (_: TestRunRequest) => vscode.TestRun,
 		request: TestRunRequest,
 		token: CancellationToken
 	) {
 		this.#context = context;
-		this.#profile = profile;
+		this.#provider = provider;
+		this.#config = config;
 		this.#createRun = createRun;
 		this.#request = request;
 		this.#token = token;
@@ -63,7 +116,7 @@ export class TestRunner {
 
 		// Execute the tests
 		try {
-			const invalid = request.size > 1 && this.#profile.kind === TestRunProfileKind.Debug;
+			const invalid = request.size > 1 && this.#config.profile.kind === TestRunProfileKind.Debug;
 			let first = true;
 			for await (const pkg of request.packages(run)) {
 				if (invalid) {
@@ -103,6 +156,7 @@ export class TestRunner {
 			);
 			return;
 		}
+
 		const flags: string[] = [
 			'-fullpath' // Include the full path for output events
 		];
@@ -120,6 +174,29 @@ export class TestRunner {
 		if (pkg.exclude.size) {
 			// Exclude specific test cases
 			flags.push(`-skip=${makeRegex(pkg.exclude.keys())}`);
+		}
+
+		// Create the profile directory
+		const profileDir =
+			run.isPersisted && run.onDidDispose && this.#context.storageUri
+				? this.#context.storageUri
+				: Uri.file(getTempDirPath());
+		await this.#context.workspace.fs.createDirectory(profileDir);
+
+		// If the request is for a single test, add the profiles to that test,
+		// otherwise add them to the package
+		const profileParent = pkg.include.size === 1 ? [...pkg.include][0][0] : pkg.goItem;
+
+		// Setup the profiles
+		const time = new Date();
+		for (const profile of this.#config.settings.profile) {
+			if (!profile.enabled) {
+				continue;
+			}
+
+			const file = await this.#provider.registerCapturedProfile(run, profileParent, profileDir, profile, time);
+			flags.push(`${profile.flag}=${file.uri.fsPath}`);
+			run.onDidDispose?.(() => this.#context.workspace.fs.delete(file.uri));
 		}
 
 		pkg.append(
@@ -153,7 +230,7 @@ export class TestRunner {
 	}
 
 	#spawn(command: string, flags: readonly string[], options: SpawnOptions) {
-		switch (this.#profile.kind) {
+		switch (this.#config.profile.kind) {
 			case TestRunProfileKind.Debug:
 				return this.#context.debug(this.#context, command, flags, options);
 			default:

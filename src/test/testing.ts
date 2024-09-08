@@ -8,6 +8,7 @@ import type vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
 import type { GoExtensionAPI } from '../vscode-go';
 import type { Spawner } from './utils';
+import { Memento } from 'vscode';
 
 // Signatures used by the component test mock to allow tests to wait for events
 // to be processed.
@@ -22,20 +23,25 @@ declare module 'vscode' {
 	}
 }
 
-export interface Context {
+export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
 	readonly testing: boolean;
 	readonly go: GoExtensionAPI;
 	readonly output: vscode.LogOutputChannel;
 	readonly workspace: Workspace;
+	readonly state: Memento;
 	readonly commands: Commands;
 	readonly spawn: Spawner;
 	readonly debug: Spawner;
 }
 
+export type FileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory'>;
+
 // The subset of vscode.workspace that is used by the test explorer.
 export type Workspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
 	// Only allow reading the goExp config
 	getConfiguration(section: string, scope?: vscode.ConfigurationScope | null): ConfigValue;
+
+	readonly fs: FileSystem;
 };
 
 export interface ConfigValue {

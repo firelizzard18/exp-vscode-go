@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Uri } from 'vscode';
+import { TestRun, Uri } from 'vscode';
 import { Context } from './testing';
 import { TestConfig } from './config';
 import { findParentTestCase, GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Range } from 'vscode';
+import { ProfileType } from './profile';
 
 export class TestItemProvider {
-	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
+	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile | Package>) => void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 	readonly #didInvalidateTestResults = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
@@ -142,6 +143,17 @@ export class TestItemProvider {
 		if (!test) return;
 		await this.#didChangeTestItem.fire([test]);
 		return test;
+	}
+
+	async registerCapturedProfile(run: TestRun, item: Package | TestCase, dir: Uri, type: ProfileType, time: Date) {
+		const profile = item.addProfile(dir, type, time);
+		await this.#didChangeTestItem.fire([item]);
+
+		run.onDidDispose?.(async () => {
+			item.removeProfile(profile);
+			await this.#didChangeTestItem.fire([item]);
+		});
+		return profile;
 	}
 
 	*roots() {
