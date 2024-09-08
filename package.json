@@ -90,6 +90,17 @@
         }
       }
     },
+    "customEditors": [
+      {
+        "viewType": "goExp.profile",
+        "displayName": "Go Profile",
+        "selector": [
+          {
+            "filenamePattern": "*.pprof"
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "goExp.testExplorer.refresh",

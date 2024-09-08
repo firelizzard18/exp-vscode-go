@@ -4,6 +4,13 @@ import path from 'node:path';
 
 // From vscode-go
 
+export function correctBinname(toolName: string) {
+	if (process.platform === 'win32') {
+		return toolName + '.exe';
+	}
+	return toolName;
+}
+
 export function rmdirRecursive(dir: string) {
 	if (fs.existsSync(dir)) {
 		fs.readdirSync(dir).forEach((file) => {

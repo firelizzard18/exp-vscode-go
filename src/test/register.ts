@@ -1,19 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { commands, Event, ExtensionContext, ExtensionMode, extensions, tests, window, workspace } from 'vscode';
+import { commands, Event, ExtensionContext, ExtensionMode, tests, window, workspace } from 'vscode';
 import { Context, doSafe } from './testing';
 import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
+import { ProfileDocumentProvider } from './profile';
 
-export async function registerTestController(ctx: ExtensionContext) {
-	// The Go extension _must_ be activated first since we depend on gopls
-	const goExt = extensions.getExtension<GoExtensionAPI>('golang.go');
-	if (!goExt) {
-		throw new Error('Cannot activate without the Go extension');
-	}
-	const go = await goExt.activate();
-
+export async function registerTestController(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
 		workspace,
 		go,
@@ -123,4 +117,9 @@ export async function registerTestController(ctx: ExtensionContext) {
 	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
 		setup();
 	}
+}
+
+export async function registerProfileDocumentProvider(ctx: ExtensionContext, go: GoExtensionAPI) {
+	const provider = new ProfileDocumentProvider(go);
+	ctx.subscriptions.push(window.registerCustomEditorProvider('goExp.profile', provider));
 }

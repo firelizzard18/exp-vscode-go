@@ -1,7 +1,20 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
-import { Uri } from 'vscode';
+import {
+	CancellationToken,
+	CustomDocument,
+	CustomDocumentOpenContext,
+	CustomReadonlyEditorProvider,
+	Uri,
+	WebviewPanel
+} from 'vscode';
+import vscode from 'vscode';
 import { GoTestItem } from './item';
 import { BaseItem } from './itemBase';
+import { ChildProcess, spawn } from 'node:child_process';
+import { correctBinname } from '../utils/util';
+import { GoExtensionAPI } from '../vscode-go';
+import { killProcessTree } from '../utils/processUtils';
 
 export class ProfileType {
 	constructor(
@@ -70,5 +83,131 @@ export class CapturedProfile extends BaseItem implements GoTestItem {
 
 	getChildren() {
 		return [];
+	}
+}
+
+interface Failure {
+	message: string;
+	html?: string;
+}
+
+class ProfileDocument implements CustomDocument {
+	readonly uri: Uri;
+	readonly error?: Failure;
+	readonly proc?: ChildProcess;
+	readonly port?: string;
+
+	constructor(args: { uri: Uri; error?: Failure; proc?: ChildProcess; port?: string }) {
+		this.uri = args.uri;
+		this.error = args.error;
+		this.proc = args.proc;
+		this.port = args.port;
+	}
+
+	dispose(): void {
+		this.proc && killProcessTree(this.proc);
+	}
+}
+
+export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
+	readonly go: GoExtensionAPI;
+
+	constructor(go: GoExtensionAPI) {
+		this.go = go;
+	}
+
+	async openCustomDocument(
+		uri: Uri,
+		openContext: CustomDocumentOpenContext,
+		token: CancellationToken
+	): Promise<ProfileDocument> {
+		const foundDot = await new Promise<boolean>((resolve, reject) => {
+			const proc = spawn(correctBinname('dot'), ['-V']);
+
+			proc.on('error', (err) => {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				if ((err as any).code === 'ENOENT') resolve(false);
+				else reject(err);
+			});
+
+			proc.on('exit', (code, signal) => {
+				if (signal) reject(new Error(`Received signal ${signal}`));
+				else if (code) reject(new Error(`Exited with code ${code}`));
+				else resolve(true);
+			});
+		});
+		if (!foundDot) {
+			return new ProfileDocument({
+				uri,
+				error: {
+					message: 'Failed to execute dot',
+					html: 'The `dot` command is required to display this profile. Please install Graphviz.'
+				}
+			});
+		}
+
+		const { binPath: goRuntimePath } = this.go.settings.getExecutionCommand('go') || {};
+		if (!goRuntimePath) {
+			return new ProfileDocument({
+				uri,
+				error: {
+					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
+				}
+			});
+		}
+
+		try {
+			const proc = spawn(goRuntimePath, ['tool', 'pprof', '-http=:', '-no_browser', uri.fsPath]);
+			const port = await new Promise<string | undefined>((resolve, reject) => {
+				proc.on('error', (err) => reject(err));
+				proc.on('exit', (code, signal) => reject(signal || code));
+
+				let stderr = '';
+				function captureStdout(b: Buffer) {
+					stderr += b.toString('utf-8');
+
+					const m = stderr.match(/^Serving web UI on http:\/\/localhost:(?<port>\d+)\n/);
+					if (!m) return;
+
+					resolve(m.groups?.port);
+					proc.stdout.off('data', captureStdout);
+				}
+
+				proc.stderr.on('data', captureStdout);
+			});
+
+			return new ProfileDocument({ uri, proc, port });
+		} catch (error) {
+			return new ProfileDocument({
+				uri,
+				error: { message: `${error}` }
+			});
+		}
+	}
+
+	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel): Promise<void> {
+		const externalUri = await vscode.env.asExternalUri(Uri.parse(`http://localhost:${document.port}`));
+
+		panel.webview.options = { enableScripts: true };
+		panel.webview.html = `<html>
+			<head>
+				<style>
+					body {
+						padding: 0;
+						background: white;
+						overflow: hidden;
+					}
+
+					iframe {
+						border: 0;
+						width: 100%;
+						height: 100vh;
+					}
+				</style>
+			</head>
+			<body>
+				<iframe src="${externalUri}"></iframe>
+			</body>
+		</html>`;
 	}
 }
