@@ -5,6 +5,7 @@ import {
 	CustomDocument,
 	CustomDocumentOpenContext,
 	CustomReadonlyEditorProvider,
+	ExtensionContext,
 	Uri,
 	WebviewPanel
 } from 'vscode';
@@ -15,6 +16,7 @@ import { ChildProcess, spawn } from 'node:child_process';
 import { correctBinname } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
+import { Browser } from '../browser';
 
 export class ProfileType {
 	constructor(
@@ -110,10 +112,12 @@ class ProfileDocument implements CustomDocument {
 }
 
 export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
-	readonly go: GoExtensionAPI;
+	readonly #ext: ExtensionContext;
+	readonly #go: GoExtensionAPI;
 
-	constructor(go: GoExtensionAPI) {
-		this.go = go;
+	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
+		this.#ext = ext;
+		this.#go = go;
 	}
 
 	async openCustomDocument(
@@ -146,7 +150,7 @@ export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<Pro
 			});
 		}
 
-		const { binPath: goRuntimePath } = this.go.settings.getExecutionCommand('go') || {};
+		const { binPath: goRuntimePath } = this.#go.settings.getExecutionCommand('go') || {};
 		if (!goRuntimePath) {
 			return new ProfileDocument({
 				uri,
@@ -186,28 +190,7 @@ export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<Pro
 	}
 
 	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel): Promise<void> {
-		const externalUri = await vscode.env.asExternalUri(Uri.parse(`http://localhost:${document.port}`));
-
-		panel.webview.options = { enableScripts: true };
-		panel.webview.html = `<html>
-			<head>
-				<style>
-					body {
-						padding: 0;
-						background: white;
-						overflow: hidden;
-					}
-
-					iframe {
-						border: 0;
-						width: 100%;
-						height: 100vh;
-					}
-				</style>
-			</head>
-			<body>
-				<iframe src="${externalUri}"></iframe>
-			</body>
-		</html>`;
+		const browser = new Browser(this.#ext, panel, Uri.parse(`http://localhost:${document.port}/ui`));
+		browser.navigate('./');
 	}
 }

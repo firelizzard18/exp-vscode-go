@@ -1,0 +1,41 @@
+header {
+	display: none;
+}
+
+pre {
+	background-color: var(--vscode-textCodeBlock-background);
+	border: 1px solid var(--vscode-widget-border);
+	color: var(--vscode-editor-foreground);
+}
+
+a, a:link, a:visited, a code {
+	color: var(--vscode-textLink-foreground);
+}
+
+nav > ul {
+	list-style-type: none;
+	display: flex;
+	flex-flow: row;
+	border-radius: 3px;
+	border: 1px solid var(--vscode-editorWidget-border);
+	position: fixed;
+	top: 20px;
+	right: 20px;
+	background: var(--vscode-editorWidget-background);
+	color: var(--vscode-editorWidget-foreground);
+	margin: 0;
+	padding: 0;
+}
+
+nav > ul > li {
+	padding: 0.15em 0;
+	width: 1.8em;
+	justify-self: center;
+	cursor: pointer;
+	display: flex;
+	justify-content: center;
+}
+
+nav > ul > li:not(:first-child) {
+	border-left: 1px solid var(--vscode-editorWidget-border)
+}

@@ -120,6 +120,6 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 }
 
 export async function registerProfileDocumentProvider(ctx: ExtensionContext, go: GoExtensionAPI) {
-	const provider = new ProfileDocumentProvider(go);
+	const provider = new ProfileDocumentProvider(ctx, go);
 	ctx.subscriptions.push(window.registerCustomEditorProvider('goExp.profile', provider));
 }

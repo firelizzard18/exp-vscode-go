@@ -147,11 +147,12 @@
   },
   "scripts": {
     "vscode:prepublish": "yarn run package",
-    "compile": "yarn run check-types && yarn run lint && node esbuild.js",
-    "watch": "npm-run-all -p watch:*",
+    "compile": "yarn run copy-extras && yarn run check-types && yarn run lint && node esbuild.js",
+    "watch": "yarn run copy-extras && npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --watch --project tsconfig.json",
     "watch:tests": "tsc -p . -w --outDir out",
+    "copy-extras": "copyfiles -u 1 webview/**/* dist/webview/",
     "package": "yarn run check-types && yarn run lint && node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
     "pretest": "yarn run compile-tests && yarn run compile && yarn run lint",
@@ -168,6 +169,7 @@
     "@typescript-eslint/parser": "^7.11.0",
     "@vscode/test-cli": "^0.0.9",
     "@vscode/test-electron": "^2.4.0",
+    "copyfiles": "^2.4.1",
     "esbuild": "^0.21.5",
     "eslint": "^8.57.0",
     "expect": "^29.7.0",
@@ -183,8 +185,10 @@
   },
   "dependencies": {
     "@types/deep-equal": "^1.0.4",
+    "axios": "^1.7.7",
     "deep-equal": "^2.2.3",
     "minimatch": "^10.0.1",
+    "node-html-parser": "^6.1.13",
     "tree-kill": "^1.2.2"
   }
 }
