@@ -146,7 +146,7 @@ export class TestItemProvider {
 	}
 
 	async registerCapturedProfile(run: TestRun, item: Package | TestCase, dir: Uri, type: ProfileType, time: Date) {
-		const profile = item.addProfile(dir, type, time);
+		const profile = await item.addProfile(dir, type, time);
 		await this.#didChangeTestItem.fire([item]);
 
 		run.onDidDispose?.(async () => {

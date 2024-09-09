@@ -6,6 +6,7 @@ import {
 	CustomDocumentOpenContext,
 	CustomReadonlyEditorProvider,
 	ExtensionContext,
+	TestRun,
 	Uri,
 	WebviewPanel
 } from 'vscode';
@@ -13,10 +14,12 @@ import vscode from 'vscode';
 import { GoTestItem } from './item';
 import { BaseItem } from './itemBase';
 import { ChildProcess, spawn } from 'node:child_process';
-import { correctBinname } from '../utils/util';
+import { correctBinname, getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
 import { Browser } from '../browser';
+import { Context } from './testing';
+import { UriHandler } from '../urlHandler';
 
 export class ProfileType {
 	constructor(
@@ -42,8 +45,8 @@ export function makeProfileTypeSet() {
 export abstract class ItemWithProfiles extends BaseItem {
 	readonly profiles = new Set<CapturedProfile>();
 
-	addProfile(dir: Uri, type: ProfileType, time: Date) {
-		const profile = new CapturedProfile(this, dir, type, time);
+	async addProfile(dir: Uri, type: ProfileType, time: Date) {
+		const profile = await CapturedProfile.new(this, dir, type, time);
 		this.profiles.add(profile);
 		return profile;
 	}
@@ -53,22 +56,53 @@ export abstract class ItemWithProfiles extends BaseItem {
 	}
 }
 
+/**
+ * Represents a captured profile.
+ */
 export class CapturedProfile extends BaseItem implements GoTestItem {
+	/**
+	 * Returns the storage directory for the captured profile. If the test run
+	 * is persisted and supports onDidDispose, it returns the extensions's
+	 * storage URI. Otherwise, it returns an OS temp directory path.
+	 *
+	 * @param context - The context object.
+	 * @param run - The test run object.
+	 * @returns The storage directory URI.
+	 */
+	static storageDir(context: Context, run: TestRun): Uri {
+		// Profiles can be deleted when the run is disposed, but there's no way
+		// to re-associated profiles with a past run when VSCode is closed and
+		// reopened. So we always use the temp directory for now.
+		// https://github.com/microsoft/vscode/issues/227924
+
+		// if (run.isPersisted && run.onDidDispose && context.storageUri) {
+		// 	return context.storageUri;
+		// }
+
+		return Uri.file(getTempDirPath());
+	}
+
 	readonly kind = 'profile';
 	readonly type: ProfileType;
 	readonly uri: Uri;
+	readonly file: Uri;
 	readonly parent: ItemWithProfiles;
 	readonly hasChildren = false;
 
-	constructor(parent: ItemWithProfiles, dir: Uri, type: ProfileType, time: Date) {
-		super();
-
+	static async new(parent: ItemWithProfiles, dir: Uri, type: ProfileType, time: Date) {
 		// This is a simple way to make an ID from the package URI
 		const hash = createHash('sha256').update(`${parent.uri}`).digest('hex').substring(0, 16);
+		const file = Uri.joinPath(dir, `${hash}-${type.id}-${time.getTime()}.pprof`);
+		const uri = await UriHandler.asUri('openProfile', { path: file.fsPath });
+		return new this(parent, type, file, uri);
+	}
 
+	private constructor(parent: ItemWithProfiles, type: ProfileType, file: Uri, uri: Uri) {
+		super();
 		this.type = type;
-		this.uri = Uri.joinPath(dir, `${hash}-${type.id}-${time.getTime()}.pprof`);
 		this.parent = parent;
+		this.file = file;
+		this.uri = uri;
 	}
 
 	get key() {
@@ -88,43 +122,24 @@ export class CapturedProfile extends BaseItem implements GoTestItem {
 	}
 }
 
-interface Failure {
-	message: string;
-	html?: string;
-}
+export class ProfileDocument {
+	static async open(ext: ExtensionContext, go: GoExtensionAPI, path: string): Promise<void> {
+		const r = await this.#open(go, path);
+		const base = Uri.parse(`http://localhost:${r.port}/ui`);
+		const browser = new Browser(ext, base, 'Profile', {
+			viewColumn: vscode.ViewColumn.Active,
+			preserveFocus: true
+		});
 
-class ProfileDocument implements CustomDocument {
-	readonly uri: Uri;
-	readonly error?: Failure;
-	readonly proc?: ChildProcess;
-	readonly port?: string;
-
-	constructor(args: { uri: Uri; error?: Failure; proc?: ChildProcess; port?: string }) {
-		this.uri = args.uri;
-		this.error = args.error;
-		this.proc = args.proc;
-		this.port = args.port;
+		if (r.proc) {
+			browser.panel.onDidDispose(() => killProcessTree(r.proc));
+			browser.navigate(base);
+		} else {
+			browser.show(r.error.html || r.error.message);
+		}
 	}
 
-	dispose(): void {
-		this.proc && killProcessTree(this.proc);
-	}
-}
-
-export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
-	readonly #ext: ExtensionContext;
-	readonly #go: GoExtensionAPI;
-
-	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
-		this.#ext = ext;
-		this.#go = go;
-	}
-
-	async openCustomDocument(
-		uri: Uri,
-		openContext: CustomDocumentOpenContext,
-		token: CancellationToken
-	): Promise<ProfileDocument> {
+	static async #open(go: GoExtensionAPI, path: string) {
 		const foundDot = await new Promise<boolean>((resolve, reject) => {
 			const proc = spawn(correctBinname('dot'), ['-V']);
 
@@ -141,27 +156,25 @@ export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<Pro
 			});
 		});
 		if (!foundDot) {
-			return new ProfileDocument({
-				uri,
+			return {
 				error: {
 					message: 'Failed to execute dot',
 					html: 'The `dot` command is required to display this profile. Please install Graphviz.'
 				}
-			});
+			};
 		}
 
-		const { binPath: goRuntimePath } = this.#go.settings.getExecutionCommand('go') || {};
+		const { binPath: goRuntimePath } = go.settings.getExecutionCommand('go') || {};
 		if (!goRuntimePath) {
-			return new ProfileDocument({
-				uri,
+			return {
 				error: {
 					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
 				}
-			});
+			};
 		}
 
 		try {
-			const proc = spawn(goRuntimePath, ['tool', 'pprof', '-http=:', '-no_browser', uri.fsPath]);
+			const proc = spawn(goRuntimePath, ['tool', 'pprof', '-http=:', '-no_browser', path]);
 			const port = await new Promise<string | undefined>((resolve, reject) => {
 				proc.on('error', (err) => reject(err));
 				proc.on('exit', (code, signal) => reject(signal || code));
@@ -180,17 +193,11 @@ export class ProfileDocumentProvider implements CustomReadonlyEditorProvider<Pro
 				proc.stderr.on('data', captureStdout);
 			});
 
-			return new ProfileDocument({ uri, proc, port });
+			return { proc, port };
 		} catch (error) {
-			return new ProfileDocument({
-				uri,
+			return {
 				error: { message: `${error}` }
-			});
+			};
 		}
-	}
-
-	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel): Promise<void> {
-		const browser = new Browser(this.#ext, panel, Uri.parse(`http://localhost:${document.port}/ui`));
-		browser.navigate('./');
 	}
 }

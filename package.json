@@ -1,5 +1,6 @@
 {
   "name": "exp-vscode-go",
+  "publisher": "ethan-reesor",
   "displayName": "Golang Experimental",
   "description": "Experimental Golang VSCode features",
   "version": "0.0.1",
@@ -104,7 +105,7 @@
     "commands": [
       {
         "command": "goExp.testExplorer.refresh",
-        "title": "Go Test: Refresh",
+        "title": "Go: Refresh Test",
         "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
         "category": "Test",
         "icon": "$(refresh)"
@@ -118,6 +119,12 @@
         "command": "goExp.test.debug",
         "title": "Go: Debug Test",
         "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
+        "category": "Test"
+      },
+      {
+        "command": "goExp.openProfile",
+        "title": "Go: Open profile",
+        "description": "Open a pprof file",
         "category": "Test"
       }
     ],

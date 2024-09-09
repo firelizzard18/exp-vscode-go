@@ -5,7 +5,7 @@ import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
-import { ProfileDocumentProvider } from './profile';
+import { ProfileDocument } from './profile';
 
 export async function registerTestController(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -50,6 +50,9 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	// [Command] Run Test, Debug Test
 	command('goExp.test.run', (item) => manager.enabled && manager.runTest(item));
 	command('goExp.test.debug', (item) => manager.enabled && manager.debugTest(item));
+
+	// [Command] Open profile
+	command('goExp.openProfile', async (path) => await ProfileDocument.open(ctx, go, path));
 
 	// [Event] Configuration change
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
@@ -117,9 +120,4 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
 		setup();
 	}
-}
-
-export async function registerProfileDocumentProvider(ctx: ExtensionContext, go: GoExtensionAPI) {
-	const provider = new ProfileDocumentProvider(ctx, go);
-	ctx.subscriptions.push(window.registerCustomEditorProvider('goExp.profile', provider));
 }

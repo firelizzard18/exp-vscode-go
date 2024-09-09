@@ -1,4 +1,4 @@
-import type { TestItem, TestItemCollection } from 'vscode';
+import { type TestItem, type TestItemCollection } from 'vscode';
 import { Context, TestController } from './testing';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
 import { TestItemProvider } from './itemProvider';
@@ -124,12 +124,19 @@ export class TestItemProviderAdapter {
 	}
 
 	async get(goItem: GoTestItem): Promise<TestItem | undefined> {
-		const id = GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
+		const id = this.#id(goItem);
 		const parent = await this.#provider.getParent(goItem);
 		if (!parent) {
 			return this.#ctrl.items.get(id);
 		}
 		return (await this.get(parent))?.children.get(id);
+	}
+
+	#id(goItem: GoTestItem) {
+		if (goItem instanceof CapturedProfile) {
+			return GoTestItem.id(goItem.file, goItem.kind);
+		}
+		return GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
 	}
 
 	async getOrCreateAll(goItem: GoTestItem): Promise<TestItem> {
@@ -139,7 +146,7 @@ export class TestItemProviderAdapter {
 	}
 
 	async #getOrCreate(goItem: GoTestItem, children: TestItemCollection, add = false): Promise<TestItem> {
-		const id = GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
+		const id = this.#id(goItem);
 		this.#items.set(id, goItem);
 
 		const tags = [];

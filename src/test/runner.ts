@@ -7,7 +7,7 @@ import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
 import { SpawnOptions } from './utils';
 import { getTempDirPath } from '../utils/util';
-import { makeProfileTypeSet } from './profile';
+import { CapturedProfile, makeProfileTypeSet } from './profile';
 import { TestItemProvider } from './itemProvider';
 
 const settingsMemento = 'runnerSettings';
@@ -177,10 +177,7 @@ export class TestRunner {
 		}
 
 		// Create the profile directory
-		const profileDir =
-			run.isPersisted && run.onDidDispose && this.#context.storageUri
-				? this.#context.storageUri
-				: Uri.file(getTempDirPath());
+		const profileDir = CapturedProfile.storageDir(this.#context, run);
 		await this.#context.workspace.fs.createDirectory(profileDir);
 
 		// If the request is for a single test, add the profiles to that test,
