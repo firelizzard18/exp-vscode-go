@@ -5,7 +5,15 @@ import { HTMLElement, parse } from 'node-html-parser';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tail<T extends any[]> = T extends [any, ...infer Tail] ? Tail : never;
 
+// TODO(firelizzard18): Disable back/forward when not applicable
+
 export class Browser {
+	static open = new Set<Browser>();
+
+	static get active() {
+		return [...this.open].find((x) => x.panel.active);
+	}
+
 	readonly #extension: ExtensionContext;
 	readonly #id: string;
 	readonly #base: Uri;
@@ -20,7 +28,10 @@ export class Browser {
 		this.#extension = extension;
 		this.#id = id;
 		this.#base = base;
-		this.panel = window.createWebviewPanel('gopls', ...options);
+		this.panel = window.createWebviewPanel('goExp.browser', ...options);
+
+		Browser.open.add(this);
+		this.panel.onDidDispose(() => Browser.open.delete(this));
 
 		this.panel.webview.options = { enableScripts: true };
 		this.panel.webview.onDidReceiveMessage(async (e) => {
@@ -29,18 +40,6 @@ export class Browser {
 					this.navigate(e.url);
 					break;
 				}
-
-				// case 'back':
-				// 	this.#back();
-				// 	break;
-
-				// case 'forward':
-				// 	this.#forward();
-				// 	break;
-
-				// case 'reload':
-				// 	this.#reload();
-				// 	break;
 			}
 		});
 	}
@@ -54,9 +53,9 @@ export class Browser {
 	readonly #unhistory: Uri[] = [];
 	#current?: Uri;
 
-	async navigate(url: Uri | string) {
+	navigate(url: Uri | string) {
 		url = this.#parseUrl(url);
-		await this.#load(url)
+		this.#load(url)
 			.then((ok) => {
 				if (!ok) return;
 				this.#current = url;
@@ -64,6 +63,40 @@ export class Browser {
 				this.#unhistory.splice(0, this.#unhistory.length);
 			})
 			.catch((e) => console.error('Navigation failed', e));
+	}
+
+	back() {
+		if (this.#history.length < 2) {
+			return;
+		}
+
+		const url = this.#history[this.#history.length - 2];
+		this.#load(url)
+			.then((ok) => {
+				if (!ok) return;
+				this.#current = url;
+				this.#unhistory.push(this.#history.pop()!);
+			})
+			.catch((e) => console.error('Navigate back failed', e));
+	}
+
+	forward() {
+		if (this.#unhistory.length < 1) {
+			return;
+		}
+
+		const url = this.#unhistory[this.#unhistory.length - 1];
+		this.#load(url)
+			.then((ok) => {
+				if (!ok) return;
+				this.#current = url;
+				this.#history.push(this.#unhistory.pop()!);
+			})
+			.catch((e) => console.error('Navigate forward failed', e));
+	}
+
+	reload() {
+		this.#load(this.#current!, true).catch((e) => console.error('Refresh', e));
 	}
 
 	#parseUrl(url: Uri | string) {
@@ -85,7 +118,15 @@ export class Browser {
 		return Uri.parse(url);
 	}
 
-	async #load(url: Uri): Promise<boolean> {
+	async #load(url: Uri, reload = false): Promise<boolean> {
+		if (!reload && `${url}` === `${this.#current}`) {
+			this.panel.webview.postMessage({
+				command: 'jump',
+				fragment: url.fragment
+			});
+			return true;
+		}
+
 		// Fetch data. Ignore empty responses.
 		const { data } = await axios.get<string>(url.toString(true));
 		if (!data) return false;

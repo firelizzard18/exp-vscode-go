@@ -118,14 +118,27 @@
       {
         "command": "goExp.test.debug",
         "title": "Go: Debug Test",
-        "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
         "category": "Test"
       },
       {
         "command": "goExp.openProfile",
         "title": "Go: Open profile",
-        "description": "Open a pprof file",
-        "category": "Test"
+        "description": "Open a pprof file"
+      },
+      {
+        "command": "goExp.browser.back",
+        "title": "Back",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "goExp.browser.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "goExp.browser.forward",
+        "title": "Forward",
+        "icon": "$(arrow-right)"
       }
     ],
     "menus": {
@@ -141,6 +154,22 @@
         {
           "command": "goExp.test.debug",
           "when": "false"
+        },
+        {
+          "command": "goExp.openProfile",
+          "when": "false"
+        },
+        {
+          "command": "goExp.browser.back",
+          "when": "false"
+        },
+        {
+          "command": "goExp.browser.refresh",
+          "when": "false"
+        },
+        {
+          "command": "goExp.browser.forward",
+          "when": "false"
         }
       ],
       "testing/item/context": [
@@ -148,6 +177,23 @@
           "command": "goExp.testExplorer.refresh",
           "when": "controllerId == 'goExp'",
           "group": "inline"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "goExp.browser.back",
+          "group": "navigation@1",
+          "when": "activeWebviewPanelId == 'goExp.browser'"
+        },
+        {
+          "command": "goExp.browser.refresh",
+          "group": "navigation@2",
+          "when": "activeWebviewPanelId == 'goExp.browser'"
+        },
+        {
+          "command": "goExp.browser.forward",
+          "group": "navigation@3",
+          "when": "activeWebviewPanelId == 'goExp.browser'"
         }
       ]
     }

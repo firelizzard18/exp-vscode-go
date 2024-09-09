@@ -6,6 +6,7 @@ import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
 import { ProfileDocument } from './profile';
+import { Browser } from '../browser';
 
 export async function registerTestController(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -53,6 +54,11 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 
 	// [Command] Open profile
 	command('goExp.openProfile', async (path) => await ProfileDocument.open(ctx, go, path));
+
+	// [Command] Browser navigation
+	command('goExp.browser.back', () => Browser.active?.back());
+	command('goExp.browser.refresh', () => Browser.active?.reload());
+	command('goExp.browser.forward', () => Browser.active?.forward());
 
 	// [Event] Configuration change
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
