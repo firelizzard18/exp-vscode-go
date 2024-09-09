@@ -11,6 +11,10 @@ a, a:link, a:visited, a code {
 
 /* pprof overrides */
 
+html#pprof body {
+	padding: 0;
+}
+
 html#pprof .header,
 html#pprof .submenu {
 	background-color: var(--vscode-menu-background);
