@@ -1,6 +1,3 @@
-header {
-	display: none;
-}
 
 pre {
 	background-color: var(--vscode-textCodeBlock-background);
@@ -12,30 +9,54 @@ a, a:link, a:visited, a code {
 	color: var(--vscode-textLink-foreground);
 }
 
-nav > ul {
-	list-style-type: none;
-	display: flex;
-	flex-flow: row;
-	border-radius: 3px;
-	border: 1px solid var(--vscode-editorWidget-border);
-	position: fixed;
-	top: 20px;
-	right: 20px;
-	background: var(--vscode-editorWidget-background);
-	color: var(--vscode-editorWidget-foreground);
-	margin: 0;
-	padding: 0;
+/* pprof overrides */
+
+html#pprof .header,
+html#pprof .submenu {
+	background-color: var(--vscode-menu-background);
 }
 
-nav > ul > li {
-	padding: 0.15em 0;
-	width: 1.8em;
-	justify-self: center;
-	cursor: pointer;
-	display: flex;
-	justify-content: center;
+html#pprof .header,
+html#pprof .submenu,
+html#pprof .header .title a {
+	color: var(--vscode-menu-foreground);
 }
 
-nav > ul > li:not(:first-child) {
-	border-left: 1px solid var(--vscode-editorWidget-border)
+html#pprof .submenu a:hover {
+	background-color: var(--vscode-menu-selectionBackground);
+	color: var(--vscode-menu-selectionForeground);
+}
+
+html#pprof #search {
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+}
+
+/* graph, background polygon */
+html#pprof #graph svg polygon[fill="white"] {
+	display: none;
+}
+
+/* graph, edge labels */
+html#pprof #graph svg g.edge text {
+	fill: var(--vscode-editor-foreground);
+}
+
+/* graph, black edge labels */
+html#pprof #graph svg g.edge path[fill=none][stroke=black] {
+	stroke: var(--vscode-editor-foreground);
+}
+html#pprof #graph svg g.edge polygon[fill=black][stroke=black] {
+	fill: var(--vscode-editor-foreground);
+	stroke: var(--vscode-editor-foreground);
+}
+
+/* flamegraph, root */
+html#pprof #stack-holder {
+	background-color: var(--vscode-editor-background);
+}
+
+/* flamegraph, box text */
+html#pprof #stack-holder .boxtext {
+	color: initial;
 }

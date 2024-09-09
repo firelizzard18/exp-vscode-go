@@ -7,15 +7,18 @@ type Tail<T extends any[]> = T extends [any, ...infer Tail] ? Tail : never;
 
 export class Browser {
 	readonly #extension: ExtensionContext;
-	readonly panel: WebviewPanel;
+	readonly #id: string;
 	readonly #base: Uri;
+	readonly panel: WebviewPanel;
 
 	constructor(
 		extension: ExtensionContext,
+		id: string,
 		base: Uri,
 		...options: Tail<Parameters<typeof window.createWebviewPanel>>
 	) {
 		this.#extension = extension;
+		this.#id = id;
 		this.#base = base;
 		this.panel = window.createWebviewPanel('gopls', ...options);
 
@@ -43,6 +46,7 @@ export class Browser {
 	}
 
 	show(html: string) {
+		this.panel.webview.html = ' ';
 		this.panel.webview.html = html;
 	}
 
@@ -88,6 +92,7 @@ export class Browser {
 
 		// Process the response. Note, the response may not include <body>.
 		const document = parse(data);
+		document.querySelector('html')?.setAttribute('id', this.#id);
 
 		// Preserve links
 		document.querySelectorAll('a[href]').forEach((a) => {

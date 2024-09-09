@@ -126,7 +126,7 @@ export class ProfileDocument {
 	static async open(ext: ExtensionContext, go: GoExtensionAPI, path: string): Promise<void> {
 		const r = await this.#open(go, path);
 		const base = Uri.parse(`http://localhost:${r.port}/ui`);
-		const browser = new Browser(ext, base, 'Profile', {
+		const browser = new Browser(ext, 'pprof', base, 'Profile', {
 			viewColumn: vscode.ViewColumn.Active,
 			preserveFocus: true
 		});
