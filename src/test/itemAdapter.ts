@@ -64,7 +64,7 @@ export class TestItemProviderAdapter {
 				return;
 			}
 
-			await container.replace(await Promise.all(children.map(async (x) => this.#getOrCreate(x, container))));
+			await container.replace(await Promise.all(children.map(async (x) => this.#createOrUpdate(x, container))));
 		} finally {
 			if (item) item.busy = false;
 
@@ -80,7 +80,7 @@ export class TestItemProviderAdapter {
 		}
 
 		// Create a TestItem for each GoTestItem, including its ancestors, and refresh
-		const items = await this.#getAll(goItems, true);
+		const items = await this.#filter(goItems, true);
 		await Promise.all(items.map((x) => this.resolve(x)));
 	}
 
@@ -92,11 +92,15 @@ export class TestItemProviderAdapter {
 			this.#ctrl.invalidateTestResults();
 			return;
 		}
-		const items = await this.#getAll(goItems);
+		const items = await this.#filter(goItems);
 		this.#ctrl.invalidateTestResults(items);
 	}
 
-	async #getAll(goItems: Iterable<TestCase | TestFile | Package>, create = false) {
+	/**
+	 * Filters out items that should not be displayed and finds the
+	 * corresponding TestItem for each GoTestItem.
+	 */
+	async #filter(goItems: Iterable<TestCase | TestFile | Package>, create = false) {
 		// If showFiles is disabled we need to reload the parent of each file
 		// instead of the file. If an item is a package and is the self-package
 		// of a root, we need to reload the root instead of the package.
@@ -108,7 +112,7 @@ export class TestItemProviderAdapter {
 				continue;
 			}
 
-			if (item instanceof Package ? item.isSelfPkg : !config.for(item.uri).showFiles()) {
+			if (item instanceof Package ? item.isRootPkg : !config.for(item.uri).showFiles()) {
 				toReload.push(item.getParent());
 			} else {
 				toReload.push(item);
@@ -123,6 +127,9 @@ export class TestItemProviderAdapter {
 		return items.filter((x) => x) as TestItem[];
 	}
 
+	/**
+	 * Get the {@link TestItem} for a {@link GoTestItem}.
+	 */
 	async get(goItem: GoTestItem): Promise<TestItem | undefined> {
 		const id = this.#id(goItem);
 		const parent = await this.#provider.getParent(goItem);
@@ -132,20 +139,21 @@ export class TestItemProviderAdapter {
 		return (await this.get(parent))?.children.get(id);
 	}
 
-	#id(goItem: GoTestItem) {
-		if (goItem instanceof CapturedProfile) {
-			return GoTestItem.id(goItem.file, goItem.kind);
-		}
-		return GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
-	}
-
+	/**
+	 * Get or create the {@link TestItem} for a {@link GoTestItem}. The items
+	 * ancestors will also be created if they do not exist.
+	 */
 	async getOrCreateAll(goItem: GoTestItem): Promise<TestItem> {
 		const parent = await this.#provider.getParent(goItem);
 		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
-		return await this.#getOrCreate(goItem, children, true);
+		return await this.#createOrUpdate(goItem, children, true);
 	}
 
-	async #getOrCreate(goItem: GoTestItem, children: TestItemCollection, add = false): Promise<TestItem> {
+	/**
+	 * Create or update a {@link TestItem} for a {@link GoTestItem}.
+	 * @returns The {@link TestItem}.
+	 */
+	async #createOrUpdate(goItem: GoTestItem, children: TestItemCollection, add = false): Promise<TestItem> {
 		const id = this.#id(goItem);
 		this.#items.set(id, goItem);
 
@@ -174,6 +182,13 @@ export class TestItemProviderAdapter {
 		}
 
 		return item;
+	}
+
+	#id(goItem: GoTestItem) {
+		if (goItem instanceof CapturedProfile) {
+			return GoTestItem.id(goItem.file, goItem.kind);
+		}
+		return GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
 	}
 }
 

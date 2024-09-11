@@ -6,8 +6,7 @@ import { Commands, Context } from './testing';
 import path from 'path';
 import { TestConfig } from './config';
 import deepEqual from 'deep-equal';
-import { BaseItem, ItemSet, RelationMap } from './itemBase';
-import { CapturedProfile, ItemWithProfiles } from './profile';
+import { CapturedProfile, ItemWithProfiles, ProfileType } from './profile';
 
 export namespace GoTestItem {
 	/**
@@ -83,10 +82,13 @@ export interface GoTestItem {
 	hasChildren: boolean;
 	error?: string | MarkdownString;
 
-	getParent(): ProviderResult<GoTestItem>;
+	getParent?(): ProviderResult<GoTestItem>;
 	getChildren(): GoTestItem[] | Promise<GoTestItem[]>;
 }
 
+/**
+ * Contains the top-level items for all workspaces.
+ */
 export class RootSet {
 	#didLoad = false;
 	readonly #context: Context;
@@ -103,10 +105,12 @@ export class RootSet {
 	}
 
 	async getChildren(reload = false): Promise<RootItem[]> {
+		// Use the cached roots when possible
 		if ((!reload && this.#didLoad) || !this.#context.workspace.workspaceFolders) {
 			return [...this.#roots.values()].flatMap((x) => [...x.values()]);
 		}
 
+		// Load the roots for each workspace folder
 		this.#didLoad = true;
 		await Promise.all(
 			this.#context.workspace.workspaceFolders.map(async (ws) => {
@@ -130,10 +134,8 @@ export class RootSet {
 	 * @returns An array of `RootItem` objects representing the workspace roots.
 	 */
 	async #getWorkspaceRoots(ws: WorkspaceFolder) {
-		const config = new TestConfig(this.#context.workspace, ws.uri);
-		const roots: RootItem[] = [];
-
 		// Ask gopls
+		const config = new TestConfig(this.#context.workspace, ws.uri);
 		const modules = Module.resolve(
 			ws.uri,
 			config,
@@ -143,7 +145,8 @@ export class RootSet {
 			})
 		);
 
-		// Create an item for the workspace unless it's the root of a module
+		// If the workspace is not a module, make an item for it
+		const roots: RootItem[] = [];
 		if (!modules.some((x) => Uri.joinPath(Uri.parse(x.GoMod), '..').toString() === ws.uri.toString())) {
 			roots.push(new WorkspaceItem(config, this.#context, ws));
 		}
@@ -236,7 +239,10 @@ export class RootSet {
 	}
 }
 
-export abstract class RootItem extends BaseItem {
+/**
+ * Common ancestor of {@link Module} and {@link WorkspaceItem}.
+ */
+export abstract class RootItem implements GoTestItem {
 	abstract readonly uri: Uri;
 	abstract readonly kind: GoTestItem.Kind;
 	abstract readonly label: string;
@@ -252,7 +258,6 @@ export abstract class RootItem extends BaseItem {
 	readonly #packages = new ItemSet<Package>();
 
 	constructor(config: TestConfig, context: Context) {
-		super();
 		this.#config = config;
 		this.#context = context;
 	}
@@ -261,29 +266,32 @@ export abstract class RootItem extends BaseItem {
 		return `${this.uri}`;
 	}
 
-	contains(uri: Uri) {
-		const a = this.dir.fsPath;
-		const b = uri.fsPath;
-		return b === a || b.startsWith(`${a}/`);
-	}
-
+	/**
+	 * Marks a package as requested by the user (e.g. by opening a file).
+	 */
 	markRequested(pkg: Commands.Package) {
 		this.#requested.add(pkg.Path);
 	}
 
-	getParent() {
-		return null;
-	}
-
-	async getChildren(): Promise<BaseItem[]> {
+	/**
+	 * Retrieves the children of the root item. If this item has a root package,
+	 * the children of that package are returned instead of the package itself.
+	 * If package nesting is enabled, nested packages are excluded.
+	 */
+	async getChildren(): Promise<GoTestItem[]> {
 		const allPkgs = await this.getPackages(true);
 		const packages = (this.#config.nestPackages() && this.pkgRelations.getChildren(undefined)) || allPkgs;
-		const selfPkg = packages.find((x) => x.isSelfPkg);
-		return [...packages.filter((x) => x !== selfPkg), ...(selfPkg?.getChildren() || [])];
+		const rootPkg = packages.find((x) => x.isRootPkg);
+		return [...packages.filter((x) => x !== rootPkg), ...(rootPkg?.getChildren() || [])];
 	}
 
+	/**
+	 * Returns packages, reloading if necessary or requested. If discovery is
+	 * disabled, only requested packages are returned.
+	 */
 	async getPackages(reload = false) {
 		if (reload || !this.#didLoad) {
+			// (Re)load packages
 			this.#didLoad = true;
 			this.#packages.replaceWith(
 				Package.resolve(
@@ -389,7 +397,7 @@ export class WorkspaceItem extends RootItem {
 	}
 }
 
-export class Package extends ItemWithProfiles {
+export class Package implements GoTestItem, ItemWithProfiles {
 	static resolve(root: Uri, config: TestConfig, { Packages: all = [] }: Commands.PackagesResults) {
 		if (!all) return [];
 
@@ -425,11 +433,11 @@ export class Package extends ItemWithProfiles {
 	readonly hasChildren = true;
 	readonly files = new ItemSet<TestFile>();
 	readonly testRelations = new RelationMap<TestCase, TestCase | undefined>();
+	readonly profiles = new Set<CapturedProfile>();
 
 	#src?: Commands.Package;
 
 	constructor(config: TestConfig, parent: RootItem, src: Commands.Package) {
-		super();
 		this.#config = config;
 		this.parent = parent;
 		this.path = src.Path;
@@ -460,6 +468,10 @@ export class Package extends ItemWithProfiles {
 		return this.path;
 	}
 
+	/**
+	 * Returns the package path, excluding the part that is shared with the
+	 * parent.
+	 */
 	get label() {
 		const pkgParent = this.parent.pkgRelations.getParent(this);
 		if (pkgParent && this.#config.nestPackages()) {
@@ -471,10 +483,17 @@ export class Package extends ItemWithProfiles {
 		return this.path;
 	}
 
-	get isSelfPkg() {
+	/**
+	 * Returns whether the package is the root package of the parent.
+	 */
+	get isRootPkg() {
 		return `${this.uri}` === `${this.parent.dir}`;
 	}
 
+	/**
+	 * Returns the module or folder this package belongs to, or its parent
+	 * package if package nesting is enabled.
+	 */
 	getParent() {
 		if (!this.#config.nestPackages()) {
 			return this.parent;
@@ -482,7 +501,13 @@ export class Package extends ItemWithProfiles {
 		return this.parent.pkgRelations.getParent(this) || this.parent;
 	}
 
-	getChildren(): BaseItem[] {
+	/**
+	 * Returns the package's children. If show files is enabled, this includes
+	 * the package's test files, otherwise it includes the children of those
+	 * files. If package nesting is enabled, this includes the package's child
+	 * packages.
+	 */
+	getChildren(): GoTestItem[] {
 		const tests = this.#config.showFiles() ? [...this.files] : [...this.files].flatMap((x) => x.getChildren());
 		if (!this.#config.nestPackages()) {
 			return [...tests, ...this.profiles];
@@ -494,9 +519,19 @@ export class Package extends ItemWithProfiles {
 	getTests() {
 		return [...this.files].flatMap((x) => [...x.tests]);
 	}
+
+	async addProfile(dir: Uri, type: ProfileType, time: Date) {
+		const profile = await CapturedProfile.new(this, dir, type, time);
+		this.profiles.add(profile);
+		return profile;
+	}
+
+	removeProfile(profile: CapturedProfile) {
+		this.profiles.delete(profile);
+	}
 }
 
-export class TestFile extends BaseItem {
+export class TestFile implements GoTestItem {
 	readonly #config: TestConfig;
 	readonly package: Package;
 	readonly uri: Uri;
@@ -507,7 +542,6 @@ export class TestFile extends BaseItem {
 	#src?: Commands.TestFile;
 
 	constructor(config: TestConfig, pkg: Package, src: Commands.TestFile) {
-		super();
 		this.#config = config;
 		this.package = pkg;
 		this.uri = Uri.parse(src.URI);
@@ -536,13 +570,21 @@ export class TestFile extends BaseItem {
 		return path.basename(this.uri.fsPath);
 	}
 
+	/**
+	 * Returns the file's package, or the package's parent if it is a root
+	 * package.
+	 */
 	getParent() {
-		if (this.package.isSelfPkg) {
+		if (this.package.isRootPkg) {
 			return this.package.getParent();
 		}
 		return this.package;
 	}
 
+	/**
+	 * Returns top-level tests if subtests nesting is enabled, otherwise all
+	 * tests.
+	 */
 	getChildren(): TestCase[] {
 		if (this.#config.nestSubtests()) {
 			return [...this.tests].filter((x) => !this.package.testRelations.getParent(x));
@@ -550,8 +592,10 @@ export class TestFile extends BaseItem {
 		return [...this.tests];
 	}
 
+	/**
+	 * Returns tests that intersect with the given range.
+	 */
 	find(ranges: Range[]) {
-		// Find tests that intersect with the given ranges
 		const found = new Set<TestCase>();
 		for (const test of this.tests) {
 			if (ranges.some((x) => test.contains(x))) {
@@ -569,15 +613,15 @@ export class TestFile extends BaseItem {
 	}
 }
 
-export abstract class TestCase extends ItemWithProfiles {
+export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 	readonly #config: TestConfig;
 	readonly file: TestFile;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
+	readonly profiles = new Set<CapturedProfile>();
 
 	constructor(config: TestConfig, file: TestFile, uri: Uri, kind: GoTestItem.Kind, name: string) {
-		super();
 		this.#config = config;
 		this.file = file;
 		this.uri = uri;
@@ -603,6 +647,11 @@ export abstract class TestCase extends ItemWithProfiles {
 		return this.getChildren().length > 0;
 	}
 
+	/**
+	 * Returns the parent test case if the test is a subtest and nesting is
+	 * enabled. Otherwise, returns the file if files are shown or the file's
+	 * parent.
+	 */
 	getParent() {
 		const parentTest = this.#config.nestSubtests() && this.file.package.testRelations.getParent(this);
 		if (parentTest) {
@@ -614,6 +663,9 @@ export abstract class TestCase extends ItemWithProfiles {
 		return this.file.getParent();
 	}
 
+	/**
+	 * Returns subtests if nesting is enabled, otherwise nothing.
+	 */
 	getChildren(): (TestCase | CapturedProfile)[] {
 		const subtests = this.#config.nestSubtests() ? this.file.package.testRelations.getChildren(this) || [] : [];
 		return [...this.profiles, ...subtests];
@@ -637,6 +689,16 @@ export abstract class TestCase extends ItemWithProfiles {
 			this.file.tests.remove(item);
 		}
 		this.file.package.testRelations.removeChildren(this);
+	}
+
+	async addProfile(dir: Uri, type: ProfileType, time: Date) {
+		const profile = await CapturedProfile.new(this, dir, type, time);
+		this.profiles.add(profile);
+		return profile;
+	}
+
+	removeProfile(profile: CapturedProfile) {
+		this.profiles.delete(profile);
 	}
 }
 
@@ -683,6 +745,8 @@ export class DynamicTestCase extends TestCase {
 	}
 
 	contains(): boolean {
+		// Go doesn't tell us the source location of subtests so we have nothing
+		// to check the range against.
 		return false;
 	}
 }
@@ -695,6 +759,143 @@ export function findParentTestCase(allTests: TestCase[], name: string) {
 		for (const test of allTests) {
 			if (test.name === name) {
 				return test;
+			}
+		}
+	}
+}
+
+/**
+ * Bidirectional map for parent-child relationships.
+ */
+export class RelationMap<Child, Parent> {
+	readonly #childParent = new Map<Child, Parent>();
+	readonly #parentChild = new Map<Parent, Child[]>();
+
+	constructor(relations: Iterable<[Child, Parent]> = []) {
+		for (const [child, parent] of relations) {
+			this.add(parent, child);
+		}
+	}
+
+	add(parent: Parent, child: Child) {
+		this.#childParent.set(child, parent);
+		const children = this.#parentChild.get(parent);
+		if (children) {
+			children.push(child);
+		} else {
+			this.#parentChild.set(parent, [child]);
+		}
+	}
+
+	replace(relations: Iterable<[Child, Parent]>) {
+		this.#childParent.clear();
+		this.#parentChild.clear();
+		for (const [child, parent] of relations) {
+			this.add(parent, child);
+		}
+	}
+
+	removeChildren(parent: Parent) {
+		for (const child of this.#parentChild.get(parent) || []) {
+			this.#childParent.delete(child);
+		}
+		this.#parentChild.delete(parent);
+	}
+
+	getParent(child: Child) {
+		return this.#childParent.get(child);
+	}
+
+	getChildren(parent: Parent) {
+		return this.#parentChild.get(parent);
+	}
+}
+
+export class ItemSet<T extends GoTestItem & { key: string }> {
+	readonly #items: Map<string, T>;
+
+	constructor(items: T[] = []) {
+		this.#items = new Map(items.map((x) => [x.key, x]));
+	}
+
+	*keys() {
+		yield* this.#items.keys();
+	}
+
+	*values() {
+		yield* this.#items.values();
+	}
+
+	[Symbol.iterator]() {
+		return this.#items.values();
+	}
+
+	get size() {
+		return this.#items.size;
+	}
+
+	has(item: string | T) {
+		return this.#items.has(typeof item === 'string' ? item : item.key);
+	}
+
+	get(item: string | T) {
+		return this.#items.get(typeof item === 'string' ? item : item.key);
+	}
+
+	add(...items: T[]) {
+		for (const item of items) {
+			if (this.has(item)) continue;
+			this.#items.set(item.key, item);
+		}
+	}
+
+	remove(item: string | T) {
+		this.#items.delete(typeof item === 'string' ? item : item.key);
+	}
+
+	/**
+	 * Replaces the set of items with a new set. If the existing set has items
+	 * with the same key, the original items are preserved.
+	 */
+	replace(items: T[]) {
+		// Insert new items
+		this.add(...items);
+
+		// Delete items that are no longer present
+		const keep = new Set(items.map((x) => `${x.uri}`));
+		for (const key of this.keys()) {
+			if (!keep.has(key)) {
+				this.remove(key);
+			}
+		}
+	}
+
+	/**
+	 * Replaces the set of items with a new set. For each value in source, if an
+	 * item with the same key exists in the set, the item is updated. Otherwise,
+	 * a new item is created.
+	 * @param src The sources to create items from.
+	 * @param id A function that returns the item key of a source value.
+	 * @param make A function that creates a new item from a source value.
+	 * @param update A function that updates an existing item with a source value.
+	 */
+	replaceWith<S>(src: S[], id: (_: S) => string, make: (_: S) => T, update: (_1: S, _2: T) => void) {
+		// Delete items that are no longer present
+		const keep = new Set(src.map(id));
+		for (const key of this.keys()) {
+			if (!keep.has(key)) {
+				this.remove(key);
+			}
+		}
+
+		// Update and insert items
+		for (const item of src) {
+			const key = id(item);
+			const existing = this.get(key);
+			if (existing) {
+				update(item, existing);
+			} else {
+				this.add(make(item));
 			}
 		}
 	}

@@ -6,6 +6,9 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { TestManager } from './manager';
 import { CodeLens, TextDocument, Range } from 'vscode';
 
+/**
+ * Provides legacy CodeLens for running and debugging tests.
+ */
 export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	readonly #didChangeCodeLenses = new EventEmitter<() => void>();
 	readonly onDidChangeCodeLenses = this.#didChangeCodeLenses.event;

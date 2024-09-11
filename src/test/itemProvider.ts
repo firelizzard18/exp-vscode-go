@@ -25,7 +25,7 @@ export class TestItemProvider {
 	}
 
 	getParent(element: GoTestItem) {
-		return element.getParent();
+		return element.getParent?.();
 	}
 
 	getChildren(): Promise<RootItem[]>;

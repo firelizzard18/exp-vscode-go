@@ -1,19 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
-import {
-	CancellationToken,
-	CustomDocument,
-	CustomDocumentOpenContext,
-	CustomReadonlyEditorProvider,
-	ExtensionContext,
-	TestRun,
-	Uri,
-	WebviewPanel
-} from 'vscode';
+import { ExtensionContext, ProviderResult, TestRun, Uri } from 'vscode';
 import vscode from 'vscode';
 import { GoTestItem } from './item';
-import { BaseItem } from './itemBase';
-import { ChildProcess, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { correctBinname, getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
@@ -42,24 +32,15 @@ export function makeProfileTypeSet() {
 	];
 }
 
-export abstract class ItemWithProfiles extends BaseItem {
-	readonly profiles = new Set<CapturedProfile>();
-
-	async addProfile(dir: Uri, type: ProfileType, time: Date) {
-		const profile = await CapturedProfile.new(this, dir, type, time);
-		this.profiles.add(profile);
-		return profile;
-	}
-
-	removeProfile(profile: CapturedProfile) {
-		this.profiles.delete(profile);
-	}
+export interface ItemWithProfiles extends GoTestItem {
+	addProfile(dir: Uri, type: ProfileType, time: Date): Promise<CapturedProfile>;
+	removeProfile(profile: CapturedProfile): void;
 }
 
 /**
  * Represents a captured profile.
  */
-export class CapturedProfile extends BaseItem implements GoTestItem {
+export class CapturedProfile implements GoTestItem {
 	/**
 	 * Returns the storage directory for the captured profile. If the test run
 	 * is persisted and supports onDidDispose, it returns the extensions's
@@ -98,7 +79,6 @@ export class CapturedProfile extends BaseItem implements GoTestItem {
 	}
 
 	private constructor(parent: ItemWithProfiles, type: ProfileType, file: Uri, uri: Uri) {
-		super();
 		this.type = type;
 		this.parent = parent;
 		this.file = file;

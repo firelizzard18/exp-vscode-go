@@ -36,6 +36,7 @@ export class TestConfig {
 	#excludeCompiled?: Minimatch[];
 
 	readonly exclude = () => {
+		// Merge files.exclude and goExp.testExplorer.exclude
 		const a = this.get<Record<string, boolean>>('exclude') || {};
 		const b = this.#workspace.getConfiguration('files', this.#scope).get<Record<string, boolean>>('exclude') || {};
 		const v = Object.assign({}, b, a);
