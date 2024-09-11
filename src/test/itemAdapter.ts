@@ -59,7 +59,7 @@ export class TestItemProviderAdapter {
 			}
 
 			const container = item ? item.children : this.#ctrl.items;
-			const children = await (goItem ? this.#provider.getChildren(goItem) : this.#provider.getChildren());
+			const children = await (goItem ? goItem.getChildren() : this.#provider.roots.getChildren());
 			if (!children) {
 				return;
 			}
@@ -132,7 +132,7 @@ export class TestItemProviderAdapter {
 	 */
 	async get(goItem: GoTestItem): Promise<TestItem | undefined> {
 		const id = this.#id(goItem);
-		const parent = await this.#provider.getParent(goItem);
+		const parent = await goItem.getParent?.();
 		if (!parent) {
 			return this.#ctrl.items.get(id);
 		}
@@ -144,7 +144,7 @@ export class TestItemProviderAdapter {
 	 * ancestors will also be created if they do not exist.
 	 */
 	async getOrCreateAll(goItem: GoTestItem): Promise<TestItem> {
-		const parent = await this.#provider.getParent(goItem);
+		const parent = await goItem.getParent?.();
 		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
 		return await this.#createOrUpdate(goItem, children, true);
 	}

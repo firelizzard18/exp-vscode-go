@@ -141,6 +141,7 @@ export class TestRunner {
 		}
 	}
 
+	// `goTest` from vscode-go
 	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun) {
 		pkg.forEach((item, goItem) => {
 			run.enqueued(item);
@@ -156,6 +157,8 @@ export class TestRunner {
 			);
 			return;
 		}
+
+		// TODO: add test flags, test tags, environment variables, etc.
 
 		const flags: string[] = [
 			'-fullpath' // Include the full path for output events

@@ -15,39 +15,19 @@ export class TestItemProvider {
 
 	readonly #context: Context;
 	readonly #config: TestConfig;
-	readonly #requested = new Set<string>();
-	readonly #roots: RootSet;
+	readonly roots: RootSet;
 
 	constructor(context: Context) {
 		this.#context = context;
 		this.#config = new TestConfig(context.workspace);
-		this.#roots = new RootSet(context);
-	}
-
-	getParent(element: GoTestItem) {
-		return element.getParent?.();
-	}
-
-	getChildren(): Promise<RootItem[]>;
-	getChildren(element: GoTestItem): Promise<GoTestItem[]>;
-	async getChildren(element?: GoTestItem | undefined): Promise<GoTestItem[]> {
-		if (element) {
-			return element.getChildren();
-		}
-
-		// TODO(firelizzard18): Move handling of discovery to RootSet
-
-		return [...(await this.#roots.getChildren(true))].filter((x) => {
-			// Return a given root if discovery is on or the root (or more
-			// likely one of its children) has been explicitly requested
-			const mode = this.#config.for(x.uri).discovery();
-			return mode === 'on' || this.#requested.has(x.uri.toString());
-		});
+		this.roots = new RootSet(context);
 	}
 
 	/**
 	 * Triggers a reload of a file. If the range set is non-empty and is
 	 * contained within test cases, only those cases are reloaded.
+	 *
+	 * TODO: Can gopls emit an event when tests/etc change?
 	 */
 	async reload(uri?: Uri, ranges: Range[] = [], invalidate = false) {
 		if (!uri) {
@@ -107,11 +87,11 @@ export class TestItemProvider {
 			if (!pkg.TestFiles?.length) continue;
 
 			// Find the module or workspace that owns this package
-			const root = await this.#roots.getRootFor(pkg, findOpts);
+			const root = await this.roots.getRootFor(pkg, findOpts);
 			if (!root) continue; // TODO: Handle tests from external packages?
 
 			// Mark the package as requested
-			this.#requested.add(root.uri.toString());
+			this.roots.markRequested(root);
 			root.markRequested(pkg);
 
 			// Find the package
@@ -164,9 +144,5 @@ export class TestItemProvider {
 			await this.#didChangeTestItem.fire([item]);
 		});
 		return profile;
-	}
-
-	*roots() {
-		yield* this.#roots;
 	}
 }

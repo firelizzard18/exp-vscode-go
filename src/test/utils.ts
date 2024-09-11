@@ -103,6 +103,21 @@ debug.registerDebugAdapterTrackerFactory('go', {
 	}
 });
 
+/**
+ * Spawns a debug session with the given flags.
+ *
+ * VSCode does not provide a mechanism to capture the output of a debug session.
+ * So instead of something clean like `debugSession.output`, we have to use a
+ * debug adapter tracker to capture events and then pipe them to the caller.
+ * However, we may be able to work around this issue by asking delve to copy the
+ * test output to a secondary stream, or by using custom events.
+ *
+ * As an additional complication, delve does not have an equivalent to `go test
+ * -json` so we have to pipe the output to `go tool test2json` to parse it.
+ *
+ * @see https://github.com/microsoft/vscode/issues/104208
+ * @see https://github.com/microsoft/vscode/issues/108145
+ */
 export async function debugProcess(
 	ctx: Context,
 	command: string,
@@ -158,6 +173,7 @@ export async function debugProcess(
 	});
 	subs.push({ dispose: () => debugSessionOutput.delete(id) });
 
+	// TODO: Is this a duplicate?
 	subs.push(
 		debug.registerDebugAdapterTrackerFactory('go', {
 			createDebugAdapterTracker(s) {

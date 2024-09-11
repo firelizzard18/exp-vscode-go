@@ -54,6 +54,8 @@ export namespace GoTestItem {
 	 * - Example:   file:///path/to/mod/file.go?example#ExampleXxx
 	 */
 	export function id(uri: Uri, kind: Kind, name?: string): string {
+		// TODO: Simplify the ID to just JSON or a hash or something?
+
 		uri = uri.with({ query: kind });
 		if (name) uri = uri.with({ fragment: name });
 		return uri.toString();
@@ -93,6 +95,7 @@ export class RootSet {
 	#didLoad = false;
 	readonly #context: Context;
 	readonly #roots = new Map<string, ItemSet<RootItem>>();
+	readonly #requested = new Set<string>();
 
 	constructor(context: Context) {
 		this.#context = context;
@@ -104,7 +107,28 @@ export class RootSet {
 		}
 	}
 
-	async getChildren(reload = false): Promise<RootItem[]> {
+	/**
+	 * Marks the root as requested so that it is included by getChildren when
+	 * discovery is off.
+	 */
+	markRequested(root: RootItem) {
+		this.#requested.add(`${root.uri}`);
+	}
+
+	async getChildren(): Promise<RootItem[]> {
+		// Return a given root if discovery is on or the root (or more
+		// likely one of its children) has been explicitly requested
+		const items = [];
+		for (const root of await this.#getChildren(true)) {
+			const mode = root.config.discovery();
+			if (mode === 'on' || this.#requested.has(`${root.uri}`)) {
+				items.push(root);
+			}
+		}
+		return items;
+	}
+
+	async #getChildren(reload = false): Promise<RootItem[]> {
 		// Use the cached roots when possible
 		if ((!reload && this.#didLoad) || !this.#context.workspace.workspaceFolders) {
 			return [...this.#roots.values()].flatMap((x) => [...x.values()]);
@@ -179,7 +203,7 @@ export class RootSet {
 		// If the roots haven't been loaded, load them
 		if (!this.#didLoad) {
 			opts.tryReload = false;
-			await this.getChildren();
+			await this.#getChildren();
 		}
 
 		if (pkg.ModulePath) {
@@ -191,7 +215,7 @@ export class RootSet {
 			// per reloadPackages call
 			if (opts.tryReload) {
 				opts.tryReload = false;
-				await this.getChildren(true);
+				await this.#getChildren(true);
 			}
 
 			// Check again
@@ -248,17 +272,17 @@ export abstract class RootItem implements GoTestItem {
 	abstract readonly label: string;
 	abstract readonly dir: Uri;
 	abstract readonly root: Uri;
+	readonly config: TestConfig;
 	readonly hasChildren = true;
 	readonly pkgRelations = new RelationMap<Package, Package | undefined>();
 
 	#didLoad = false;
-	readonly #config: TestConfig;
 	readonly #context: Context;
 	readonly #requested = new Set<string>();
 	readonly #packages = new ItemSet<Package>();
 
 	constructor(config: TestConfig, context: Context) {
-		this.#config = config;
+		this.config = config;
 		this.#context = context;
 	}
 
@@ -280,7 +304,7 @@ export abstract class RootItem implements GoTestItem {
 	 */
 	async getChildren(): Promise<GoTestItem[]> {
 		const allPkgs = await this.getPackages(true);
-		const packages = (this.#config.nestPackages() && this.pkgRelations.getChildren(undefined)) || allPkgs;
+		const packages = (this.config.nestPackages() && this.pkgRelations.getChildren(undefined)) || allPkgs;
 		const rootPkg = packages.find((x) => x.isRootPkg);
 		return [...packages.filter((x) => x !== rootPkg), ...(rootPkg?.getChildren() || [])];
 	}
@@ -296,7 +320,7 @@ export abstract class RootItem implements GoTestItem {
 			this.#packages.replaceWith(
 				Package.resolve(
 					this.root,
-					this.#config,
+					this.config,
 					await this.#context.commands.packages({
 						Files: [this.dir.toString()],
 						Mode: 1,
@@ -304,7 +328,7 @@ export abstract class RootItem implements GoTestItem {
 					})
 				),
 				(src) => src.Path,
-				(src) => new Package(this.#config, this, src),
+				(src) => new Package(this.config, this, src),
 				(src, pkg) => pkg.update(src)
 			);
 
@@ -319,7 +343,7 @@ export abstract class RootItem implements GoTestItem {
 			);
 		}
 
-		const mode = this.#config.discovery();
+		const mode = this.config.discovery();
 		switch (mode) {
 			case 'on':
 				// Return all packages

@@ -179,6 +179,6 @@ export class TestManager {
 	}
 
 	rootGoTestItems() {
-		return this.#provider.getChildren();
+		return this.#provider.roots.getChildren();
 	}
 }
