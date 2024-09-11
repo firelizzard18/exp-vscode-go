@@ -483,11 +483,7 @@ export class Package extends ItemWithProfiles {
 	}
 
 	getChildren(): BaseItem[] {
-		const tests = this.#config.showFiles()
-			? [...this.files]
-			: this.#config.nestSubtests()
-				? this.testRelations.getChildren(undefined) || []
-				: this.getTests();
+		const tests = this.#config.showFiles() ? [...this.files] : [...this.files].flatMap((x) => x.getChildren());
 		if (!this.#config.nestPackages()) {
 			return [...tests, ...this.profiles];
 		}
@@ -548,6 +544,9 @@ export class TestFile extends BaseItem {
 	}
 
 	getChildren(): TestCase[] {
+		if (this.#config.nestSubtests()) {
+			return [...this.tests].filter((x) => !this.package.testRelations.getParent(x));
+		}
 		return [...this.tests];
 	}
 

@@ -50,11 +50,11 @@ export class TestRunRequest {
 		const exclude = request.exclude?.map((x) => resolveGoItem(manager, x)) || [];
 
 		// Get roots that aren't excluded
-		const roots = new Set(include.filter((x) => x instanceof RootItem));
+		const roots = new Set(include.filter((x): x is RootItem => x instanceof RootItem));
 		exclude.forEach((x) => roots.delete(x as any));
 
 		// Get packages that aren't excluded
-		const packages = new Set(include.filter((x) => x instanceof Package));
+		const packages = new Set(include.filter((x): x is Package => x instanceof Package));
 		await Promise.all(
 			[...roots].map(async (x) => {
 				for (const pkg of await x.getPackages()) {
