@@ -35,6 +35,8 @@ export class TestItemProvider {
 			return element.getChildren();
 		}
 
+		// TODO(firelizzard18): Move handling of discovery to RootSet
+
 		return [...(await this.#roots.getChildren(true))].filter((x) => {
 			// Return a given root if discovery is on or the root (or more
 			// likely one of its children) has been explicitly requested
@@ -43,6 +45,10 @@ export class TestItemProvider {
 		});
 	}
 
+	/**
+	 * Triggers a reload of a file. If the range set is non-empty and is
+	 * contained within test cases, only those cases are reloaded.
+	 */
 	async reload(uri?: Uri, ranges: Range[] = [], invalidate = false) {
 		if (!uri) {
 			await this.#didChangeTestItem.fire();
@@ -79,6 +85,7 @@ export class TestItemProvider {
 			})
 		);
 
+		// Track updated items
 		const updated = new Set<TestCase | TestFile>();
 		const mark = (pkg: Package) => {
 			const file = [...pkg.files].find((x) => `${x.uri}` === `${uri}`);
@@ -92,8 +99,8 @@ export class TestItemProvider {
 			}
 		};
 
-		// With one URI and no recursion there *should* only be one result, but
-		// process in a loop regardless
+		// An alternative build system may allow a file to be part of multiple
+		// packages, so process all results
 		const findOpts = { tryReload: true };
 		for (const pkg of packages) {
 			// This shouldn't happen, but just in case
@@ -125,6 +132,9 @@ export class TestItemProvider {
 		}
 	}
 
+	/**
+	 * Return the named {@link TestCase}. May create a new dynamic subtest.
+	 */
 	async resolveTestCase(pkg: Package, name: string) {
 		// Check for an exact match
 		for (const file of pkg.files) {

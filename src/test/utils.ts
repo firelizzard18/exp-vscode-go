@@ -39,7 +39,7 @@ export interface Spawner {
 	(ctx: Context, command: string, flags: readonly string[], options: SpawnOptions): Promise<ProcessResult | void>;
 }
 
-export function spawnProcess(ctx: Context, command: string, flags: readonly string[], options: SpawnOptions) {
+export function spawnProcess(_: Context, command: string, flags: readonly string[], options: SpawnOptions) {
 	return new Promise<ProcessResult | void>((resolve) => {
 		const { stdout, stderr, cancel, ...rest } = options;
 		if (cancel.isCancellationRequested) {

@@ -64,7 +64,7 @@ export class TestManager {
 		this.#run.profile = ctrl.createRunProfile(
 			'Go',
 			TestRunProfileKind.Run,
-			(rq, token) => this.#execute(this.#run, rq, token),
+			(rq, token) => this.#executeTestRun(this.#run, rq, token),
 			true,
 			{ id: 'canRun' },
 			true
@@ -72,7 +72,7 @@ export class TestManager {
 		this.#debug.profile = ctrl.createRunProfile(
 			'Go',
 			TestRunProfileKind.Debug,
-			(rq, token) => this.#execute(this.#debug, rq, token),
+			(rq, token) => this.#executeTestRun(this.#debug, rq, token),
 			true,
 			{ id: 'canDebug' }
 		);
@@ -94,15 +94,15 @@ export class TestManager {
 	}
 
 	runTest(item: TestItem) {
-		this.#execute(this.#run, new VSCTestRunRequest([item]));
+		this.#executeTestRun(this.#run, new VSCTestRunRequest([item]));
 	}
 
 	debugTest(item: TestItem) {
 		if (!this.#debug) return;
-		this.#execute(this.#debug, new VSCTestRunRequest([item]));
+		this.#executeTestRun(this.#debug, new VSCTestRunRequest([item]));
 	}
 
-	async #execute({ profile, ...config }: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
+	async #executeTestRun({ profile, ...config }: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
 		if (!profile) {
 			return;
 		}
@@ -129,7 +129,7 @@ export class TestManager {
 
 		if (rq.continuous) {
 			const s1 = this.#provider.onDidInvalidateTestResults(
-				async (items) => items && (await runner.invalidate(items))
+				async (items) => items && (await runner.queueForContinuousRun(items))
 			);
 			const s2 = this.#didSave.event((e) =>
 				doSafe(this.context, 'run continuous', () => runner.runContinuous(e))

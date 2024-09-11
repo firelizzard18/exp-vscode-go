@@ -45,6 +45,9 @@ export class TestRunRequest {
 		this.exclude = exclude;
 	}
 
+	/**
+	 * Constructs a {@link TestRunRequest} from a {@link vscode.TestRunRequest}.
+	 */
 	static async from(manager: TestManager, request: vscode.TestRunRequest) {
 		const include = (request.include || [...manager.rootTestItems]).map((x) => resolveGoItem(manager, x));
 		const exclude = request.exclude?.map((x) => resolveGoItem(manager, x)) || [];
@@ -112,6 +115,10 @@ export class TestRunRequest {
 		return new this(manager, request, packages, testsForPackage, excludeForPackage);
 	}
 
+	/**
+	 * Constructs a new {@link TestRunRequest} with the intersection of the
+	 * receiver's included tests and the given tests.
+	 */
 	async with(tests: Iterable<TestCase | TestFile>) {
 		// Determine which tests cases may be included
 		const candidates = new Set<TestCase>();
@@ -227,6 +234,9 @@ export class PackageTestRun {
 		return !this.#request.include.has(this.goItem);
 	}
 
+	/**
+	 * Handles an event from `go test -json`.
+	 */
 	async onStdout(s: string) {
 		// Attempt to parse the output as a test message
 		let msg: Event;
@@ -336,7 +346,7 @@ export class PackageTestRun {
 		this.#run.appendOutput(output, location, test);
 	}
 
-	report(fn: (item: TestItem, goItem?: TestCase) => void) {
+	forEach(fn: (item: TestItem, goItem?: TestCase) => void) {
 		const recurse = (item: TestItem, goItem?: TestCase) => {
 			fn(item, goItem);
 			for (const [, child] of item.children) {

@@ -90,7 +90,7 @@ export class TestRunner {
 		await this.#run(this.#request);
 	}
 
-	async invalidate(items: Iterable<TestCase | TestFile>) {
+	async queueForContinuousRun(items: Iterable<TestCase | TestFile>) {
 		for (const item of items) {
 			this.#continuous.add(item);
 		}
@@ -120,7 +120,7 @@ export class TestRunner {
 			let first = true;
 			for await (const pkg of request.packages(run)) {
 				if (invalid) {
-					pkg.report((item) =>
+					pkg.forEach((item) =>
 						run.errored(item, {
 							message: 'Debugging multiple test packages is not supported'
 						})
@@ -142,14 +142,14 @@ export class TestRunner {
 	}
 
 	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun) {
-		pkg.report((item, goItem) => {
+		pkg.forEach((item, goItem) => {
 			run.enqueued(item);
 			goItem?.removeDynamicTestCases();
 		});
 
 		const { binPath: goRuntimePath } = this.#context.go.settings.getExecutionCommand('go', pkg.goItem.uri) || {};
 		if (!goRuntimePath) {
-			pkg.report((item) =>
+			pkg.forEach((item) =>
 				run.errored(item, {
 					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
 				})
