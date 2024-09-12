@@ -471,11 +471,11 @@ export class Package implements GoTestItem, ItemWithProfiles {
 
 	update(src: Commands.Package) {
 		if (deepEqual(src, this.#src)) {
-			return;
+			return [];
 		}
 		this.#src = src;
 
-		this.files.replaceWith(
+		const changes = this.files.replaceWith(
 			src.TestFiles!.filter((x) => x.Tests.length),
 			(src) => src.URI,
 			(src) => new TestFile(this.#config, this, src),
@@ -486,6 +486,7 @@ export class Package implements GoTestItem, ItemWithProfiles {
 		this.testRelations.replace(
 			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)])
 		);
+		return changes;
 	}
 
 	get key() {
@@ -574,11 +575,11 @@ export class TestFile implements GoTestItem {
 
 	update(src: Commands.TestFile) {
 		if (deepEqual(src, this.#src)) {
-			return;
+			return [];
 		}
 		this.#src = src;
 
-		this.tests.replaceWith(
+		return this.tests.replaceWith(
 			src.Tests,
 			(src) => src.Name,
 			(src) => new StaticTestCase(this.#config, this, src),
@@ -615,26 +616,6 @@ export class TestFile implements GoTestItem {
 		}
 		return [...this.tests];
 	}
-
-	/**
-	 * Returns tests that intersect with the given range.
-	 */
-	find(ranges: Range[]) {
-		const found = new Set<TestCase>();
-		for (const test of this.tests) {
-			if (ranges.some((x) => test.contains(x))) {
-				found.add(test);
-			}
-		}
-
-		// Return the most limited set
-		for (const test of found) {
-			const parent = test.getParent();
-			found.delete(parent as any);
-		}
-
-		return [...found];
-	}
 }
 
 export abstract class TestCase implements GoTestItem, ItemWithProfiles {
@@ -652,8 +633,6 @@ export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 		this.kind = kind;
 		this.name = name;
 	}
-
-	abstract contains(range: Range): boolean;
 
 	get key() {
 		return this.name;
@@ -739,12 +718,13 @@ export class StaticTestCase extends TestCase {
 
 	update(src: Commands.TestCase) {
 		if (deepEqual(src, this.#src)) {
-			return;
+			return [];
 		}
-		this.#src = src;
 
 		const { start, end } = src.Loc.range;
+		this.#src = src;
 		this.range = new Range(start.line, start.character, end.line, end.character);
+		return [this];
 	}
 
 	contains(range: Range): boolean {
@@ -766,12 +746,6 @@ export class StaticTestCase extends TestCase {
 export class DynamicTestCase extends TestCase {
 	constructor(config: TestConfig, parent: TestCase, name: string) {
 		super(config, parent.file, parent.uri, parent.kind, name);
-	}
-
-	contains(): boolean {
-		// Go doesn't tell us the source location of subtests so we have nothing
-		// to check the range against.
-		return false;
 	}
 }
 
@@ -903,7 +877,12 @@ export class ItemSet<T extends GoTestItem & { key: string }> {
 	 * @param make A function that creates a new item from a source value.
 	 * @param update A function that updates an existing item with a source value.
 	 */
-	replaceWith<S>(src: S[], id: (_: S) => string, make: (_: S) => T, update: (_1: S, _2: T) => void) {
+	replaceWith<S, R>(
+		src: S[],
+		id: (_: S) => string,
+		make: (_: S) => T,
+		update: (_1: S, _2: T) => Iterable<R>
+	): Iterable<R | T> {
 		// Delete items that are no longer present
 		const keep = new Set(src.map(id));
 		for (const key of this.keys()) {
@@ -913,14 +892,18 @@ export class ItemSet<T extends GoTestItem & { key: string }> {
 		}
 
 		// Update and insert items
+		const changed = [];
 		for (const item of src) {
 			const key = id(item);
 			const existing = this.get(key);
 			if (existing) {
-				update(item, existing);
+				changed.push(...update(item, existing));
 			} else {
-				this.add(make(item));
+				const x = make(item);
+				this.add(x);
+				changed.push(x);
 			}
 		}
+		return changed;
 	}
 }

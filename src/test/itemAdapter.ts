@@ -215,15 +215,12 @@ export class TestItemProviderAdapter {
 	}
 
 	/**
-	 * Reloads the test items (view and Go) for the given file. If `ranges` is
-	 * non-empty and is contained within test cases, only those cases are
-	 * reloaded.
+	 * Reloads the test items (view and Go) for the given file.
 	 *
 	 * @param uri The URI of the file to reload.
-	 * @param ranges Modified ranges within the file.
 	 * @param invalidate Whether to invalidate test results.
 	 */
-	async reloadUri(uri: Uri, ranges: Range[] = [], invalidate = false) {
+	async reloadUri(uri: Uri, invalidate = false) {
 		// TODO: Can gopls emit an event when tests/etc change?
 
 		// Only support the file: URIs. It is necessary to exclude git: URIs
@@ -253,23 +250,10 @@ export class TestItemProviderAdapter {
 			})
 		);
 
-		// Track updated items
-		const updated = new Set<TestCase | TestFile>();
-		const mark = (pkg: Package) => {
-			const file = [...pkg.files].find((x) => `${x.uri}` === `${uri}`);
-			if (!file) return;
-
-			const tests = file.find(ranges);
-			if (tests.length) {
-				tests.forEach((x) => updated.add(x));
-			} else {
-				updated.add(file);
-			}
-		};
-
 		// An alternative build system may allow a file to be part of multiple
 		// packages, so process all results
 		const findOpts = { tryReload: true };
+		const updated = new Set<TestCase | TestFile>();
 		for (const pkg of packages) {
 			// This shouldn't happen, but just in case
 			if (!pkg.TestFiles?.length) continue;
@@ -286,12 +270,23 @@ export class TestItemProviderAdapter {
 			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
 			if (!pkgItem) continue; // This indicates a bug
 
-			// Mark the updated items
-			mark(pkgItem);
-
 			// Update the package. This must happen after finding the update
 			// items since this update may change what items overlap the ranges.
-			pkgItem.update(pkg);
+			let any = false;
+			for (const changed of pkgItem.update(pkg)) {
+				updated.add(changed);
+				any = true;
+			}
+
+			// If the update had no effect, mark the file as updated
+			if (!any) {
+				for (const file of pkgItem.files) {
+					if (`${file.uri}` === `${uri}`) {
+						updated.add(file);
+						break;
+					}
+				}
+			}
 		}
 
 		await this.reloadGoItem(updated);
