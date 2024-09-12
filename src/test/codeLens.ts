@@ -30,7 +30,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 			return [];
 		}
 
-		for (const root of await this.#manager.rootGoTestItems()) {
+		for (const root of await this.#manager.rootGoTestItems) {
 			for (const pkg of await root.getPackages()) {
 				for (const file of await pkg.files) {
 					if (`${file.uri}` === `${document.uri}`) {

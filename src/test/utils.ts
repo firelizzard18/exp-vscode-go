@@ -12,7 +12,6 @@ import {
 	debug,
 	DebugConfiguration,
 	DebugSession,
-	DebugSessionOptions,
 	Disposable,
 	Event,
 	TestRun,

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { commands, Event, ExtensionContext, ExtensionMode, tests, window, workspace } from 'vscode';
+import { commands, Event, ExtensionContext, ExtensionMode, TestItem, tests, window, workspace } from 'vscode';
 import { Context, doSafe } from './testing';
 import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
@@ -41,19 +41,19 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 			registerCodeLensProvider: languages.registerCodeLensProvider,
 			showQuickPick: window.showQuickPick
 		});
-		window.visibleTextEditors.forEach((x) => manager.reload(x.document.uri));
+		window.visibleTextEditors.forEach((x) => manager.reloadUri(x.document.uri));
 	};
 	ctx.subscriptions.push(manager);
 
 	// [Command] Refresh
-	command('goExp.testExplorer.refresh', (item) => manager.enabled && manager.reload(item));
+	command('goExp.testExplorer.refresh', (item: TestItem) => manager.enabled && manager.reloadViewItem(item));
 
 	// [Command] Run Test, Debug Test
-	command('goExp.test.run', (item) => manager.enabled && manager.runTest(item));
-	command('goExp.test.debug', (item) => manager.enabled && manager.debugTest(item));
+	command('goExp.test.run', (item: TestItem) => manager.enabled && manager.runTest(item));
+	command('goExp.test.debug', (item: TestItem) => manager.enabled && manager.debugTest(item));
 
 	// [Command] Open profile
-	command('goExp.openProfile', async (path) => await ProfileDocument.open(ctx, go, path));
+	command('goExp.openProfile', async (path: string) => await ProfileDocument.open(ctx, go, path));
 
 	// [Command] Browser navigation
 	command('goExp.browser.back', () => Browser.active?.back());
@@ -84,12 +84,12 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 			e.affectsConfiguration('goExp.testExplorer.nestPackages') ||
 			e.affectsConfiguration('goExp.testExplorer.nestSubtests')
 		) {
-			await manager.reload();
+			await manager.reloadView();
 		}
 	});
 
 	// [Event] File open
-	event(workspace.onDidOpenTextDocument, 'opened document', (e) => manager.enabled && manager.reload(e.uri));
+	event(workspace.onDidOpenTextDocument, 'opened document', (e) => manager.enabled && manager.reloadUri(e.uri));
 
 	// [Event] File change
 	event(workspace.onDidChangeTextDocument, 'updated document', (e) => {
@@ -103,7 +103,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 			return;
 		}
 
-		manager.reload(
+		manager.reloadUri(
 			e.document.uri,
 			e.contentChanges.map((x) => x.range),
 			true
@@ -114,13 +114,17 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	event(workspace.onDidSaveTextDocument, 'saved document', (e) => manager.enabled && manager.didSave(e.uri));
 
 	// [Event] Workspace change
-	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => manager.enabled && manager.reload());
+	event(
+		workspace.onDidChangeWorkspaceFolders,
+		'changed workspace',
+		async () => manager.enabled && manager.reloadView()
+	);
 
 	// [Event] File created/deleted
 	const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);
 	ctx.subscriptions.push(watcher);
-	event(watcher.onDidCreate, 'created file', async (e) => manager.enabled && manager.reload(e));
-	event(watcher.onDidDelete, 'deleted file', async (e) => manager.enabled && manager.reload(e));
+	event(watcher.onDidCreate, 'created file', async (e) => manager.enabled && manager.reloadUri(e));
+	event(watcher.onDidDelete, 'deleted file', async (e) => manager.enabled && manager.reloadUri(e));
 
 	// Setup the controller (if enabled)
 	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {

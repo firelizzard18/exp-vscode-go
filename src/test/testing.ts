@@ -8,7 +8,7 @@ import type vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
 import type { GoExtensionAPI } from '../vscode-go';
 import type { Spawner } from './utils';
-import { Memento } from 'vscode';
+import { Memento, TestItem, TestItemCollection } from 'vscode';
 
 // Signatures used by the component test mock to allow tests to wait for events
 // to be processed.
@@ -121,4 +121,24 @@ export const doSafe = async <T>(ctx: Context, msg: string, fn: () => T | Promise
 export function reportError(ctx: Context, error: unknown) {
 	if (ctx.testing) throw error;
 	else ctx.output.error(`Error: ${error}`);
+}
+
+const debugResolve = false;
+
+export function debugViewTree(root: TestItemCollection, label: string) {
+	if (!debugResolve) return;
+	const s = [label];
+	const add = (item: TestItem, indent: string) => {
+		if (indent === '  ' && item.children.size > 2) {
+			console.error('wtf');
+		}
+		s.push(`${indent}${item.label}`);
+		for (const [, child] of item.children) {
+			add(child, indent + '  ');
+		}
+	};
+	for (const [, item] of root) {
+		add(item, '  ');
+	}
+	console.log(s.join('\n'));
 }

@@ -7,7 +7,6 @@ import { Context, doSafe, TestController } from './testing';
 import { TestItemProviderAdapter } from './itemAdapter';
 import { GoTestItem, Package } from './item';
 import { RunConfig, RunnerSettings, TestRunner } from './runner';
-import { TestItemProvider } from './itemProvider';
 import { TestRunRequest } from './run';
 import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
@@ -15,13 +14,11 @@ import { EventEmitter } from '../utils/eventEmitter';
 export class TestManager {
 	readonly #didSave = new EventEmitter<(_: Uri) => void>();
 	readonly context: Context;
-	readonly #provider: TestItemProvider;
 	readonly #codeLens: CodeLensProvider;
 	readonly #disposable: Disposable[] = [];
 
 	constructor(context: Context) {
 		this.context = context;
-		this.#provider = new TestItemProvider(context);
 		this.#codeLens = new CodeLensProvider(context, this);
 		this.#run = { settings: new RunnerSettings('run', this.context.state) };
 		this.#debug = { settings: new RunnerSettings('debug', this.context.state) };
@@ -47,15 +44,12 @@ export class TestManager {
 		);
 
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new TestItemProviderAdapter(this.context, ctrl, this.#provider);
+		const resolver = new TestItemProviderAdapter(this.context, ctrl);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
+		this.#disposable.push(ctrl);
 
-		this.#disposable.push(
-			ctrl,
-			this.#provider.onDidChangeTestItem((e) => resolver.didChangeTestItem(e)),
-			this.#provider.onDidInvalidateTestResults((e) => resolver.invalidateTestResults(e))
-		);
+		resolver.onDidChangeTestItem(() => this.#codeLens.reload());
 
 		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.resolve());
 		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
@@ -103,7 +97,7 @@ export class TestManager {
 	}
 
 	async #executeTestRun({ profile, ...config }: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
-		if (!profile) {
+		if (!profile || !this.#resolver) {
 			return;
 		}
 
@@ -120,7 +114,7 @@ export class TestManager {
 		const request = await TestRunRequest.from(this, rq);
 		const runner = new TestRunner(
 			this.context,
-			this.#provider,
+			this.#resolver,
 			{ profile, ...config },
 			(rq) => this.#ctrl!.createTestRun(rq.source),
 			request,
@@ -128,13 +122,13 @@ export class TestManager {
 		);
 
 		if (rq.continuous) {
-			const s1 = this.#provider.onDidInvalidateTestResults(
+			const s1 = this.#resolver.onDidInvalidateTestResults(
 				async (items) => items && (await runner.queueForContinuousRun(items))
 			);
 			const s2 = this.#didSave.event((e) =>
 				doSafe(this.context, 'run continuous', () => runner.runContinuous(e))
 			);
-			token.onCancellationRequested(() => (s1.dispose(), s2.dispose()));
+			token.onCancellationRequested(() => (s1?.dispose(), s2.dispose()));
 		} else {
 			await runner.run();
 		}
@@ -142,16 +136,14 @@ export class TestManager {
 		cancel?.cancel();
 	}
 
-	async reload(): Promise<void>;
-	async reload(item: TestItem): Promise<void>;
-	async reload(item: Uri, ranges?: Range[], invalidate?: boolean): Promise<void>;
-	async reload(item?: Uri | TestItem, ranges: Range[] = [], invalidate = false) {
-		if (!item || item instanceof Uri) {
-			await this.#provider.reload(item, ranges, invalidate);
-		} else {
-			await this.#resolver?.resolve(item);
-		}
-	}
+	readonly reloadView = (...args: Parameters<TestItemProviderAdapter['reloadView']>) =>
+		this.#resolver?.reloadView(...args);
+
+	readonly reloadViewItem = (...args: Parameters<TestItemProviderAdapter['reloadViewItem']>) =>
+		this.#resolver?.reloadViewItem(...args);
+
+	readonly reloadUri = (...args: Parameters<TestItemProviderAdapter['reloadUri']>) =>
+		this.#resolver?.reloadUri(...args);
 
 	didSave(uri: Uri) {
 		this.#didSave.fire(uri);
@@ -171,14 +163,14 @@ export class TestManager {
 	}
 
 	resolveTestCase(pkg: Package, name: string) {
-		return this.#provider.resolveTestCase(pkg, name);
+		return this.#resolver?.resolveTestCase(pkg, name);
 	}
 
 	get rootTestItems() {
-		return this.#resolver!.roots;
+		return this.#resolver?.viewRoots || [];
 	}
 
-	rootGoTestItems() {
-		return this.#provider.roots.getChildren();
+	get rootGoTestItems() {
+		return (async () => (await this.#resolver?.goRoots) || [])();
 	}
 }
