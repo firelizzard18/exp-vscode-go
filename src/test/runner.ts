@@ -106,11 +106,11 @@ export class TestRunner {
 		}
 
 		if (items.size) {
-			await this.#run(await this.#request.with(items));
+			await this.#run(await this.#request.with(items), true);
 		}
 	}
 
-	async #run(request: TestRunRequest) {
+	async #run(request: TestRunRequest, continuous = false) {
 		const run = this.#createRun(request);
 
 		// Execute the tests
@@ -133,7 +133,7 @@ export class TestRunner {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				await this.#runPkg(pkg, run);
+				await this.#runPkg(pkg, run, continuous);
 			}
 		} finally {
 			run.end();
@@ -141,7 +141,7 @@ export class TestRunner {
 	}
 
 	// `goTest` from vscode-go
-	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun) {
+	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun, continuous: boolean) {
 		pkg.forEach((item, goItem) => {
 			run.enqueued(item);
 			goItem?.removeDynamicTestCases();
@@ -178,24 +178,33 @@ export class TestRunner {
 			flags.push(`-skip=${makeRegex(pkg.exclude.keys())}`);
 		}
 
-		// Create the profile directory
-		const profileDir = CapturedProfile.storageDir(this.#context, run);
-		await this.#context.workspace.fs.createDirectory(profileDir);
+		// Profiling is disabled for continuous runs
+		if (!continuous && this.#config.settings.profile.some((x) => x.enabled)) {
+			// Create the profile directory
+			const profileDir = CapturedProfile.storageDir(this.#context, run);
+			await this.#context.workspace.fs.createDirectory(profileDir);
 
-		// If the request is for a single test, add the profiles to that test,
-		// otherwise add them to the package
-		const profileParent = pkg.include.size === 1 ? [...pkg.include][0][0] : pkg.goItem;
+			// If the request is for a single test, add the profiles to that test,
+			// otherwise add them to the package
+			const profileParent = pkg.include.size === 1 ? [...pkg.include][0][0] : pkg.goItem;
 
-		// Setup the profiles
-		const time = new Date();
-		for (const profile of this.#config.settings.profile) {
-			if (!profile.enabled) {
-				continue;
+			// Setup the profiles
+			const time = new Date();
+			for (const profile of this.#config.settings.profile) {
+				if (!profile.enabled) {
+					continue;
+				}
+
+				const file = await this.#resolver.registerCapturedProfile(
+					run,
+					profileParent,
+					profileDir,
+					profile,
+					time
+				);
+				flags.push(`${profile.flag}=${file.uri.fsPath}`);
+				run.onDidDispose?.(() => this.#context.workspace.fs.delete(file.uri));
 			}
-
-			const file = await this.#resolver.registerCapturedProfile(run, profileParent, profileDir, profile, time);
-			flags.push(`${profile.flag}=${file.uri.fsPath}`);
-			run.onDidDispose?.(() => this.#context.workspace.fs.delete(file.uri));
 		}
 
 		pkg.append(
