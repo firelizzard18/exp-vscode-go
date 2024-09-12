@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { TestItem } from 'vscode';
-import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
+import { findParentTestCase, GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
 import vscode from 'vscode';
 import { shouldRunBenchmarks } from './runner';
 import path from 'node:path';
@@ -249,7 +249,7 @@ export class PackageTestRun {
 		}
 
 		// Resolve the named test case and its associated test item
-		const test = msg.Test ? await this.#request.manager.resolveTestCase(this.goItem, msg.Test) : undefined;
+		const test = msg.Test ? await this.#resolveTestCase(this.goItem, msg.Test) : undefined;
 		const item = test && (await this.#request.manager.resolveTestItem(test, true));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
@@ -360,6 +360,26 @@ export class PackageTestRun {
 				recurse(item, goItem);
 			}
 		}
+	}
+
+	async #resolveTestCase(pkg: Package, name: string) {
+		// Check for an exact match
+		for (const file of pkg.files) {
+			for (const test of file.tests) {
+				if (test.name === name) {
+					return test;
+				}
+			}
+		}
+
+		// Find the parent test case and create a dynamic subtest
+		const parent = findParentTestCase(pkg.getTests(), name);
+		if (!parent) return;
+
+		const test = parent.makeDynamicTestCase(name);
+		if (!test) return;
+		await this.#request.manager.reloadGoItem(test);
+		return test;
 	}
 }
 

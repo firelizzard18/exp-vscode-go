@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, Memento, TestRunProfile, TestRunProfileKind, Uri } from 'vscode';
+import { CancellationToken, Memento, TestRun, TestRunProfile, TestRunProfileKind, Uri } from 'vscode';
 import type vscode from 'vscode';
 import { Package, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
 import { SpawnOptions } from './utils';
-import { CapturedProfile, makeProfileTypeSet } from './profile';
-import { TestItemProviderAdapter } from './itemAdapter';
+import { CapturedProfile, makeProfileTypeSet, ProfileType } from './profile';
+import { TestResolver } from './resolver';
 
 const settingsMemento = 'runnerSettings';
 
@@ -58,7 +58,7 @@ export class RunnerSettings {
 
 export class TestRunner {
 	readonly #context: Context;
-	readonly #resolver: TestItemProviderAdapter;
+	readonly #resolver: TestResolver;
 	readonly #config: Required<RunConfig>;
 	readonly #createRun: (_: TestRunRequest) => vscode.TestRun;
 	readonly #request: TestRunRequest;
@@ -68,7 +68,7 @@ export class TestRunner {
 
 	constructor(
 		context: Context,
-		provider: TestItemProviderAdapter,
+		provider: TestResolver,
 		config: Required<RunConfig>,
 		createRun: (_: TestRunRequest) => vscode.TestRun,
 		request: TestRunRequest,
@@ -195,13 +195,7 @@ export class TestRunner {
 					continue;
 				}
 
-				const file = await this.#resolver.registerCapturedProfile(
-					run,
-					profileParent,
-					profileDir,
-					profile,
-					time
-				);
+				const file = await this.#registerCapturedProfile(run, profileParent, profileDir, profile, time);
 				flags.push(`${profile.flag}=${file.uri.fsPath}`);
 				run.onDidDispose?.(() => this.#context.workspace.fs.delete(file.uri));
 			}
@@ -235,6 +229,17 @@ export class TestRunner {
 				].join(', ')}`
 			});
 		}
+	}
+
+	async #registerCapturedProfile(run: TestRun, item: Package | TestCase, dir: Uri, type: ProfileType, time: Date) {
+		const profile = await item.addProfile(dir, type, time);
+		await this.#resolver.reloadGoItem(item);
+
+		run.onDidDispose?.(async () => {
+			item.removeProfile(profile);
+			await this.#resolver.reloadGoItem(item);
+		});
+		return profile;
 	}
 
 	#spawn(command: string, flags: readonly string[], options: SpawnOptions) {

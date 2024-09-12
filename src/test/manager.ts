@@ -4,7 +4,7 @@ import { TestRunProfileKind, Uri, Range, TestRunRequest as VSCTestRunRequest, Ca
 import type { CancellationToken, Disposable, TestItem } from 'vscode';
 import type vscode from 'vscode';
 import { Context, doSafe, TestController } from './testing';
-import { TestItemProviderAdapter } from './itemAdapter';
+import { TestResolver } from './resolver';
 import { GoTestItem, Package } from './item';
 import { RunConfig, RunnerSettings, TestRunner } from './runner';
 import { TestRunRequest } from './run';
@@ -25,7 +25,7 @@ export class TestManager {
 	}
 
 	#ctrl?: TestController;
-	#resolver?: TestItemProviderAdapter;
+	#resolver?: TestResolver;
 	readonly #run: RunConfig;
 	readonly #debug: RunConfig;
 
@@ -44,15 +44,16 @@ export class TestManager {
 		);
 
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new TestItemProviderAdapter(this.context, ctrl);
+		const resolver = new TestResolver(this.context, ctrl);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#disposable.push(ctrl);
 
 		resolver.onDidChangeTestItem(() => this.#codeLens.reload());
 
-		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.resolve());
-		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.resolve(item));
+		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.reloadView());
+		ctrl.resolveHandler = (item) =>
+			doSafe(this.context, 'resolve test', () => (item ? resolver.reloadViewItem(item) : resolver.reloadView()));
 
 		// Normal and debug test runners
 		this.#run.profile = ctrl.createRunProfile(
@@ -136,14 +137,21 @@ export class TestManager {
 		cancel?.cancel();
 	}
 
-	readonly reloadView = (...args: Parameters<TestItemProviderAdapter['reloadView']>) =>
-		this.#resolver?.reloadView(...args);
+	async reloadView(...args: Parameters<TestResolver['reloadView']>) {
+		await this.#resolver?.reloadView(...args);
+	}
 
-	readonly reloadViewItem = (...args: Parameters<TestItemProviderAdapter['reloadViewItem']>) =>
-		this.#resolver?.reloadViewItem(...args);
+	async reloadViewItem(...args: Parameters<TestResolver['reloadViewItem']>) {
+		await this.#resolver?.reloadViewItem(...args);
+	}
 
-	readonly reloadUri = (...args: Parameters<TestItemProviderAdapter['reloadUri']>) =>
-		this.#resolver?.reloadUri(...args);
+	async reloadGoItem(...args: Parameters<TestResolver['reloadGoItem']>) {
+		await this.#resolver?.reloadGoItem(...args);
+	}
+
+	async reloadUri(...args: Parameters<TestResolver['reloadUri']>) {
+		await this.#resolver?.reloadUri(...args);
+	}
 
 	didSave(uri: Uri) {
 		this.#didSave.fire(uri);
@@ -160,10 +168,6 @@ export class TestManager {
 
 	resolveGoTestItem(id: string) {
 		return this.#resolver?.getGoItem(id);
-	}
-
-	resolveTestCase(pkg: Package, name: string) {
-		return this.#resolver?.resolveTestCase(pkg, name);
 	}
 
 	get rootTestItems() {

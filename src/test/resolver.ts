@@ -21,7 +21,7 @@ import { EventEmitter } from '../utils/eventEmitter';
  * However, maintaining that was impractical and lead to unnecessarily complex
  * (and hard to maintain) code.
  */
-export class TestItemProviderAdapter {
+export class TestResolver {
 	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile | Package>) => void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 	readonly #didInvalidateTestResults = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
@@ -54,30 +54,6 @@ export class TestItemProviderAdapter {
 
 	get goRoots() {
 		return this.#goRoots.getChildren();
-	}
-
-	async resolve(item?: TestItem) {
-		if (item) item.busy = true;
-
-		try {
-			const goItem = item && this.#items.get(item.id);
-			if (item && !goItem) {
-				// Unknown test item
-				return;
-			}
-
-			const container = item ? item.children : this.#ctrl.items;
-			const children = await (goItem ? goItem.getChildren() : this.#goRoots.getChildren());
-			if (!children) {
-				return;
-			}
-
-			await container.replace(await Promise.all(children.map(async (x) => this.#createOrUpdate(x, container))));
-		} finally {
-			if (item) item.busy = false;
-
-			debugViewTree(this.#ctrl.items, item ? `Resolving ${item.id}` : 'Resolving (root)');
-		}
 	}
 
 	/**
@@ -131,7 +107,7 @@ export class TestItemProviderAdapter {
 
 		// Automatically resolve all children of a test case
 		if (goItem instanceof TestCase) {
-			await this.resolve(item);
+			await this.reloadViewItem(item);
 		}
 
 		return item;
@@ -145,44 +121,6 @@ export class TestItemProviderAdapter {
 	}
 
 	/* ******************************************** */
-	/* ***          Execution support           *** */
-	/* ******************************************** */
-
-	/**
-	 * Return the named {@link TestCase}. May create a new dynamic subtest.
-	 */
-	async resolveTestCase(pkg: Package, name: string) {
-		// Check for an exact match
-		for (const file of pkg.files) {
-			for (const test of file.tests) {
-				if (test.name === name) {
-					return test;
-				}
-			}
-		}
-
-		// Find the parent test case and create a dynamic subtest
-		const parent = findParentTestCase(pkg.getTests(), name);
-		if (!parent) return;
-
-		const test = parent.makeDynamicTestCase(name);
-		if (!test) return;
-		await this.reloadGoItem(test);
-		return test;
-	}
-
-	async registerCapturedProfile(run: TestRun, item: Package | TestCase, dir: Uri, type: ProfileType, time: Date) {
-		const profile = await item.addProfile(dir, type, time);
-		await this.reloadGoItem(item);
-
-		run.onDidDispose?.(async () => {
-			item.removeProfile(profile);
-			await this.reloadGoItem(item);
-		});
-		return profile;
-	}
-
-	/* ******************************************** */
 	/* ***              Reloading               *** */
 	/* ******************************************** */
 
@@ -190,18 +128,44 @@ export class TestItemProviderAdapter {
 	 * Reloads all view items.
 	 */
 	async reloadView() {
-		// Force a refresh by dumping all the roots and resolving
-		this.#ctrl.items.replace([]);
-		await this.resolve();
+		const goRoots = await this.#goRoots.getChildren();
+		await this.#ctrl.items.replace(
+			await Promise.all(goRoots.map(async (x) => this.#createOrUpdate(x, this.#ctrl.items)))
+		);
+
+		debugViewTree(this.#ctrl.items, 'Resolving (root)');
 	}
 
 	/**
-	 * Refreshes a specific view item.
+	 * Reloads a specific view item.
 	 */
 	async reloadViewItem(item: TestItem) {
-		await this.resolve(item);
+		item.busy = true;
+
+		try {
+			const goItem = this.#items.get(item.id);
+			if (!goItem) {
+				// Unknown test item
+				return;
+			}
+
+			const container = item ? item.children : this.#ctrl.items;
+			const children = await (goItem ? goItem.getChildren() : this.#goRoots.getChildren());
+			if (!children) {
+				return;
+			}
+
+			await container.replace(await Promise.all(children.map(async (x) => this.#createOrUpdate(x, container))));
+		} finally {
+			item.busy = false;
+
+			debugViewTree(this.#ctrl.items, item ? `Resolving ${item.id}` : 'Resolving (root)');
+		}
 	}
 
+	/**
+	 * Reloads a set of Go items.
+	 */
 	async reloadGoItem(item: TestCase | TestFile | Package | Iterable<TestCase | TestFile | Package>) {
 		if (item instanceof TestCase || item instanceof TestFile || item instanceof Package) {
 			await this.reloadGoItem([item]);
@@ -209,8 +173,8 @@ export class TestItemProviderAdapter {
 		}
 
 		// Create a TestItem for each GoTestItem, including its ancestors, and refresh
-		const items = await this.#filter(item, true);
-		await Promise.all(items.map((x) => this.resolve(x)));
+		const items = await this.#resolveViewItems(item, true);
+		await Promise.all(items.map((x) => this.reloadViewItem(x)));
 		await this.#didChangeTestItem.fire(item);
 	}
 
@@ -221,7 +185,10 @@ export class TestItemProviderAdapter {
 	 * @param invalidate Whether to invalidate test results.
 	 */
 	async reloadUri(uri: Uri, invalidate = false) {
-		// TODO: Can gopls emit an event when tests/etc change?
+		// TODO:
+		//  - This should be moved into a different class; this class should
+		//    focus on the model-view translation.
+		//  - Can gopls emit an event when tests/etc change?
 
 		// Only support the file: URIs. It is necessary to exclude git: URIs
 		// because gopls will not handle them. Excluding everything except file:
@@ -289,19 +256,21 @@ export class TestItemProviderAdapter {
 			}
 		}
 
-		await this.reloadGoItem(updated);
-		if (invalidate) {
-			const items = await this.#filter(updated);
-			this.#ctrl.invalidateTestResults?.(items);
-			await this.#didInvalidateTestResults.fire(updated);
-		}
+		// Update the view
+		const items = await this.#resolveViewItems(updated, true);
+		await Promise.all(items.map((x) => this.reloadViewItem(x)));
+		invalidate && this.#ctrl.invalidateTestResults?.(items);
+
+		// Notify listeners
+		await this.#didChangeTestItem.fire(updated);
+		invalidate && (await this.#didInvalidateTestResults.fire(updated));
 	}
 
 	/**
 	 * Filters out items that should not be displayed and finds the
 	 * corresponding TestItem for each GoTestItem.
 	 */
-	async #filter(goItems: Iterable<TestCase | TestFile | Package>, create = false) {
+	async #resolveViewItems(goItems: Iterable<TestCase | TestFile | Package>, create = false) {
 		// If showFiles is disabled we need to reload the parent of each file
 		// instead of the file. If an item is a package and is the self-package
 		// of a root, we need to reload the root instead of the package.
