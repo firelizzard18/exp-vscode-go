@@ -218,7 +218,7 @@ describe('Go test controller', () => {
 			expect(tc).toBeDefined();
 			expect(tc).toBeInstanceOf(TestCase);
 
-			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
+			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Bar', true)!);
 			await expect(host).toResolve([
 				{
 					kind: 'module',
@@ -248,7 +248,7 @@ describe('Go test controller', () => {
 			expect(tc).toBeDefined();
 			expect(tc).toBeInstanceOf(TestCase);
 
-			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Bar');
+			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Bar', true)!);
 			await expect(host).toResolve([
 				{
 					kind: 'module',
@@ -270,7 +270,7 @@ describe('Go test controller', () => {
 			]);
 
 			tc.removeDynamicTestCases();
-			await host.manager.resolveTestCase(tc.file.package, 'TestFoo/Baz');
+			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Baz', true)!);
 			await expect(host).toResolve([
 				{
 					kind: 'module',

@@ -1,27 +1,21 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Range, TestRun, Uri, type TestItem, type TestItemCollection } from 'vscode';
+import { Uri, type TestItem, type TestItemCollection } from 'vscode';
 import { Context, debugViewTree, TestController } from './testing';
-import { findParentTestCase, GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
+import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { TestConfig } from './config';
-import { CapturedProfile, ProfileType } from './profile';
+import { CapturedProfile } from './profile';
 import { EventEmitter } from '../utils/eventEmitter';
 
 /**
- * Adapts between VSCode's TestController.resolveHandler and TestItemProvider.
- *
- * TestItemProvider could directly implement resolveHandler, but then the
- * provider would need to handle two separate trees of items or it would need to
- * use {@link TestItem} instead of {@link GoTestItem}. Past experience shows
- * that leads to difficult to maintain structures and code. This adapter allows
- * the provider to be implemented in a way that is natural given the nature of
- * Go and gopls, with the adapter handling the translation to the VSCode API.
- *
- * Originally this adapter was agnostic of the provider item type and required a
- * generic TestItemProvider implementation similar to a TreeDataProvider.
- * However, maintaining that was impractical and lead to unnecessarily complex
- * (and hard to maintain) code.
+ * Maps between Go items ({@link GoTestItem}) and view items ({@link TestItem})
+ * and manages view updates.
  */
 export class TestResolver {
+	// NOTE: As much as is possible, this class should be restricted to
+	// functions relating to the view. It should _not_ be responsible for
+	// managing Go test items, and Go test items should not be responsible for
+	// managing view information.
+
 	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile | Package>) => void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 	readonly #didInvalidateTestResults = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();

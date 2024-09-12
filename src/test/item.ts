@@ -545,6 +545,30 @@ export class Package implements GoTestItem, ItemWithProfiles {
 		return [...this.files].flatMap((x) => [...x.tests]);
 	}
 
+	/**
+	 * Finds a test with the specified name.
+	 *
+	 * @param name - The name of the test to find.
+	 * @param create - Specifies whether to create a dynamic subtest if it doesn't exist.
+	 * @returns The found test, if found or successfully created.
+	 */
+	findTest(name: string, create = false) {
+		// Check for an exact match
+		for (const file of this.files) {
+			for (const test of file.tests) {
+				if (test.name === name) {
+					return test;
+				}
+			}
+		}
+
+		if (!create) return;
+
+		// Find the parent test case and create a dynamic subtest
+		const parent = findParentTestCase(this.getTests(), name);
+		return parent?.makeDynamicTestCase(name);
+	}
+
 	async addProfile(dir: Uri, type: ProfileType, time: Date) {
 		const profile = await CapturedProfile.new(this, dir, type, time);
 		this.profiles.add(profile);
