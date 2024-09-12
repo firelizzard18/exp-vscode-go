@@ -833,7 +833,7 @@ export class RelationMap<Child, Parent> {
 	}
 }
 
-export class ItemSet<T extends GoTestItem & { key: string }> {
+export class ItemSet<T extends { key: string }> {
 	readonly #items: Map<string, T>;
 
 	constructor(items: T[] = []) {
@@ -884,7 +884,7 @@ export class ItemSet<T extends GoTestItem & { key: string }> {
 		this.add(...items);
 
 		// Delete items that are no longer present
-		const keep = new Set(items.map((x) => `${x.uri}`));
+		const keep = new Set(items.map((x) => x.key));
 		for (const key of this.keys()) {
 			if (!keep.has(key)) {
 				this.remove(key);
