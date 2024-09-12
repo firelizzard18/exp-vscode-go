@@ -172,24 +172,6 @@ export async function debugProcess(
 	});
 	subs.push({ dispose: () => debugSessionOutput.delete(id) });
 
-	// TODO: Is this a duplicate?
-	subs.push(
-		debug.registerDebugAdapterTrackerFactory('go', {
-			createDebugAdapterTracker(s) {
-				if (s.type !== 'go' || s.configuration.sessionID !== id) {
-					return;
-				}
-				return {
-					onDidSendMessage(msg: { type: string; event: string; body: any }) {
-						if (msg.type !== 'event') return;
-						if (msg.event !== 'output') return;
-						ctx.output.debug(`DAP: ${JSON.stringify(msg)}`);
-					}
-				};
-			}
-		})
-	);
-
 	const ws = ctx.workspace.getWorkspaceFolder(Uri.file(cwd));
 	const config: DebugConfiguration = {
 		sessionID: id,
