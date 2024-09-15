@@ -14,7 +14,6 @@ import { UriHandler } from '../urlHandler';
 export class ProfileType {
 	constructor(
 		public readonly id: string,
-		public readonly flag: string,
 		public readonly label: string,
 		public readonly description: string
 	) {}
@@ -25,10 +24,10 @@ export class ProfileType {
 
 export function makeProfileTypeSet() {
 	return <const>[
-		new ProfileType('cpu', '--cpuprofile', 'CPU', 'Profile CPU usage'),
-		new ProfileType('mem', '--memprofile', 'Memory', 'Profile memory usage'),
-		new ProfileType('mutex', '--mutexprofile', 'Mutexes', 'Profile mutex contention'),
-		new ProfileType('block', '--blockprofile', 'Blocking', 'Profile blocking events')
+		new ProfileType('cpu', 'CPU', 'Profile CPU usage'),
+		new ProfileType('mem', 'Memory', 'Profile memory usage'),
+		new ProfileType('mutex', 'Mutexes', 'Profile mutex contention'),
+		new ProfileType('block', 'Blocking', 'Profile blocking events')
 	];
 }
 

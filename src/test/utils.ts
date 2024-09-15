@@ -34,11 +34,13 @@ interface ProcessResult {
 	signal: NodeJS.Signals | null;
 }
 
+export type Flags = { [key: string]: string | boolean };
+
 export interface Spawner {
-	(ctx: Context, command: string, flags: readonly string[], options: SpawnOptions): Promise<ProcessResult | void>;
+	(ctx: Context, command: string, flags: Flags, options: SpawnOptions): Promise<ProcessResult | void>;
 }
 
-export function spawnProcess(_: Context, command: string, flags: readonly string[], options: SpawnOptions) {
+export function spawnProcess(_: Context, command: string, flags: Flags, options: SpawnOptions) {
 	return new Promise<ProcessResult | void>((resolve) => {
 		const { stdout, stderr, cancel, ...rest } = options;
 		if (cancel.isCancellationRequested) {
@@ -54,7 +56,9 @@ export function spawnProcess(_: Context, command: string, flags: readonly string
 		errbuf.onLine(stderr);
 		errbuf.onDone((x) => x && stderr(x));
 
-		const tp = cp.spawn(command, ['test', '-json', ...flags], {
+		flags.json = true;
+
+		const tp = cp.spawn(command, ['test', ...flags2args(flags)], {
 			...rest,
 			stdio: 'pipe'
 		});
@@ -120,7 +124,7 @@ debug.registerDebugAdapterTrackerFactory('go', {
 export async function debugProcess(
 	ctx: Context,
 	command: string,
-	flags: readonly string[],
+	flags: Flags,
 	options: SpawnOptions
 ): Promise<ProcessResult | void> {
 	const { run, cancel, cwd, env, stdout, stderr } = options;
@@ -172,6 +176,17 @@ export async function debugProcess(
 	});
 	subs.push({ dispose: () => debugSessionOutput.delete(id) });
 
+	const flagArgs = [];
+	const buildFlags = [];
+	for (const [flag, value] of Object.entries(flags)) {
+		// Build flags must be handled separately, test flags must be prefixed
+		if (isBuildFlag(flag)) {
+			buildFlags.push(flag2arg(flag, value));
+		} else {
+			flagArgs.push(flag2arg(`test.${flag}`, value));
+		}
+	}
+
 	const ws = ctx.workspace.getWorkspaceFolder(Uri.file(cwd));
 	const config: DebugConfiguration = {
 		sessionID: id,
@@ -181,7 +196,8 @@ export async function debugProcess(
 		mode: 'test',
 		program: cwd,
 		env,
-		args: ['-test.v', ...flags.map((x) => x.replace(/^-/, '-test.'))]
+		buildFlags,
+		args: ['-test.v', ...flagArgs]
 	};
 
 	try {
@@ -192,5 +208,43 @@ export async function debugProcess(
 		await didStop;
 	} finally {
 		subs.forEach((s) => s.dispose());
+	}
+}
+
+export function flags2args(flags: Flags) {
+	return Object.entries(flags).map(([k, v]) => flag2arg(k, v));
+}
+
+function flag2arg(name: string, value: string | boolean) {
+	return value === true ? `-${name}` : `-${name}=${value}`;
+}
+
+function isBuildFlag(name: string) {
+	switch (name) {
+		case 'a':
+		case 'race':
+		case 'msan':
+		case 'asan':
+		case 'cover':
+		case 'covermode':
+		case 'coverpkg':
+		case 'asmflags':
+		case 'buildvcs':
+		case 'compiler':
+		case 'gccgoflags':
+		case 'gcflags':
+		case 'ldflags':
+		case 'mod':
+		case 'modcacherw':
+		case 'modfile':
+		case 'overlay':
+		case 'pgo':
+		case 'tags':
+		case 'trimpath':
+		case 'toolexec':
+			return true;
+
+		default:
+			return false;
 	}
 }

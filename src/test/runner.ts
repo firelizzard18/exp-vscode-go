@@ -5,9 +5,10 @@ import type vscode from 'vscode';
 import { Package, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
-import { SpawnOptions } from './utils';
+import { Flags, flags2args, SpawnOptions } from './utils';
 import { CapturedProfile, makeProfileTypeSet, ProfileType } from './profile';
 import { TestResolver } from './resolver';
+import { TestConfig } from './config';
 
 const settingsMemento = 'runnerSettings';
 
@@ -159,23 +160,25 @@ export class TestRunner {
 
 		// TODO: add test flags, test tags, environment variables, etc.
 
-		const flags: string[] = [
-			'-fullpath' // Include the full path for output events
-		];
+		const cfg = new TestConfig(this.#context.workspace, pkg.goItem.uri);
+		const flags = Object.assign({}, cfg.testFlags());
+
+		flags.fullpath = true; // Include the full path for output events
+
 		if (pkg.includeAll) {
 			// Include all test cases
-			flags.push('-run=.');
+			flags.run = '.';
 			if (shouldRunBenchmarks(this.#context.workspace, pkg.goItem)) {
-				flags.push('-bench=.');
+				flags.bench = '.';
 			}
 		} else {
 			// Include specific test cases
-			flags.push(`-run=${makeRegex(pkg.include.keys(), (x) => x.kind !== 'benchmark')}`);
-			flags.push(`-bench=${makeRegex(pkg.include.keys(), (x) => x.kind === 'benchmark')}`);
+			flags.run = makeRegex(pkg.include.keys(), (x) => x.kind !== 'benchmark') || '-';
+			flags.bench = makeRegex(pkg.include.keys(), (x) => x.kind === 'benchmark') || '-';
 		}
 		if (pkg.exclude.size) {
 			// Exclude specific test cases
-			flags.push(`-skip=${makeRegex(pkg.exclude.keys())}`);
+			flags.skip = makeRegex(pkg.exclude.keys());
 		}
 
 		// Profiling is disabled for continuous runs
@@ -196,13 +199,24 @@ export class TestRunner {
 				}
 
 				const file = await this.#registerCapturedProfile(run, profileParent, profileDir, profile, time);
-				flags.push(`${profile.flag}=${file.uri.fsPath}`);
+				flags[`${profile.id}profile`] = file.uri.fsPath;
 				run.onDidDispose?.(() => this.#context.workspace.fs.delete(file.uri));
 			}
 		}
 
+		// When printing flags, use ${workspaceFolder} for the workspace folder
+		const ws = this.#context.workspace.getWorkspaceFolder(pkg.goItem.uri);
+		const niceFlags = Object.assign({}, flags);
+		if (ws) {
+			for (const [flag, value] of Object.entries(niceFlags)) {
+				if (typeof value === 'string') {
+					niceFlags[flag] = value.replace(ws.uri.fsPath, '${workspaceFolder}');
+				}
+			}
+		}
+
 		pkg.append(
-			`$ cd ${pkg.goItem.uri.fsPath}\n$ ${goRuntimePath} test ${flags.join(' ')}\n\n`,
+			`$ cd ${pkg.goItem.uri.fsPath}\n$ ${goRuntimePath} test ${flags2args(niceFlags).join(' ')}\n\n`,
 			undefined,
 			pkg.testItem
 		);
@@ -242,7 +256,7 @@ export class TestRunner {
 		return profile;
 	}
 
-	#spawn(command: string, flags: readonly string[], options: SpawnOptions) {
+	#spawn(command: string, flags: Flags, options: SpawnOptions) {
 		switch (this.#config.profile.kind) {
 			case TestRunProfileKind.Debug:
 				return this.#context.debug(this.#context, command, flags, options);
