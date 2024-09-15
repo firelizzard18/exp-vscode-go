@@ -148,8 +148,6 @@ export class TestRunner {
 			goItem?.removeDynamicTestCases();
 		});
 
-		// TODO: add test flags, test tags, environment variables, etc.
-
 		const cfg = new TestConfig(this.#context.workspace, pkg.goItem.uri);
 		const flags = Object.assign({}, cfg.testFlags());
 
@@ -281,7 +279,6 @@ export function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 }
 
 function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
-	// TODO: Handle Go ≤ 1.17 (https://go.dev/issue/39904)
 	return [...tests]
 		.filter(where)
 		.map((x) =>
