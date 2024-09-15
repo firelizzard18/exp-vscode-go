@@ -5,7 +5,7 @@ import type vscode from 'vscode';
 import { Package, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
-import { Flags, flags2args, SpawnOptions } from './utils';
+import { Flags, flags2args, Spawner, SpawnOptions } from './utils';
 import { CapturedProfile, makeProfileTypeSet, ProfileType } from './profile';
 import { TestResolver } from './resolver';
 import { TestConfig } from './config';
@@ -148,16 +148,6 @@ export class TestRunner {
 			goItem?.removeDynamicTestCases();
 		});
 
-		const { binPath: goRuntimePath } = this.#context.go.settings.getExecutionCommand('go', pkg.goItem.uri) || {};
-		if (!goRuntimePath) {
-			pkg.forEach((item) =>
-				run.errored(item, {
-					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
-				})
-			);
-			return;
-		}
-
 		// TODO: add test flags, test tags, environment variables, etc.
 
 		const cfg = new TestConfig(this.#context.workspace, pkg.goItem.uri);
@@ -216,13 +206,14 @@ export class TestRunner {
 		}
 
 		pkg.append(
-			`$ cd ${pkg.goItem.uri.fsPath}\n$ ${goRuntimePath} test ${flags2args(niceFlags).join(' ')}\n\n`,
+			`$ cd ${pkg.goItem.uri.fsPath}\n$ go test ${flags2args(niceFlags).join(' ')}\n\n`,
 			undefined,
 			pkg.testItem
 		);
-		const r = await this.#spawn(goRuntimePath, flags, {
+		const r = await this.#spawn(this.#context, pkg.goItem.uri, flags, {
 			run: run,
 			cwd: pkg.goItem.uri.fsPath,
+			env: cfg.testEnvVars(),
 			cancel: this.#token,
 			stdout: (s: string | null) => {
 				if (!s) return;
@@ -234,6 +225,10 @@ export class TestRunner {
 				this.#context.output.debug(`stderr> ${s}`);
 				pkg.onStderr(s);
 			}
+		}).catch((err) => {
+			run.errored(pkg.testItem, {
+				message: `${err}`
+			});
 		});
 		if (r && r.code !== 0 && r.code !== 1) {
 			run.errored(pkg.testItem, {
@@ -256,12 +251,12 @@ export class TestRunner {
 		return profile;
 	}
 
-	#spawn(command: string, flags: Flags, options: SpawnOptions) {
+	#spawn(...args: Parameters<Spawner>) {
 		switch (this.#config.profile.kind) {
 			case TestRunProfileKind.Debug:
-				return this.#context.debug(this.#context, command, flags, options);
+				return this.#context.debug(...args);
 			default:
-				return this.#context.spawn(this.#context, command, flags, options);
+				return this.#context.spawn(...args);
 		}
 	}
 }

@@ -53,9 +53,6 @@ export interface ToolAtVersion extends Tool {
 
 export interface CommandInvocation {
 	binPath: string;
-	args?: string[] | string;
-	env?: Object;
-	cwd?: string;
 }
 
 export interface GoExtensionAPI {

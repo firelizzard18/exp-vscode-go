@@ -9,6 +9,7 @@ import cp from 'child_process';
 import { LineBuffer } from '../utils/lineBuffer';
 import {
 	CancellationToken,
+	ConfigurationScope,
 	debug,
 	DebugConfiguration,
 	DebugSession,
@@ -37,15 +38,20 @@ interface ProcessResult {
 export type Flags = { [key: string]: string | boolean };
 
 export interface Spawner {
-	(ctx: Context, command: string, flags: Flags, options: SpawnOptions): Promise<ProcessResult | void>;
+	(ctx: Context, scope: ConfigurationScope, flags: Flags, options: SpawnOptions): Promise<ProcessResult | void>;
 }
 
-export function spawnProcess(_: Context, command: string, flags: Flags, options: SpawnOptions) {
+export function spawnProcess(context: Context, scope: Uri, flags: Flags, options: SpawnOptions) {
 	return new Promise<ProcessResult | void>((resolve) => {
 		const { stdout, stderr, cancel, ...rest } = options;
 		if (cancel.isCancellationRequested) {
 			resolve();
 			return;
+		}
+
+		const { binPath } = context.go.settings.getExecutionCommand('go', scope) || {};
+		if (!binPath) {
+			throw new Error('Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH');
 		}
 
 		const outbuf = new LineBuffer();
@@ -57,8 +63,7 @@ export function spawnProcess(_: Context, command: string, flags: Flags, options:
 		errbuf.onDone((x) => x && stderr(x));
 
 		flags.json = true;
-
-		const tp = cp.spawn(command, ['test', ...flags2args(flags)], {
+		const tp = cp.spawn(binPath, ['test', ...flags2args(flags)], {
 			...rest,
 			stdio: 'pipe'
 		});
@@ -123,13 +128,18 @@ debug.registerDebugAdapterTrackerFactory('go', {
  */
 export async function debugProcess(
 	ctx: Context,
-	command: string,
+	scope: Uri,
 	flags: Flags,
 	options: SpawnOptions
 ): Promise<ProcessResult | void> {
 	const { run, cancel, cwd, env, stdout, stderr } = options;
 	if (cancel.isCancellationRequested) {
 		return Promise.resolve();
+	}
+
+	const { binPath } = ctx.go.settings.getExecutionCommand('go', scope) || {};
+	if (!binPath) {
+		throw new Error('Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH');
 	}
 
 	const id = `debug #${debugSessionID++}`;
@@ -164,7 +174,7 @@ export async function debugProcess(
 	outbuf.onLine(stdout);
 	outbuf.onDone((x) => x && stdout(x));
 
-	const proc = cp.spawn(command, ['tool', 'test2json']);
+	const proc = cp.spawn(binPath, ['tool', 'test2json']);
 	proc.stdout.on('data', (chunk) => outbuf.append(chunk.toString('utf-8')));
 	proc.on('close', () => outbuf.done());
 	subs.push({ dispose: () => killProcessTree(proc) });

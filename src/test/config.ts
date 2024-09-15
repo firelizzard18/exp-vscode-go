@@ -2,7 +2,7 @@ import { Workspace } from './testing';
 import { ConfigurationScope, Uri } from 'vscode';
 import { Minimatch } from 'minimatch';
 import deepEqual from 'deep-equal';
-import { resolvePath } from '../utils/util';
+import { resolvePath, substituteEnv } from '../utils/util';
 import { Flags } from './utils';
 
 /**
@@ -93,5 +93,31 @@ export class TestConfig {
 		if (tags) flags.tags = tags;
 
 		return flags;
+	};
+
+	readonly testEnvVars = () => {
+		// Determine the workspace folder from the scope
+		const wsf =
+			this.#scope instanceof Uri
+				? this.#workspace.getWorkspaceFolder(this.#scope)
+				: this.#scope?.uri
+					? this.#workspace.getWorkspaceFolder(this.#scope.uri)
+					: undefined;
+
+		// Get go.toolsEnvVars and go.testEnvVars
+		const cfg = this.#workspace.getConfiguration('go', this.#scope);
+		const env = Object.assign(
+			{},
+			process.env,
+			cfg.get<Record<string, string>>('toolsEnvVars'),
+			cfg.get<Record<string, string>>('testEnvVars')
+		) as Record<string, string>;
+
+		// Resolve ${...} expressions
+		for (const key in env) {
+			env[key] = resolvePath(substituteEnv(env[key]), wsf?.uri?.fsPath);
+		}
+
+		return env;
 	};
 }

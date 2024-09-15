@@ -1,8 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 // From vscode-go
+
+export function substituteEnv(input: string): string {
+	return input.replace(/\${env:([^}]+)}/g, (match, capture) => {
+		return process.env[capture.trim()] || '';
+	});
+}
 
 /**
  * Expands ~ to homedir in non-Windows platform and resolves
