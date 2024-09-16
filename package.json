@@ -238,6 +238,7 @@
   },
   "dependencies": {
     "@types/deep-equal": "^1.0.4",
+    "@vscode/vsce": "^3.1.0",
     "axios": "^1.7.7",
     "deep-equal": "^2.2.3",
     "minimatch": "^10.0.1",

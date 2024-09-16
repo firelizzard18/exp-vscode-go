@@ -9,7 +9,6 @@ import cp from 'child_process';
 import { LineBuffer } from '../utils/lineBuffer';
 import {
 	CancellationToken,
-	ConfigurationScope,
 	debug,
 	DebugConfiguration,
 	DebugSession,
@@ -38,7 +37,7 @@ interface ProcessResult {
 export type Flags = { [key: string]: string | boolean };
 
 export interface Spawner {
-	(ctx: Context, scope: ConfigurationScope, flags: Flags, options: SpawnOptions): Promise<ProcessResult | void>;
+	(ctx: Context, scope: Uri, flags: Flags, options: SpawnOptions): Promise<ProcessResult | void>;
 }
 
 export function spawnProcess(context: Context, scope: Uri, flags: Flags, options: SpawnOptions) {
@@ -84,9 +83,9 @@ export function spawnProcess(context: Context, scope: Uri, flags: Flags, options
 
 let debugSessionID = 0;
 const debugSessionOutput = new Map<string, Pick<SpawnOptions, 'stdout' | 'stderr'>>();
-const debugAdapterOutput = window.createOutputChannel('Go Debug Debug', { log: true });
+const debugAdapterOutput = window?.createOutputChannel('Go Debug Debug', { log: true });
 
-debug.registerDebugAdapterTrackerFactory('go', {
+debug?.registerDebugAdapterTrackerFactory('go', {
 	createDebugAdapterTracker(s) {
 		if (s.type !== 'go') return;
 
