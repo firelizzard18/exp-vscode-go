@@ -1,9 +1,7 @@
 import { env, ExtensionContext, Uri, WebviewPanel, window } from 'vscode';
 import axios from 'axios';
 import { HTMLElement, parse } from 'node-html-parser';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Tail<T extends any[]> = T extends [any, ...infer Tail] ? Tail : never;
+import { Tail } from './test/testing';
 
 // TODO(firelizzard18): Disable back/forward when not applicable
 

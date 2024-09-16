@@ -3,7 +3,7 @@
 import { TestRunProfileKind, Uri, Range, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
 import type { CancellationToken, Disposable, TestItem } from 'vscode';
 import type vscode from 'vscode';
-import { Context, doSafe, TestController } from './testing';
+import { Context, doSafe, Tail, TestController } from './testing';
 import { TestResolver } from './resolver';
 import { GoTestItem, Package } from './item';
 import { RunConfig, RunnerSettings, TestRunner } from './runner';
@@ -149,8 +149,31 @@ export class TestManager {
 		await this.#resolver?.reloadGoItem(...args);
 	}
 
-	async reloadUri(...args: Parameters<TestResolver['reloadUri']>) {
-		await this.#resolver?.reloadUri(...args);
+	async reloadUri(...args: Tail<Parameters<TestResolver['reloadUri']>>) {
+		// TODO(ethan.reesor): Can gopls emit an event when tests/etc change?
+
+		// Only support the file: URIs. It is necessary to exclude git: URIs
+		// because gopls will not handle them. Excluding everything except file:
+		// may not be strictly necessary, but vscode-go currently has no support
+		// for remote workspaces so it is safe for now.
+		const [uri] = args;
+		if (uri.scheme !== 'file') {
+			return;
+		}
+
+		// Ignore anything that's not a Go file
+		if (!uri.path.endsWith('.go')) {
+			return;
+		}
+
+		// Ignore anything that's not in a workspace. TODO(ethan.reesor): Is it
+		// reasonable to change this?
+		const ws = this.context.workspace.getWorkspaceFolder(uri);
+		if (!ws) {
+			return;
+		}
+
+		await this.#resolver?.reloadUri(ws, ...args);
 	}
 
 	didSave(uri: Uri) {

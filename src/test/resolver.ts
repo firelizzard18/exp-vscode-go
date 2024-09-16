@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Uri, type TestItem, type TestItemCollection } from 'vscode';
+import { Uri, WorkspaceFolder, type TestItem, type TestItemCollection } from 'vscode';
 import { Context, debugViewTree, TestController } from './testing';
 import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { TestConfig } from './config';
@@ -178,77 +178,8 @@ export class TestResolver {
 	 * @param uri The URI of the file to reload.
 	 * @param invalidate Whether to invalidate test results.
 	 */
-	async reloadUri(uri: Uri, invalidate = false) {
-		// TODO:
-		//  - This should be moved into a different class; this class should
-		//    focus on the model-view translation.
-		//  - Can gopls emit an event when tests/etc change?
-
-		// Only support the file: URIs. It is necessary to exclude git: URIs
-		// because gopls will not handle them. Excluding everything except file:
-		// may not be strictly necessary, but vscode-go currently has no support
-		// for remote workspaces so it is safe for now.
-		if (uri.scheme !== 'file') {
-			return;
-		}
-
-		// Ignore anything that's not a Go file
-		if (!uri.path.endsWith('.go')) {
-			return;
-		}
-
-		const ws = this.#context.workspace.getWorkspaceFolder(uri);
-		if (!ws) {
-			return;
-		}
-
-		const packages = Package.resolve(
-			ws.uri,
-			new TestConfig(this.#context.workspace, uri),
-			await this.#context.commands.packages({
-				Files: [uri.toString()],
-				Mode: 1
-			})
-		);
-
-		// An alternative build system may allow a file to be part of multiple
-		// packages, so process all results
-		const findOpts = { tryReload: true };
-		const updated = new Set<TestCase | TestFile>();
-		for (const pkg of packages) {
-			// This shouldn't happen, but just in case
-			if (!pkg.TestFiles?.length) continue;
-
-			// Find the module or workspace that owns this package
-			const root = await this.#goRoots.getRootFor(pkg, findOpts);
-			if (!root) continue; // TODO: Handle tests from external packages?
-
-			// Mark the package as requested
-			this.#goRoots.markRequested(root);
-			root.markRequested(pkg);
-
-			// Find the package
-			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
-			if (!pkgItem) continue; // This indicates a bug
-
-			// Update the package. This must happen after finding the update
-			// items since this update may change what items overlap the ranges.
-			let any = false;
-			for (const changed of pkgItem.update(pkg)) {
-				updated.add(changed);
-				any = true;
-			}
-
-			// If the update had no effect, mark the file as updated
-			if (!any) {
-				for (const file of pkgItem.files) {
-					if (`${file.uri}` === `${uri}`) {
-						updated.add(file);
-						break;
-					}
-				}
-			}
-		}
+	async reloadUri(ws: WorkspaceFolder, uri: Uri, invalidate = false) {
+		const updated = await this.#goRoots.didUpdate(ws, uri);
 
 		// Update the view
 		const items = await this.#resolveViewItems(updated, true);

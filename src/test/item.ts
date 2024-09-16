@@ -128,6 +128,64 @@ export class RootSet {
 		return items;
 	}
 
+	/**
+	 * Called when a file is updated.
+	 *
+	 * @param ws - The workspace folder of the file.
+	 * @param uri - The updated file.
+	 */
+	async didUpdate(ws: WorkspaceFolder, uri: Uri) {
+		const packages = Package.resolve(
+			ws.uri,
+			new TestConfig(this.#context.workspace, uri),
+			await this.#context.commands.packages({
+				Files: [uri.toString()],
+				Mode: 1
+			})
+		);
+
+		// An alternative build system may allow a file to be part of multiple
+		// packages, so process all results
+		const findOpts = { tryReload: true };
+		const updated = new Set<TestCase | TestFile>();
+		for (const pkg of packages) {
+			// This shouldn't happen, but just in case
+			if (!pkg.TestFiles?.length) continue;
+
+			// Find the module or workspace that owns this package
+			const root = await this.getRootFor(pkg, findOpts);
+			if (!root) continue; // TODO: Handle tests from external packages?
+
+			// Mark the package as requested
+			this.markRequested(root);
+			root.markRequested(pkg);
+
+			// Find the package
+			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
+			if (!pkgItem) continue; // This indicates a bug
+
+			// Update the package. This must happen after finding the update
+			// items since this update may change what items overlap the ranges.
+			let any = false;
+			for (const changed of pkgItem.update(pkg)) {
+				updated.add(changed);
+				any = true;
+			}
+
+			// If the update had no effect, mark the file as updated
+			if (!any) {
+				for (const file of pkgItem.files) {
+					if (`${file.uri}` === `${uri}`) {
+						updated.add(file);
+						break;
+					}
+				}
+			}
+		}
+
+		return updated;
+	}
+
 	async #getChildren(reload = false): Promise<RootItem[]> {
 		// Use the cached roots when possible
 		if ((!reload && this.#didLoad) || !this.#context.workspace.workspaceFolders) {

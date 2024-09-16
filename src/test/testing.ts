@@ -10,6 +10,9 @@ import type { GoExtensionAPI } from '../vscode-go';
 import type { Spawner } from './utils';
 import { Memento, TestItem, TestItemCollection } from 'vscode';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Tail<T extends any[]> = T extends [any, ...infer Tail] ? Tail : never;
+
 // Signatures used by the component test mock to allow tests to wait for events
 // to be processed.
 declare module 'vscode' {
