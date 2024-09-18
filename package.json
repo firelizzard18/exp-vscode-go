@@ -1,8 +1,8 @@
 {
   "name": "exp-vscode-go",
   "publisher": "ethan-reesor",
-  "displayName": "Golang Experimental",
-  "description": "Experimental Golang VSCode features",
+  "displayName": "Go Companion",
+  "description": "An unofficial companion to the official Go extension, providing experimental features",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.75.0"
@@ -20,7 +20,7 @@
   ],
   "contributes": {
     "configuration": {
-      "title": "Go (experimental)",
+      "title": "Go Companion",
       "properties": {
         "goExp.testExplorer.enable": {
           "type": "boolean",
