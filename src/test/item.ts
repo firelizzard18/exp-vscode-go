@@ -134,7 +134,7 @@ export class RootSet {
 	 * @param ws - The workspace folder of the file.
 	 * @param uri - The updated file.
 	 */
-	async didUpdate(ws: WorkspaceFolder, uri: Uri) {
+	async didUpdate(ws: WorkspaceFolder, uri: Uri, ranges: Record<string, Range[]> = {}) {
 		const packages = Package.resolve(
 			ws.uri,
 			new TestConfig(this.#context.workspace, uri),
@@ -147,7 +147,7 @@ export class RootSet {
 		// An alternative build system may allow a file to be part of multiple
 		// packages, so process all results
 		const findOpts = { tryReload: true };
-		const updated = new Set<TestCase | TestFile>();
+		const updated = [];
 		for (const pkg of packages) {
 			// This shouldn't happen, but just in case
 			if (!pkg.TestFiles?.length) continue;
@@ -160,27 +160,8 @@ export class RootSet {
 			this.markRequested(root);
 			root.markRequested(pkg);
 
-			// Find the package
-			const pkgItem = (await root.getPackages()).find((x) => x.path === pkg.Path);
-			if (!pkgItem) continue; // This indicates a bug
-
-			// Update the package. This must happen after finding the update
-			// items since this update may change what items overlap the ranges.
-			let any = false;
-			for (const changed of pkgItem.update(pkg)) {
-				updated.add(changed);
-				any = true;
-			}
-
-			// If the update had no effect, mark the file as updated
-			if (!any) {
-				for (const file of pkgItem.files) {
-					if (`${file.uri}` === `${uri}`) {
-						updated.add(file);
-						break;
-					}
-				}
-			}
+			// Update the package
+			updated.push(...root.updatePackage(pkg, ranges));
 		}
 
 		return updated;
@@ -367,6 +348,18 @@ export abstract class RootItem implements GoTestItem {
 		return [...packages.filter((x) => x !== rootPkg), ...(rootPkg?.getChildren() || [])];
 	}
 
+	updatePackage(pkg: Commands.Package, ranges: Record<string, Range[]>) {
+		const existing = this.#packages.get(pkg.Path);
+		if (existing) {
+			return existing.update(pkg, ranges);
+		}
+
+		const newPkg = new Package(this.config, this, pkg);
+		this.#packages.add(newPkg);
+		this.#rebuildPackageRelations();
+		return [{ item: newPkg, type: 'added' }, ...newPkg.update(pkg, ranges)];
+	}
+
 	/**
 	 * Returns packages, reloading if necessary or requested. If discovery is
 	 * disabled, only requested packages are returned.
@@ -375,7 +368,7 @@ export abstract class RootItem implements GoTestItem {
 		if (reload || !this.#didLoad) {
 			// (Re)load packages
 			this.#didLoad = true;
-			this.#packages.replaceWith(
+			this.#packages.update(
 				Package.resolve(
 					this.root,
 					this.config,
@@ -387,18 +380,10 @@ export abstract class RootItem implements GoTestItem {
 				),
 				(src) => src.Path,
 				(src) => new Package(this.config, this, src),
-				(src, pkg) => pkg.update(src)
+				(src, pkg) => pkg.update(src, {})
 			);
 
-			// Rebuild package relations
-			const pkgs = [...this.#packages.values()];
-			this.pkgRelations.replace(
-				pkgs.map((pkg): [Package, Package | undefined] => {
-					const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
-					ancestors.sort((a, b) => a.path.length - b.path.length);
-					return [pkg, ancestors[0]];
-				})
-			);
+			this.#rebuildPackageRelations();
 		}
 
 		const mode = this.config.discovery();
@@ -418,6 +403,17 @@ export abstract class RootItem implements GoTestItem {
 				return packages;
 			}
 		}
+	}
+
+	#rebuildPackageRelations() {
+		const pkgs = [...this.#packages.values()];
+		this.pkgRelations.replace(
+			pkgs.map((pkg): [Package, Package | undefined] => {
+				const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
+				ancestors.sort((a, b) => a.path.length - b.path.length);
+				return [pkg, ancestors[0]];
+			})
+		);
 	}
 }
 
@@ -517,28 +513,23 @@ export class Package implements GoTestItem, ItemWithProfiles {
 	readonly testRelations = new RelationMap<TestCase, TestCase | undefined>();
 	readonly profiles = new Set<CapturedProfile>();
 
-	#src?: Commands.Package;
-
 	constructor(config: TestConfig, parent: RootItem, src: Commands.Package) {
 		this.#config = config;
 		this.parent = parent;
 		this.path = src.Path;
 		this.uri = Uri.joinPath(Uri.parse(src.TestFiles![0].URI), '..');
-		this.update(src);
 	}
 
-	update(src: Commands.Package) {
-		if (deepEqual(src, this.#src)) {
-			return [];
-		}
-		this.#src = src;
-
-		const changes = this.files.replaceWith(
+	update(src: Commands.Package, ranges: Record<string, Range[]>) {
+		const changes = this.files.update(
 			src.TestFiles!.filter((x) => x.Tests.length),
 			(src) => src.URI,
 			(src) => new TestFile(this.#config, this, src),
-			(src, file) => file.update(src)
+			(src, file) => file.update(src, ranges[`${file.uri}`] || [])
 		);
+		if (!changes.length) {
+			return [];
+		}
 
 		const allTests = this.getTests();
 		this.testRelations.replace(
@@ -646,26 +637,19 @@ export class TestFile implements GoTestItem {
 	readonly hasChildren = true;
 	readonly tests = new ItemSet<TestCase>();
 
-	#src?: Commands.TestFile;
-
 	constructor(config: TestConfig, pkg: Package, src: Commands.TestFile) {
 		this.#config = config;
 		this.package = pkg;
 		this.uri = Uri.parse(src.URI);
-		this.update(src);
 	}
 
-	update(src: Commands.TestFile) {
-		if (deepEqual(src, this.#src)) {
-			return [];
-		}
-		this.#src = src;
-
-		return this.tests.replaceWith(
+	update(src: Commands.TestFile, ranges: Range[]) {
+		return this.tests.update(
 			src.Tests,
 			(src) => src.Name,
 			(src) => new StaticTestCase(this.#config, this, src),
-			(src, test) => (test as StaticTestCase).update(src)
+			(src, test) => (test as StaticTestCase).update(src, ranges),
+			(test) => test instanceof DynamicTestCase
 		);
 	}
 
@@ -795,18 +779,23 @@ export class StaticTestCase extends TestCase {
 		const uri = Uri.parse(src.Loc.uri);
 		const kind = src.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase() as GoTestItem.Kind;
 		super(config, file, uri, kind, src.Name);
-		this.update(src);
 	}
 
-	update(src: Commands.TestCase) {
-		if (deepEqual(src, this.#src)) {
+	update(src: Commands.TestCase, ranges: Range[]): Iterable<ItemEvent<TestCase>> {
+		const metadata = !deepEqual(src, this.#src); // Did the metadata (range) change?
+		const contents = ranges.some((x) => this.contains(x)); // Did the test contents change?
+
+		if (metadata) {
+			const { start, end } = src.Loc.range;
+			this.#src = src;
+			this.range = new Range(start.line, start.character, end.line, end.character);
+		}
+
+		if (!metadata && !contents) {
 			return [];
 		}
 
-		const { start, end } = src.Loc.range;
-		this.#src = src;
-		this.range = new Range(start.line, start.character, end.line, end.character);
-		return [this];
+		return [{ item: this, type: contents ? 'modified' : 'moved' }];
 	}
 
 	contains(range: Range): boolean {
@@ -891,6 +880,8 @@ export class RelationMap<Child, Parent> {
 	}
 }
 
+type ItemEvent<T> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
+
 export class ItemSet<T extends { key: string }> {
 	readonly #items: Map<string, T>;
 
@@ -959,32 +950,34 @@ export class ItemSet<T extends { key: string }> {
 	 * @param make A function that creates a new item from a source value.
 	 * @param update A function that updates an existing item with a source value.
 	 */
-	replaceWith<S, R>(
+	update<S, R>(
 		src: S[],
 		id: (_: S) => string,
 		make: (_: S) => T,
-		update: (_1: S, _2: T) => Iterable<R>
-	): Iterable<R | T> {
+		update: (_1: S, _2: T) => Iterable<ItemEvent<R>>,
+		keep: (_: T) => boolean = () => false
+	): ItemEvent<T | R>[] {
 		// Delete items that are no longer present
-		const keep = new Set(src.map(id));
-		for (const key of this.keys()) {
-			if (!keep.has(key)) {
+		const changed: ItemEvent<T | R>[] = [];
+		const srcKeys = new Set(src.map(id));
+		for (const [key, item] of this.#items.entries()) {
+			if (!srcKeys.has(key) && !keep(item)) {
+				changed.push({ item, type: 'removed' });
 				this.remove(key);
 			}
 		}
 
 		// Update and insert items
-		const changed = [];
-		for (const item of src) {
-			const key = id(item);
-			const existing = this.get(key);
-			if (existing) {
-				changed.push(...update(item, existing));
-			} else {
-				const x = make(item);
-				this.add(x);
-				changed.push(x);
+		for (const value of src) {
+			const key = id(value);
+			let item = this.get(key);
+			if (!item) {
+				item = make(value);
+				this.add(item);
+				changed.push({ item, type: 'added' });
 			}
+
+			changed.push(...update(value, item));
 		}
 		return changed;
 	}

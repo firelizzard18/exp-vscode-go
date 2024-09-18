@@ -103,7 +103,11 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 			return;
 		}
 
-		manager.reloadUri(e.document.uri, true);
+		manager.reloadUri(
+			e.document.uri,
+			e.contentChanges.map((x) => x.range),
+			true
+		);
 	});
 
 	// [Event] File save

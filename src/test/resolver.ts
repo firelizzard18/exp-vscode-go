@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Uri, WorkspaceFolder, type TestItem, type TestItemCollection } from 'vscode';
+import { Range, Uri, WorkspaceFolder, type TestItem, type TestItemCollection } from 'vscode';
 import { Context, debugViewTree, TestController } from './testing';
 import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { TestConfig } from './config';
@@ -178,17 +178,26 @@ export class TestResolver {
 	 * @param uri The URI of the file to reload.
 	 * @param invalidate Whether to invalidate test results.
 	 */
-	async reloadUri(ws: WorkspaceFolder, uri: Uri, invalidate = false) {
-		const updated = await this.#goRoots.didUpdate(ws, uri);
+	async reloadUri(ws: WorkspaceFolder, uri: Uri, ranges: Range[] = [], invalidate = false) {
+		const reload = [];
+		const invalidated = [];
+		for (const { item, type } of await this.#goRoots.didUpdate(ws, uri, { [`${uri}`]: ranges })) {
+			if (type !== 'removed') {
+				reload.push(item);
+			}
+			if (type === 'modified' && !(item instanceof Package)) {
+				invalidated.push(item);
+			}
+		}
 
 		// Update the view
-		const items = await this.#resolveViewItems(updated, true);
+		const items = await this.#resolveViewItems(reload, true);
 		await Promise.all(items.map((x) => this.reloadViewItem(x)));
 		invalidate && this.#ctrl.invalidateTestResults?.(items);
 
 		// Notify listeners
-		await this.#didChangeTestItem.fire(updated);
-		invalidate && (await this.#didInvalidateTestResults.fire(updated));
+		await this.#didChangeTestItem.fire(reload);
+		invalidate && (await this.#didInvalidateTestResults.fire(invalidated));
 	}
 
 	/**

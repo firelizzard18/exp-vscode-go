@@ -686,7 +686,7 @@ describe('Go test controller', () => {
 				func TestFoo(t *testing.T) {}
 				func TestBar(t *testing.T) {}`
 			);
-			await host.manager.reloadUri(Uri.parse(`${ws.uri}/foo_test.go`), true);
+			await host.manager.reloadUri(Uri.parse(`${ws.uri}/foo_test.go`), [], true);
 			await expect(host).toResolve([
 				{
 					kind: 'module',
