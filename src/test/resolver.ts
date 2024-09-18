@@ -99,8 +99,10 @@ export class TestResolver {
 			await children.add(item);
 		}
 
-		// Automatically resolve all children of a test case
-		if (goItem instanceof TestCase) {
+		// Automatically resolve files and tests since once we have the package
+		// we already have all the data to create those. We may want to make
+		// this configurable to account for large projects.
+		if (!(goItem instanceof RootItem)) {
 			await this.reloadViewItem(item);
 		}
 
