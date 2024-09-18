@@ -7,7 +7,8 @@ import { TestManager } from './manager';
 import { CodeLens, TextDocument, Range } from 'vscode';
 
 /**
- * Provides legacy CodeLens for running and debugging tests.
+ * Provides CodeLenses for running and debugging tests for users who prefer
+ * those.
  */
 export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	readonly #didChangeCodeLenses = new EventEmitter<() => void>();
@@ -21,15 +22,25 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		this.#manager = manager;
 	}
 
+	/**
+	 * Tell the editor to reload code lenses.
+	 */
 	async reload() {
 		await this.#didChangeCodeLenses.fire();
 	}
 
+	/**
+	 * Provide code lenses for a document.
+	 */
 	async provideCodeLenses(document: TextDocument): Promise<GoCodeLens[]> {
 		if (this.#mode() === 'off') {
 			return [];
 		}
 
+		// We don't know which module/workspace/package the document belongs to,
+		// and alternative build systems may confuse the matter even more so
+		// we'll just iterate until we find the right file. This is only
+		// expensive if packages have not yet been loaded.
 		for (const root of await this.#manager.rootGoTestItems) {
 			for (const pkg of await root.getPackages()) {
 				for (const file of await pkg.files) {
@@ -42,7 +53,13 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		return [];
 	}
 
+	/**
+	 * Provide code lenses for a file.
+	 */
 	*#fileCodeLenses(file: TestFile) {
+		// Depending on the mode, create a run and/or debug code lens for each
+		// test case that has a range. We can't do this for dynamic test cases
+		// because `go test` does not provide a range for those.
 		const mode = this.#mode(file.uri);
 		for (const test of file.tests) {
 			if (test instanceof StaticTestCase && test.range) {
@@ -68,6 +85,9 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		return new TestConfig(this.#context.workspace, uri).codeLens();
 	}
 
+	/**
+	 * Resolve the test item for a code lens.
+	 */
 	async resolveCodeLens(lens: GoCodeLens): Promise<GoCodeLens> {
 		lens.command = {
 			title: `${lens.kind} ${lens.item.kind}`,

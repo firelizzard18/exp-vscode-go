@@ -11,16 +11,24 @@ import { Flags } from './utils';
 export class TestConfig {
 	readonly #workspace: Workspace;
 	readonly #scope?: ConfigurationScope;
+	#excludeValue?: string[];
+	#excludeCompiled?: Minimatch[];
 
 	constructor(workspace: Workspace, scope?: ConfigurationScope) {
 		this.#workspace = workspace;
 		this.#scope = scope;
 	}
 
+	/**
+	 * Create a new {@link TestConfig} for a the given scope.
+	 */
 	for(scope?: ConfigurationScope) {
 		return new TestConfig(this.#workspace, scope);
 	}
 
+	/**
+	 * Get a configuration value.
+	 */
 	get<T>(name: string) {
 		return this.#workspace.getConfiguration('goExp', this.#scope).get<T>(`testExplorer.${name}`);
 	}
@@ -34,9 +42,14 @@ export class TestConfig {
 	readonly runPackageBenchmarks = () => this.get<boolean>('runPackageBenchmarks');
 	readonly dynamicSubtestLimit = () => this.get<number>('dynamicSubtestLimit');
 
-	#excludeValue?: string[];
-	#excludeCompiled?: Minimatch[];
+	readonly testTags = () => {
+		const cfg = this.#workspace.getConfiguration('go', this.#scope);
+		return cfg.get<string[]>('testTags') || cfg.get<string[]>('buildTags') || [];
+	};
 
+	/**
+	 * @returns An array of compiled minimatch patterns from `goExp.testExplorer.exclude` and `files.exclude`.
+	 */
 	readonly exclude = () => {
 		// Merge files.exclude and goExp.testExplorer.exclude
 		const a = this.get<Record<string, boolean>>('exclude') || {};
@@ -58,11 +71,9 @@ export class TestConfig {
 		return this.#excludeCompiled;
 	};
 
-	readonly testTags = () => {
-		const cfg = this.#workspace.getConfiguration('go', this.#scope);
-		return cfg.get<string[]>('testTags') || cfg.get<string[]>('buildTags') || [];
-	};
-
+	/**
+	 * @returns `go.testFlags` or `go.buildFlags`, converted to {@link Flags}.
+	 */
 	readonly testFlags = () => {
 		// Determine the workspace folder from the scope
 		const wsf =
@@ -95,6 +106,9 @@ export class TestConfig {
 		return flags;
 	};
 
+	/**
+	 * @returns `go.testEnvVars` and `go.toolsEnvVars` (merged) with `${...}` expressions resolved.
+	 */
 	readonly testEnvVars = () => {
 		// Determine the workspace folder from the scope
 		const wsf =

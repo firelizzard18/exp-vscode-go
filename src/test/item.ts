@@ -116,10 +116,12 @@ export class RootSet {
 	}
 
 	async getChildren(): Promise<RootItem[]> {
-		// Return a given root if discovery is on or the root (or more
-		// likely one of its children) has been explicitly requested
+		// The discovery mode may be different for different roots, so this
+		// logic is less straightforward than it otherwise would be.
 		const items = [];
 		for (const root of await this.#getChildren(true)) {
+			// If a root has discovery disabled and has _not_ been requested
+			// (e.g. by opening a file), skip it.
 			const mode = root.config.discovery();
 			if (mode === 'on' || this.#requested.has(`${root.uri}`)) {
 				items.push(root);
@@ -135,6 +137,7 @@ export class RootSet {
 	 * @param uri - The updated file.
 	 */
 	async didUpdate(ws: WorkspaceFolder, uri: Uri, ranges: Record<string, Range[]> = {}) {
+		// Ask gopls for package and test info
 		const packages = Package.resolve(
 			ws.uri,
 			new TestConfig(this.#context.workspace, uri),
@@ -167,16 +170,21 @@ export class RootSet {
 		return updated;
 	}
 
+	/**
+	 * Retrieves root items for all workspace folders, before applying discovery
+	 * mode.
+	 */
 	async #getChildren(reload = false): Promise<RootItem[]> {
 		// Use the cached roots when possible
 		if ((!reload && this.#didLoad) || !this.#context.workspace.workspaceFolders) {
 			return [...this.#roots.values()].flatMap((x) => [...x.values()]);
 		}
-
-		// Load the roots for each workspace folder
 		this.#didLoad = true;
+
+		// For each workspace folder
 		await Promise.all(
 			this.#context.workspace.workspaceFolders.map(async (ws) => {
+				// Get and store its roots
 				const roots = await this.#getWorkspaceRoots(ws);
 				const set = this.#roots.get(`${ws.uri}`);
 				if (set) {
@@ -187,6 +195,7 @@ export class RootSet {
 			})
 		);
 
+		// Return a flat list of roots. Do not separate by workspace folder.
 		return [...this.#roots.values()].flatMap((x) => [...x.values()]);
 	}
 
@@ -348,6 +357,12 @@ export abstract class RootItem implements GoTestItem {
 		return [...packages.filter((x) => x !== rootPkg), ...(rootPkg?.getChildren() || [])];
 	}
 
+	/**
+	 * Creates or updates a {@link Package} with data from gopls.
+	 * @param pkg The data from gopls.
+	 * @param ranges Modified file ranges.
+	 * @returns A list of update events.
+	 */
 	updatePackage(pkg: Commands.Package, ranges: Record<string, Range[]>) {
 		const existing = this.#packages.get(pkg.Path);
 		if (existing) {
@@ -405,6 +420,9 @@ export abstract class RootItem implements GoTestItem {
 		}
 	}
 
+	/**
+	 * Rebuilds the package relations map used for nesting packages.
+	 */
 	#rebuildPackageRelations() {
 		const pkgs = [...this.#packages.values()];
 		this.pkgRelations.replace(
@@ -423,6 +441,13 @@ export class Module extends RootItem {
 	readonly path: string;
 	readonly kind = 'module';
 
+	/**
+	 * Filters out excluded modules from a list of modules provided by gopls.
+	 * @param root The root URI to use for relative path patterns.
+	 * @param config The user's configuration.
+	 * @param modules The modules provided by gopls.
+	 * @returns The filtered modules.
+	 */
 	static resolve(root: Uri, config: TestConfig, { Modules }: Commands.ModulesResult) {
 		if (!Modules) return [];
 
@@ -476,6 +501,19 @@ export class WorkspaceItem extends RootItem {
 }
 
 export class Package implements GoTestItem, ItemWithProfiles {
+	/**
+	 * Consolidates test and source package data from gopls and filters out
+	 * excluded packages.
+	 *
+	 * If a directory contains `foo.go`, `foo_test.go`, and `foo2_test.go` with
+	 * package directives `foo`, `foo`, and `foo_test`, respectively, gopls will
+	 * report those as three separate packages. This function consolidates them
+	 * into a single package.
+	 * @param root The root URI to use for relative path patterns.
+	 * @param config The user's configuration.
+	 * @param packages Data provided by gopls.
+	 * @returns The consolidated and filtered package data.
+	 */
 	static resolve(root: Uri, config: TestConfig, { Packages: all = [] }: Commands.PackagesResults) {
 		if (!all) return [];
 
@@ -520,7 +558,14 @@ export class Package implements GoTestItem, ItemWithProfiles {
 		this.uri = Uri.joinPath(Uri.parse(src.TestFiles![0].URI), '..');
 	}
 
+	/**
+	 * Updates the package with data from gopls.
+	 * @param src The data from gopls.
+	 * @param ranges Modified file ranges.
+	 * @returns Update events. See {@link ItemEvent}.
+	 */
 	update(src: Commands.Package, ranges: Record<string, Range[]>) {
+		// Apply the update
 		const changes = this.files.update(
 			src.TestFiles!.filter((x) => x.Tests.length),
 			(src) => src.URI,
@@ -531,6 +576,7 @@ export class Package implements GoTestItem, ItemWithProfiles {
 			return [];
 		}
 
+		// Recalculate test-subtest relations
 		const allTests = this.getTests();
 		this.testRelations.replace(
 			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)])
@@ -590,6 +636,9 @@ export class Package implements GoTestItem, ItemWithProfiles {
 		return [...(this.parent.pkgRelations.getChildren(this) || []), ...tests, ...this.profiles];
 	}
 
+	/**
+	 * @returns All tests in the package in a flat list.
+	 */
 	getTests() {
 		return [...this.files].flatMap((x) => [...x.tests]);
 	}
@@ -618,12 +667,18 @@ export class Package implements GoTestItem, ItemWithProfiles {
 		return parent?.makeDynamicTestCase(name);
 	}
 
+	/**
+	 * Records a captured profile.
+	 */
 	async addProfile(dir: Uri, type: ProfileType, time: Date) {
 		const profile = await CapturedProfile.new(this, dir, type, time);
 		this.profiles.add(profile);
 		return profile;
 	}
 
+	/**
+	 * Removes a captured profile.
+	 */
 	removeProfile(profile: CapturedProfile) {
 		this.profiles.delete(profile);
 	}
@@ -643,6 +698,12 @@ export class TestFile implements GoTestItem {
 		this.uri = Uri.parse(src.URI);
 	}
 
+	/**
+	 * Updates the file with data from gopls.
+	 * @param src The data from gopls.
+	 * @param ranges Modified file ranges.
+	 * @returns Update events. See {@link ItemEvent}.
+	 */
 	update(src: Commands.TestFile, ranges: Range[]) {
 		return this.tests.update(
 			src.Tests,
@@ -705,6 +766,7 @@ export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 	}
 
 	get label(): string {
+		// If we are a subtest, remove the parent's name from the label
 		const parent = this.getParent();
 		if (parent instanceof TestCase) {
 			return this.name.replace(`${parent.name}/`, '');
@@ -740,18 +802,27 @@ export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 		return [...this.profiles, ...subtests];
 	}
 
+	/**
+	 * Create a new {@link DynamicTestCase} as a child of this test case. If the
+	 * total number of this test's children exceeds the limit, no test is
+	 * created.
+	 */
 	makeDynamicTestCase(name: string) {
 		const limit = this.#config.dynamicSubtestLimit();
 		if (limit && limit > 0 && (this.file.package.testRelations.getChildren(this)?.length || 0) >= limit) {
 			// TODO: Give some indication to the user?
 			return;
 		}
+
 		const child = new DynamicTestCase(this.#config, this, name);
 		this.file.tests.add(child);
 		this.file.package.testRelations.add(this, child);
 		return child;
 	}
 
+	/**
+	 * Deletes all {@link DynamicTestCase}s that are children of this test case.
+	 */
 	removeDynamicTestCases() {
 		for (const item of this.file.package.testRelations.getChildren(this) || []) {
 			item.removeDynamicTestCases();
@@ -760,12 +831,18 @@ export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 		this.file.package.testRelations.removeChildren(this);
 	}
 
+	/**
+	 * Records a captured profile.
+	 */
 	async addProfile(dir: Uri, type: ProfileType, time: Date) {
 		const profile = await CapturedProfile.new(this, dir, type, time);
 		this.profiles.add(profile);
 		return profile;
 	}
 
+	/**
+	 * Removes a captured profile.
+	 */
 	removeProfile(profile: CapturedProfile) {
 		this.profiles.delete(profile);
 	}
@@ -781,23 +858,40 @@ export class StaticTestCase extends TestCase {
 		super(config, file, uri, kind, src.Name);
 	}
 
+	/**
+	 * Updates the test case with data from gopls.
+	 * @param src The data from gopls.
+	 * @param ranges Modified file ranges.
+	 * @returns Update events. See {@link ItemEvent}.
+	 */
 	update(src: Commands.TestCase, ranges: Range[]): Iterable<ItemEvent<TestCase>> {
-		const metadata = !deepEqual(src, this.#src); // Did the metadata (range) change?
-		const contents = ranges.some((x) => this.contains(x)); // Did the test contents change?
+		// Did the metadata (range) change?
+		const metadata = !deepEqual(src, this.#src);
 
+		// Did the contents change?
+		const contents = ranges.some((x) => this.contains(x));
+
+		if (!metadata && !contents) {
+			return [];
+		}
+
+		// Update the range
 		if (metadata) {
 			const { start, end } = src.Loc.range;
 			this.#src = src;
 			this.range = new Range(start.line, start.character, end.line, end.character);
 		}
 
-		if (!metadata && !contents) {
-			return [];
-		}
-
+		// Return the appropriate event
 		return [{ item: this, type: contents ? 'modified' : 'moved' }];
 	}
 
+	/**
+	 * Determines whether the test case contains a given range. The range must
+	 * be strictly contained within the test's range. If the intersection
+	 * includes regions outside of the test, or intersects the end or the
+	 * beginning but has a size of zero, this will return false.
+	 */
 	contains(range: Range): boolean {
 		// The range of the test must be defined
 		if (!this.range) return false;
@@ -820,6 +914,10 @@ export class DynamicTestCase extends TestCase {
 	}
 }
 
+/**
+ * Searches a set of tests for a test case that is the parent of the given test
+ * name.
+ */
 export function findParentTestCase(allTests: TestCase[], name: string) {
 	for (;;) {
 		const i = name.lastIndexOf('/');
@@ -880,6 +978,13 @@ export class RelationMap<Child, Parent> {
 	}
 }
 
+/**
+ * Represents an update to a test item.
+ *  - `added` indicates that the item was added.
+ *  - `removed` indicates that the item was removed.
+ *  - `moved` indicates that the item's range changed without changing its contents.
+ *  - `modified` indicates that the item's contents and possibly its range changed.
+ */
 type ItemEvent<T> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
 
 export class ItemSet<T extends { key: string }> {
