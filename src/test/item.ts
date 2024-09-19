@@ -44,7 +44,7 @@ export namespace GoTestItem {
 export interface GoTestItem {
 	// TODO(ethan.reesor): Replace with a union.
 
-	readonly uri: Uri;
+	readonly uri?: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly label: string;
 	readonly name?: string;

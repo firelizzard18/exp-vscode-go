@@ -42,10 +42,6 @@ export class ProfileContainer implements GoTestItem {
 		this.parent = parent;
 	}
 
-	get uri() {
-		return this.parent.uri;
-	}
-
 	get hasChildren() {
 		return this.getChildren().length > 0;
 	}
@@ -97,10 +93,6 @@ export class ProfileSet implements GoTestItem {
 		return moment(this.time).format('HH:mm:ss');
 	}
 
-	get uri() {
-		return this.parent.uri;
-	}
-
 	get hasChildren() {
 		return this.profiles.size > 0;
 	}
@@ -149,7 +141,7 @@ export class CapturedProfile implements GoTestItem {
 
 	static async new(parent: ProfileSet, dir: Uri, type: ProfileType, time: Date) {
 		// This is a simple way to make an ID from the package URI
-		const hash = createHash('sha256').update(`${parent.uri}`).digest('hex').substring(0, 16);
+		const hash = createHash('sha256').update(`${parent.parent.parent.uri}`).digest('hex').substring(0, 16);
 		const file = Uri.joinPath(dir, `${hash}-${type.id}-${time.getTime()}.pprof`);
 		const uri = await UriHandler.asUri('openProfile', { path: file.fsPath });
 		return new this(parent, type, file, uri);

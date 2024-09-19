@@ -10,6 +10,7 @@ import { Location } from 'vscode';
 import { TestMessage } from 'vscode';
 import { Uri, Position } from 'vscode';
 import { TestManager } from './manager';
+import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
 
 /**
  * go test -json output format.
@@ -376,8 +377,14 @@ function* testCases(items: GoTestItem[]) {
 }
 
 function resolveGoItem(mananger: TestManager, item: TestItem) {
-	const pi = mananger.resolveGoTestItem(item.id);
+	let pi = mananger.resolveGoTestItem(item.id);
 	if (!pi) throw new Error(`Cannot find test item ${item.id}`);
+
+	// VSCode appears to have a bug where clicking {run} on a test item that
+	// has no children except `Profiles` selects the wrong item to run.
+	if (pi instanceof CapturedProfile) pi = pi.parent;
+	if (pi instanceof ProfileSet) pi = pi.parent;
+	if (pi instanceof ProfileContainer) pi = pi.parent;
 	return pi;
 }
 
