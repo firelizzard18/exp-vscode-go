@@ -239,11 +239,11 @@ export class TestRunner {
 	}
 
 	async #registerCapturedProfile(run: TestRun, item: Package | TestCase, dir: Uri, type: ProfileType, time: Date) {
-		const profile = await item.addProfile(dir, type, time);
+		const profile = await item.profiles.addProfile(dir, type, time);
 		await this.#resolver.reloadGoItem(item);
 
 		run.onDidDispose?.(async () => {
-			item.removeProfile(profile);
+			item.profiles.removeProfile(profile);
 			await this.#resolver.reloadGoItem(item);
 		});
 		return profile;

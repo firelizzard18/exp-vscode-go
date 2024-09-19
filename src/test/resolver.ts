@@ -3,7 +3,7 @@ import { Range, Uri, WorkspaceFolder, type TestItem, type TestItemCollection } f
 import { Context, debugViewTree, TestController } from './testing';
 import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { TestConfig } from './config';
-import { CapturedProfile } from './profile';
+import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
 import { EventEmitter } from '../utils/eventEmitter';
 
 /**
@@ -81,11 +81,15 @@ export class TestResolver {
 		this.#items.set(id, goItem);
 
 		const tags = [];
-		if (!(goItem instanceof CapturedProfile)) {
+		if (goItem instanceof RootItem) {
 			tags.push({ id: 'canRun' });
-			if (!(goItem instanceof RootItem)) {
-				tags.push({ id: 'canDebug' });
-			}
+		} else if (goItem instanceof Package || goItem instanceof TestFile || goItem instanceof TestCase) {
+			tags.push({ id: 'canRun' });
+			tags.push({ id: 'canDebug' });
+		} else {
+			// Profiles shouldn't be runnable but making them not runnable
+			// causes bizarre bugs
+			tags.push({ id: 'canRun' });
 		}
 
 		const existing = children.get(id);
@@ -109,11 +113,22 @@ export class TestResolver {
 		return item;
 	}
 
-	#id(goItem: GoTestItem) {
-		if (goItem instanceof CapturedProfile) {
-			return GoTestItem.id(goItem.file, goItem.kind);
+	#id(item: GoTestItem): string {
+		if (item instanceof TestCase) {
+			return `${item.uri}?${item.kind}#${item.name}`;
 		}
-		return GoTestItem.id(goItem.uri, goItem.kind, goItem.name);
+		if (item instanceof ProfileContainer) {
+			return JSON.stringify({ kind: item.kind, of: this.#id(item.parent) });
+		} else if (item instanceof ProfileSet) {
+			return JSON.stringify({ kind: item.kind, of: this.#id(item.parent.parent), at: item.time.getTime() });
+		} else if (item instanceof CapturedProfile) {
+			return JSON.stringify({
+				profile: item.type.id,
+				of: this.#id(item.parent.parent.parent),
+				at: item.parent.time.getTime()
+			});
+		}
+		return `${item.uri}?${item.kind}`;
 	}
 
 	/* ******************************************** */

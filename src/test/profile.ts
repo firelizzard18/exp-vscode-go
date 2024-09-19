@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
-import { ExtensionContext, ProviderResult, TestRun, Uri } from 'vscode';
+import { ExtensionContext, TestRun, Uri } from 'vscode';
 import vscode from 'vscode';
-import { GoTestItem } from './item';
+import type { GoTestItem } from './item';
 import { spawn } from 'node:child_process';
 import { correctBinname, getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
@@ -10,6 +10,7 @@ import { killProcessTree } from '../utils/processUtils';
 import { Browser } from '../browser';
 import { Context } from './testing';
 import { UriHandler } from '../urlHandler';
+import moment from 'moment';
 
 export class ProfileType {
 	constructor(
@@ -31,9 +32,86 @@ export function makeProfileTypeSet() {
 	];
 }
 
-export interface ItemWithProfiles extends GoTestItem {
-	addProfile(dir: Uri, type: ProfileType, time: Date): Promise<CapturedProfile>;
-	removeProfile(profile: CapturedProfile): void;
+export class ProfileContainer implements GoTestItem {
+	readonly kind = 'profile-container';
+	readonly label = 'Profiles';
+	readonly parent: GoTestItem;
+	readonly profiles = new Map<number, ProfileSet>();
+
+	constructor(parent: GoTestItem) {
+		this.parent = parent;
+	}
+
+	get uri() {
+		return this.parent.uri;
+	}
+
+	get hasChildren() {
+		return this.getChildren().length > 0;
+	}
+
+	getParent() {
+		return this.parent;
+	}
+
+	getChildren() {
+		return [...this.profiles.values()].filter((x) => x.hasChildren);
+	}
+
+	async addProfile(dir: Uri, type: ProfileType, time: Date): Promise<CapturedProfile> {
+		let set = this.profiles.get(time.getTime());
+		if (!set) {
+			set = new ProfileSet(this, time);
+			this.profiles.set(time.getTime(), set);
+		}
+
+		const profile = await CapturedProfile.new(set, dir, type, time);
+		set.profiles.add(profile);
+		return profile;
+	}
+
+	removeProfile(profile: CapturedProfile): void {
+		this.profiles.forEach((x) => x.profiles.delete(profile));
+	}
+}
+
+export class ProfileSet implements GoTestItem {
+	readonly kind = 'profile-set';
+	readonly time: Date;
+	readonly parent: ProfileContainer;
+	readonly profiles = new Set<CapturedProfile>();
+
+	constructor(parent: ProfileContainer, time: Date) {
+		this.parent = parent;
+		this.time = time;
+	}
+
+	get label() {
+		const now = new Date();
+		if (now.getFullYear() !== this.time.getFullYear()) {
+			return moment(this.time).format('YYYY-MM-DD HH:mm:ss');
+		}
+		if (now.getMonth() !== this.time.getMonth() || now.getDate() !== this.time.getDate()) {
+			return moment(this.time).format('MM-DD HH:mm:ss');
+		}
+		return moment(this.time).format('HH:mm:ss');
+	}
+
+	get uri() {
+		return this.parent.uri;
+	}
+
+	get hasChildren() {
+		return this.profiles.size > 0;
+	}
+
+	getParent() {
+		return this.parent;
+	}
+
+	getChildren() {
+		return [...this.profiles];
+	}
 }
 
 /**
@@ -66,10 +144,10 @@ export class CapturedProfile implements GoTestItem {
 	readonly type: ProfileType;
 	readonly uri: Uri;
 	readonly file: Uri;
-	readonly parent: ItemWithProfiles;
+	readonly parent: ProfileSet;
 	readonly hasChildren = false;
 
-	static async new(parent: ItemWithProfiles, dir: Uri, type: ProfileType, time: Date) {
+	static async new(parent: ProfileSet, dir: Uri, type: ProfileType, time: Date) {
 		// This is a simple way to make an ID from the package URI
 		const hash = createHash('sha256').update(`${parent.uri}`).digest('hex').substring(0, 16);
 		const file = Uri.joinPath(dir, `${hash}-${type.id}-${time.getTime()}.pprof`);
@@ -77,7 +155,7 @@ export class CapturedProfile implements GoTestItem {
 		return new this(parent, type, file, uri);
 	}
 
-	private constructor(parent: ItemWithProfiles, type: ProfileType, file: Uri, uri: Uri) {
+	private constructor(parent: ProfileSet, type: ProfileType, file: Uri, uri: Uri) {
 		this.type = type;
 		this.parent = parent;
 		this.file = file;
@@ -89,7 +167,7 @@ export class CapturedProfile implements GoTestItem {
 	}
 
 	get label() {
-		return `Profile (${this.type.id})`;
+		return this.type.label;
 	}
 
 	getParent() {

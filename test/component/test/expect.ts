@@ -5,13 +5,13 @@
 import { TestItemCollection } from 'vscode';
 import { GoTestItem } from '../../../src/test/item';
 import { MockTestController, TestHost } from './host';
-import type { MatcherFunction, ExpectationResult, SyncExpectationResult } from 'expect';
+import type { MatcherFunction, SyncExpectationResult } from 'expect';
 import { expect } from '@jest/globals';
 
 export type ExpectedTestItem =
 	| {
-			kind: 'module' | 'workspace' | 'package' | 'file' | 'profile';
-			uri: string;
+			kind: 'module' | 'workspace' | 'package' | 'file' | 'profile' | 'profile-container' | 'profile-set';
+			uri?: string;
 			children: ExpectedTestItem[];
 	  }
 	| {
@@ -30,39 +30,52 @@ export type ExpectedTestItem =
 const toResolve: MatcherFunction<[ExpectedTestItem[]]> = async function (src, want): Promise<SyncExpectationResult> {
 	populateChildren(want);
 
-	const ctrl = src instanceof MockTestController ? src : src instanceof TestHost ? src.controller : undefined;
-	if (!ctrl) throw new Error('Expected test controller');
-	await ctrl.resolveHandler!();
+	if (!(src instanceof TestHost)) {
+		throw new Error('Expected test controller');
+	}
+	await src.controller.resolveHandler!();
 
-	const convert = async (items: TestItemCollection) =>
-		Promise.all(
+	const convert = async (items: TestItemCollection) => {
+		await Promise.all([...items].map(([, item]) => src.controller.resolveHandler!(item)));
+		return Promise.all(
 			[...items]
-				.map((x) => x[1])
-				.sort((a, b) => a.id.localeCompare(b.id))
-				.map(async (item): Promise<ExpectedTestItem> => {
-					await ctrl.resolveHandler!(item);
-					const { kind, name } = GoTestItem.parseId(item.id);
-					switch (kind) {
+				.map(([id, item]) => {
+					const goItem = src.manager.resolveGoTestItem(id);
+					if (!goItem) throw new Error(`Failed to resolve ${id}`);
+					return { item: goItem, children: item.children };
+				})
+				.sort(({ item: a }, { item: b }) => {
+					let c = `${a.uri}`.localeCompare(`${b.uri}`);
+					if (c !== 0) return c;
+					c = a.kind.localeCompare(b.kind);
+					if (c !== 0) return c;
+					c = `${a.name}`.localeCompare(`${b.name}`);
+					return c;
+				})
+				.map(async ({ item, children }): Promise<ExpectedTestItem> => {
+					switch (item.kind) {
 						case 'test':
 						case 'benchmark':
 						case 'fuzz':
 						case 'example':
 							return {
-								kind,
-								name: name!,
-								uri: item.uri!.toString(),
-								children: await convert(item.children)
+								kind: item.kind,
+								name: item.name!,
+								uri: `${item.uri}`,
+								children: await convert(children)
+							};
+						default:
+							return {
+								kind: item.kind,
+								uri: `${item.uri}`,
+								children: await convert(children)
 							};
 					}
-					return {
-						kind,
-						uri: item.uri!.toString(),
-						children: await convert(item.children)
-					};
 				})
 		);
+	};
 
-	const got = await convert(ctrl.items);
+	const got = await convert(src.controller.items);
 	const gots = this.utils.printReceived(got);
 	const wants = this.utils.printExpected(want);
 	if (this.equals(got, want)) {

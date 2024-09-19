@@ -324,7 +324,7 @@ export class PackageTestRun {
 						this.stderr
 					);
 				} else if (item) {
-					const messages = parseTestFailure(item, this.output.get(item.id) || []);
+					const messages = parseTestFailure(test, this.output.get(item.id) || []);
 					this.#run.failed(item, messages, elapsed);
 				}
 				break;
@@ -428,13 +428,12 @@ function processPackageFailure(
  * Location info is inferred heuristically by applying a simple pattern matching
  * over the output strings from `go test -json` `output` type action events.
  */
-function parseTestFailure(test: TestItem, output: string[]): TestMessage[] {
+function parseTestFailure(test: GoTestItem, output: string[]): TestMessage[] {
 	const messages: TestMessage[] = [];
 
-	const { kind } = GoTestItem.parseId(test.id);
 	const gotI = output.indexOf('got:\n');
 	const wantI = output.indexOf('want:\n');
-	if (kind === 'example' && gotI >= 0 && wantI >= 0) {
+	if (test.kind === 'example' && gotI >= 0 && wantI >= 0) {
 		const got = output.slice(gotI + 1, wantI).join('');
 		const want = output.slice(wantI + 1).join('');
 		const message = TestMessage.diff('Output does not match', want, got);

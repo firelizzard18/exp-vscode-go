@@ -6,7 +6,7 @@ import { Commands, Context } from './testing';
 import path from 'path';
 import { TestConfig } from './config';
 import deepEqual from 'deep-equal';
-import { CapturedProfile, ItemWithProfiles, ProfileType } from './profile';
+import { ProfileContainer } from './profile';
 
 export namespace GoTestItem {
 	/**
@@ -36,46 +36,14 @@ export namespace GoTestItem {
 		| 'benchmark'
 		| 'fuzz'
 		| 'example'
+		| 'profile-container'
+		| 'profile-set'
 		| 'profile';
-
-	/**
-	 * Constructs an ID for an item. The ID of a test item consists of the URI
-	 * for the relevant file or folder with the URI query set to the test item
-	 * kind (see Kind) and the URI fragment set to the function name, if the
-	 * item represents a test, benchmark, or example function.
-	 *
-	 * - Module:    file:///path/to/mod?module
-	 * - Workspace: file:///path/to/src?workspace
-	 * - Package:   file:///path/to/mod/pkg?package
-	 * - File:      file:///path/to/mod/file.go?file
-	 * - Test:      file:///path/to/mod/file.go?test#TestXxx
-	 * - Benchmark: file:///path/to/mod/file.go?benchmark#BenchmarkXxx
-	 * - Fuzz:      file:///path/to/mod/file.go?test#FuzzXxx
-	 * - Example:   file:///path/to/mod/file.go?example#ExampleXxx
-	 */
-	export function id(uri: Uri, kind: Kind, name?: string): string {
-		// TODO: Simplify the ID to just JSON or a hash or something?
-
-		uri = uri.with({ query: kind });
-		if (name) uri = uri.with({ fragment: name });
-		return uri.toString();
-	}
-
-	/**
-	 * Parses the ID as a URI and extracts the kind and name.
-	 *
-	 * The URI of the relevant file or folder should be retrieved wil
-	 * TestItem.uri.
-	 */
-	export function parseId(id: string): { kind: Kind; name?: string } {
-		const u = Uri.parse(id);
-		const kind = u.query as Kind;
-		const name = u.fragment;
-		return { kind, name };
-	}
 }
 
 export interface GoTestItem {
+	// TODO(ethan.reesor): Replace with a union.
+
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly label: string;
@@ -500,7 +468,7 @@ export class WorkspaceItem extends RootItem {
 	}
 }
 
-export class Package implements GoTestItem, ItemWithProfiles {
+export class Package implements GoTestItem {
 	/**
 	 * Consolidates test and source package data from gopls and filters out
 	 * excluded packages.
@@ -549,7 +517,7 @@ export class Package implements GoTestItem, ItemWithProfiles {
 	readonly hasChildren = true;
 	readonly files = new ItemSet<TestFile>();
 	readonly testRelations = new RelationMap<TestCase, TestCase | undefined>();
-	readonly profiles = new Set<CapturedProfile>();
+	readonly profiles = new ProfileContainer(this);
 
 	constructor(config: TestConfig, parent: RootItem, src: Commands.Package) {
 		this.#config = config;
@@ -627,13 +595,19 @@ export class Package implements GoTestItem, ItemWithProfiles {
 	 * files. If package nesting is enabled, this includes the package's child
 	 * packages.
 	 */
-	getChildren(): GoTestItem[] {
+	getChildren() {
+		const children: GoTestItem[] = [];
 		const tests = this.#config.showFiles() ? [...this.files] : [...this.files].flatMap((x) => x.getChildren());
-		if (!this.#config.nestPackages()) {
-			return [...tests, ...this.profiles];
+		if (this.#config.nestPackages()) {
+			children.push(...(this.parent.pkgRelations.getChildren(this) || []));
 		}
 
-		return [...(this.parent.pkgRelations.getChildren(this) || []), ...tests, ...this.profiles];
+		children.push(...tests);
+
+		if (this.profiles.hasChildren) {
+			children.push(this.profiles);
+		}
+		return children;
 	}
 
 	/**
@@ -665,22 +639,6 @@ export class Package implements GoTestItem, ItemWithProfiles {
 		// Find the parent test case and create a dynamic subtest
 		const parent = findParentTestCase(this.getTests(), name);
 		return parent?.makeDynamicTestCase(name);
-	}
-
-	/**
-	 * Records a captured profile.
-	 */
-	async addProfile(dir: Uri, type: ProfileType, time: Date) {
-		const profile = await CapturedProfile.new(this, dir, type, time);
-		this.profiles.add(profile);
-		return profile;
-	}
-
-	/**
-	 * Removes a captured profile.
-	 */
-	removeProfile(profile: CapturedProfile) {
-		this.profiles.delete(profile);
 	}
 }
 
@@ -745,13 +703,13 @@ export class TestFile implements GoTestItem {
 	}
 }
 
-export abstract class TestCase implements GoTestItem, ItemWithProfiles {
+export abstract class TestCase implements GoTestItem {
 	readonly #config: TestConfig;
 	readonly file: TestFile;
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
-	readonly profiles = new Set<CapturedProfile>();
+	readonly profiles = new ProfileContainer(this);
 
 	constructor(config: TestConfig, file: TestFile, uri: Uri, kind: GoTestItem.Kind, name: string) {
 		this.#config = config;
@@ -797,9 +755,16 @@ export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 	/**
 	 * Returns subtests if nesting is enabled, otherwise nothing.
 	 */
-	getChildren(): (TestCase | CapturedProfile)[] {
-		const subtests = this.#config.nestSubtests() ? this.file.package.testRelations.getChildren(this) || [] : [];
-		return [...this.profiles, ...subtests];
+	getChildren() {
+		const children: (ProfileContainer | TestCase)[] = [];
+		if (this.profiles.hasChildren) {
+			children.push(this.profiles);
+		}
+		if (this.#config.nestSubtests()) {
+			children.push(...(this.file.package.testRelations.getChildren(this) || []));
+		}
+
+		return children;
 	}
 
 	/**
@@ -829,22 +794,6 @@ export abstract class TestCase implements GoTestItem, ItemWithProfiles {
 			this.file.tests.remove(item);
 		}
 		this.file.package.testRelations.removeChildren(this);
-	}
-
-	/**
-	 * Records a captured profile.
-	 */
-	async addProfile(dir: Uri, type: ProfileType, time: Date) {
-		const profile = await CapturedProfile.new(this, dir, type, time);
-		this.profiles.add(profile);
-		return profile;
-	}
-
-	/**
-	 * Removes a captured profile.
-	 */
-	removeProfile(profile: CapturedProfile) {
-		this.profiles.delete(profile);
 	}
 }
 
