@@ -17,7 +17,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/golang/vscode-go"
+    "url": "https://github.com/firelizzard18/exp-vscode-go"
   },
   "bugs": {
     "url": "https://github.com/golang/vscode-go/issues"

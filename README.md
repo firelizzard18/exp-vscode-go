@@ -1,9 +1,16 @@
 # Go Companion
 
-An unofficial companion to the [official Go extension][vscode-go] that provides
-experimental features.
+An unofficial companion to the [official Go extension][vscode-go-ms] that
+provides experimental features.
 
-[vscode-go]: https://marketplace.visualstudio.com/items?itemName=golang.go
+[vscode-go-ms]: https://marketplace.visualstudio.com/items?itemName=golang.go
+
+## Issues
+
+Report issues to [vscode-go][vscode-go-git]. Include a note that you are
+reporting an issue or request for Go Companion.
+
+[vscode-go-git]: https://github.com/golang/vscode-go/issues/new/choose
 
 ## Test Explorer
 
