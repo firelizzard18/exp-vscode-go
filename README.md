@@ -21,10 +21,27 @@ Additionally, Go Companion provides the following features:
 
 See [settings](./docs/settings.md) for more details.
 
-## Profile Viewer
+## Profiling
 
-Go Companion includes a pprof profile viewer that is more cleanly integrated
-with the editor than vscode-go's iframe-based viewer.
+Go Companion supports profiling tests and includes a pprof profile viewer that
+is more cleanly integrated with the editor than vscode-go's iframe-based viewer.
+To profile tests:
+
+1. Run `Configure Test Profiles`
+2. Select `Run - Go (experimental)`
+3. Select `Profiling`
+4. Select the profiles you wish to capture
+5. Hit `[Enter]` to save your selection
+6. Run a test
+7. There will now be a `Profiles` item under the test
+8. Open `Profiles`
+9. Open the profile set, e.g. `12:34:56`
+10. Open the profile, e.g. `CPU`, by double clicking the item or clicking the open symbol
+
+![profiles](./docs/assets/profile-items.png)
+
+If multiple tests are run with profiling enabled, `Profiles` will appear under
+the package instead of the individual test.
 
 ## Documentation Viewer (**TODO**)
 

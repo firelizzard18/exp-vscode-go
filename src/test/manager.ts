@@ -57,7 +57,7 @@ export class TestManager {
 
 		// Normal and debug test runners
 		this.#run.profile = ctrl.createRunProfile(
-			'Go',
+			'Run',
 			TestRunProfileKind.Run,
 			(rq, token) => this.#executeTestRun(this.#run, rq, token),
 			true,
@@ -65,7 +65,7 @@ export class TestManager {
 			true
 		);
 		this.#debug.profile = ctrl.createRunProfile(
-			'Go',
+			'Debug',
 			TestRunProfileKind.Debug,
 			(rq, token) => this.#executeTestRun(this.#debug, rq, token),
 			true,

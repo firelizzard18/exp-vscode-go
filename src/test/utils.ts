@@ -83,7 +83,6 @@ export function spawnProcess(context: Context, scope: Uri, flags: Flags, options
 
 let debugSessionID = 0;
 const debugSessionOutput = new Map<string, Pick<SpawnOptions, 'stdout' | 'stderr'>>();
-const debugAdapterOutput = window?.createOutputChannel('Go Debug Debug', { log: true });
 
 debug?.registerDebugAdapterTrackerFactory('go', {
 	createDebugAdapterTracker(s) {
@@ -93,11 +92,7 @@ debug?.registerDebugAdapterTrackerFactory('go', {
 		if (!opts) return;
 
 		return {
-			onWillReceiveMessage(msg) {
-				debugAdapterOutput?.info(`> ${JSON.stringify(msg)}`);
-			},
 			onDidSendMessage(msg: { type: string; event: string; body: { category: string; output: string } }) {
-				debugAdapterOutput?.info(`< ${JSON.stringify(msg)}`);
 				if (msg.type !== 'event') return;
 				if (msg.event !== 'output') return;
 				if (msg.body.category === 'stdout') {
