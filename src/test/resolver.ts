@@ -88,7 +88,7 @@ export class TestResolver {
 			tags.push({ id: 'canDebug' });
 		} else {
 			// Profiles shouldn't be runnable but making them not runnable
-			// causes bizarre bugs
+			// causes bugs: https://github.com/microsoft/vscode/issues/229120
 			tags.push({ id: 'canRun' });
 		}
 
