@@ -46,7 +46,14 @@ export class Boxes {
 	#renderer?: Renderer;
 
 	constructor(
-		private readonly props: { focusColor: string; primaryColor: string; textColor: string; boxes: Box[] },
+		private readonly props: {
+			focusColor: string;
+			primaryColor: string;
+			textColor: string;
+			boxes: Box[];
+			onHovered?: (box?: Box) => void;
+			onFocused?: (box?: Box) => void;
+		},
 	) {}
 
 	render() {
@@ -72,18 +79,29 @@ export class Boxes {
 		addEventListener('resize', () => this.#update(() => setRenderer()));
 
 		el.el.addEventListener('mousemove', (event) => {
-			this.#renderer?.didMoveMouse(event);
-			this.#update(() => {
-				this.#renderer?.redraw();
-			});
+			this.props.onHovered?.(this.#renderer?.boxAt(event.clientX, event.clientY));
+		});
+
+		el.el.addEventListener('click', (event) => {
+			this.props.onFocused?.(this.#renderer?.boxAt(event.clientX, event.clientY));
 		});
 
 		return el;
 	}
 
+	set hovered(box: Box | null | undefined) {
+		this.#renderer && (this.#renderer.hovered = box);
+		this.#update(() => this.#renderer?.redraw());
+	}
+
+	set focused(box: Box | null | undefined) {
+		this.#renderer && (this.#renderer.focused = box);
+		this.#update(() => this.#renderer?.redraw());
+	}
+
 	set boxes(boxes: Box[]) {
 		this.props.boxes = boxes;
-		this.#renderer!.boxes = boxes;
+		this.#renderer && (this.#renderer.boxes = boxes);
 		this.#update(() => this.#renderer?.redraw());
 	}
 
@@ -171,11 +189,11 @@ class Renderer {
 		this.redraw();
 	}
 
-	didMoveMouse(event: MouseEvent) {
+	boxAt(cx: number, cy: number) {
 		// -1 makes the transition between boxes smoother
-		const x = (event.clientX * devicePixelRatio - 1) / this.gl.canvas.width;
-		const y = Math.floor((event.clientY - 1) / boxHeight);
-		this.hovered = this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y);
+		const x = (cx * devicePixelRatio - 1) / this.gl.canvas.width;
+		const y = Math.floor((cy - 1) / boxHeight);
+		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y);
 	}
 
 	set hovered(hovered: Box | null | undefined) {

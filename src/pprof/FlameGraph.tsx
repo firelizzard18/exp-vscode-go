@@ -75,15 +75,21 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	profile.Sample?.forEach((s) => addTree(s, 0, tree));
 	addBoxes(tree, 0, 0, 1);
 
+	const elem = (
+		<Boxes
+			focusColor="--vscode-focusBorder"
+			primaryColor="--vscode-charts-red"
+			textColor="--vscode-editor-background"
+			boxes={boxes}
+			onHovered={(x) => (elem.hovered = x)}
+			onFocused={(x) => (elem.focused = x)}
+		/>
+	);
+
 	return (
 		<div className="flame-graph">
 			{/* <span>This is a flame graph</span> */}
-			<Boxes
-				focusColor="--vscode-focusBorder"
-				primaryColor="--vscode-charts-red"
-				textColor="--vscode-editor-background"
-				boxes={boxes}
-			/>
+			{elem}
 		</div>
 	);
 }
