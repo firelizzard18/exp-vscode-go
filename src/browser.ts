@@ -120,7 +120,7 @@ export class Browser {
 		if (!reload && `${url}` === `${this.#current}`) {
 			this.panel.webview.postMessage({
 				command: 'jump',
-				fragment: url.fragment
+				fragment: url.fragment,
 			});
 			return true;
 		}

@@ -1,5 +1,5 @@
 import vscode from 'vscode';
-import { registerTestController } from './test/register';
+import { registerProfileEditor, registerTestController } from './test/register';
 import { cleanupTempDir } from './utils/util';
 import { GoExtensionAPI } from './vscode-go';
 import { UriHandler } from './urlHandler';
@@ -13,6 +13,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 	const go = await goExt.activate();
 	await registerTestController(ctx, go);
+	await registerProfileEditor(ctx);
 
 	ctx.subscriptions.push(vscode.window.registerUriHandler(new UriHandler()));
 }
@@ -21,6 +22,6 @@ export function deactivate() {
 	return Promise.all([
 		// cancelRunningTests(),
 		// killRunningPprof(),
-		Promise.resolve(cleanupTempDir())
+		Promise.resolve(cleanupTempDir()),
 	]);
 }

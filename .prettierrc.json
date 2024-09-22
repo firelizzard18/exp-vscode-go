@@ -3,5 +3,5 @@
 	"singleQuote": true,
 	"arrowParens": "always",
 	"quoteProps": "consistent",
-	"trailingComma": "none"
+	"trailingComma": "all"
 }

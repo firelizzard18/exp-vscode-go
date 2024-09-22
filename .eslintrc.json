@@ -3,5 +3,12 @@
 	"root": true,
 	"rules": {
 		"n/no-unpublished-import": "off"
-	}
+	},
+	"ignorePatterns": [
+		"dist/",
+		"node_modules/"
+	],
+    "parserOptions": {
+        "sourceType": "module"
+    }
 }

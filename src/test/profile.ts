@@ -1,7 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
-import { ExtensionContext, TestRun, Uri } from 'vscode';
-import vscode from 'vscode';
+import {
+	type ExtensionContext,
+	type TestRun,
+	Uri,
+	type CustomReadonlyEditorProvider,
+	ViewColumn,
+	type CancellationToken,
+	type CustomDocumentOpenContext,
+	type WebviewPanel,
+} from 'vscode';
 import type { GoTestItem } from './item';
 import { spawn } from 'node:child_process';
 import { correctBinname, getTempDirPath } from '../utils/util';
@@ -16,7 +24,7 @@ export class ProfileType {
 	constructor(
 		public readonly id: string,
 		public readonly label: string,
-		public readonly description: string
+		public readonly description: string,
 	) {}
 
 	enabled = false;
@@ -28,7 +36,7 @@ export function makeProfileTypeSet() {
 		new ProfileType('cpu', 'CPU', 'Profile CPU usage'),
 		new ProfileType('mem', 'Memory', 'Profile memory usage'),
 		new ProfileType('mutex', 'Mutexes', 'Profile mutex contention'),
-		new ProfileType('block', 'Blocking', 'Profile blocking events')
+		new ProfileType('block', 'Blocking', 'Profile blocking events'),
 	];
 }
 
@@ -143,7 +151,8 @@ export class CapturedProfile implements GoTestItem {
 		// This is a simple way to make an ID from the package URI
 		const hash = createHash('sha256').update(`${parent.parent.parent.uri}`).digest('hex').substring(0, 16);
 		const file = Uri.joinPath(dir, `${hash}-${type.id}-${time.getTime()}.pprof`);
-		const uri = await UriHandler.asUri('openProfile', { path: file.fsPath });
+		// const uri = await UriHandler.asUri('openProfile', { path: file.fsPath });
+		const uri = file;
 		return new this(parent, type, file, uri);
 	}
 
@@ -176,8 +185,8 @@ export class ProfileDocument {
 		const r = await this.#open(go, path);
 		const base = Uri.parse(`http://localhost:${r.port}/ui`);
 		const browser = new Browser(ext, 'pprof', base, 'Profile', {
-			viewColumn: vscode.ViewColumn.Active,
-			preserveFocus: true
+			viewColumn: ViewColumn.Active,
+			preserveFocus: true,
 		});
 
 		if (r.proc) {
@@ -208,8 +217,8 @@ export class ProfileDocument {
 			return {
 				error: {
 					message: 'Failed to execute dot',
-					html: 'The `dot` command is required to display this profile. Please install Graphviz.'
-				}
+					html: 'The `dot` command is required to display this profile. Please install Graphviz.',
+				},
 			};
 		}
 
@@ -217,8 +226,8 @@ export class ProfileDocument {
 		if (!goRuntimePath) {
 			return {
 				error: {
-					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH'
-				}
+					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH',
+				},
 			};
 		}
 
@@ -245,8 +254,53 @@ export class ProfileDocument {
 			return { proc, port };
 		} catch (error) {
 			return {
-				error: { message: `${error}` }
+				error: { message: `${error}` },
 			};
 		}
+	}
+}
+
+export class ProfileDocument2 {
+	readonly uri: Uri;
+
+	constructor(uri: Uri) {
+		this.uri = uri;
+	}
+
+	dispose() {}
+}
+
+export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument2> {
+	readonly #ext: ExtensionContext;
+
+	constructor(ext: ExtensionContext) {
+		this.#ext = ext;
+	}
+
+	openCustomDocument(uri: Uri, context: CustomDocumentOpenContext, token: CancellationToken): ProfileDocument2 {
+		return new ProfileDocument2(uri);
+	}
+
+	resolveCustomEditor(
+		document: ProfileDocument2,
+		panel: WebviewPanel,
+		token: CancellationToken,
+	): Thenable<void> | void {
+		const uriFor = (path: string) => panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
+		panel.webview.options = { enableScripts: true, enableCommandUris: true };
+		panel.webview.html = `
+			<!DOCTYPE html>
+			<html lang="en">
+				<head>
+					<meta charset="UTF-8">
+					<meta name="viewport" content="width=device-width, initial-scale=1.0">
+					<title>Profile Custom Editor</title>
+					<link href="${uriFor('pprof.css')}" rel="stylesheet">
+				</head>
+				<body>
+					<script src="${uriFor('pprof.js')}"></script>
+				</body>
+			</html>
+		`;
 	}
 }

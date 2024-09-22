@@ -5,8 +5,19 @@ import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
-import { ProfileDocument } from './profile';
+import { ProfileDocument, ProfileEditorProvider } from './profile';
 import { Browser } from '../browser';
+
+export async function registerProfileEditor(ctx: ExtensionContext) {
+	const provider = new ProfileEditorProvider(ctx);
+	ctx.subscriptions.push(
+		window.registerCustomEditorProvider('goExp.pprof', provider, {
+			webviewOptions: {
+				retainContextWhenHidden: true, // TODO: Can we persist the state?
+			},
+		}),
+	);
+}
 
 export async function registerTestController(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -20,8 +31,8 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 		output: window.createOutputChannel('Go Tests (experimental)', { log: true }),
 		commands: {
 			modules: (args) => commands.executeCommand('gopls.modules', args),
-			packages: (args) => commands.executeCommand('gopls.packages', args)
-		}
+			packages: (args) => commands.executeCommand('gopls.packages', args),
+		},
 	};
 
 	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
@@ -29,7 +40,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	};
 	const command = (name: string, fn: (...args: any[]) => any) => {
 		ctx.subscriptions.push(
-			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args)))
+			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args))),
 		);
 	};
 
@@ -39,7 +50,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 		manager.setup({
 			createTestController: tests.createTestController,
 			registerCodeLensProvider: languages.registerCodeLensProvider,
-			showQuickPick: window.showQuickPick
+			showQuickPick: window.showQuickPick,
 		});
 		window.visibleTextEditors.forEach((x) => manager.reloadUri(x.document.uri));
 	};
@@ -106,7 +117,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 		manager.reloadUri(
 			e.document.uri,
 			e.contentChanges.map((x) => x.range),
-			true
+			true,
 		);
 	});
 
@@ -117,7 +128,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	event(
 		workspace.onDidChangeWorkspaceFolders,
 		'changed workspace',
-		async () => manager.enabled && manager.reloadView()
+		async () => manager.enabled && manager.reloadView(),
 	);
 
 	// [Event] File created/deleted
