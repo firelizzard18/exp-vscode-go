@@ -193,7 +193,7 @@ class Renderer {
 		// -1 makes the transition between boxes smoother
 		const x = (cx * devicePixelRatio - 1) / this.gl.canvas.width;
 		const y = Math.floor((cy - 1) / boxHeight);
-		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y);
+		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y + this.#minLevel);
 	}
 
 	set hovered(hovered: Box | null | undefined) {
@@ -217,8 +217,10 @@ class Renderer {
 	}
 
 	#boxes: Box[] = [];
+	#minLevel = 0;
 	set boxes(boxes: Box[]) {
 		this.#boxes = boxes;
+		this.#minLevel = Math.min(...boxes.map((b) => b.level));
 		this.hovered = null;
 		this.focused = null;
 
@@ -278,10 +280,11 @@ class Renderer {
 
 	#boxPos(box: Box) {
 		const width = this.gl.canvas.width;
+		const level = box.level - this.#minLevel;
 		const x1 = Math.ceil(box.x1 * width) + 1;
 		const x2 = Math.ceil(box.x2 * width) - 1;
-		const y1 = Math.ceil(box.level * boxHeight * devicePixelRatio + 1);
-		const y2 = Math.ceil((box.level + 1) * boxHeight * devicePixelRatio - 1);
+		const y1 = Math.ceil(level * boxHeight * devicePixelRatio + 1);
+		const y2 = Math.ceil((level + 1) * boxHeight * devicePixelRatio - 1);
 		return { x1, x2, y1, y2 };
 	}
 

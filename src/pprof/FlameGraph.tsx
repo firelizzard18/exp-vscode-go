@@ -27,8 +27,12 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		const func = funcs[level];
 		let node = parent.children.filter((n) => typeof n === 'object').find((n) => n.func === func);
 		if (!node) {
-			node = { func, cost: 0, children: [] };
+			node = { func, cost: 0, parents: [], children: [] };
 			parent.children.push(node);
+		}
+
+		if (!node.parents.includes(parent)) {
+			node.parents.push(parent);
 		}
 
 		addTree(sample, level + 1, node);
@@ -46,16 +50,30 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		return g;
 	};
 
-	const boxes: Box[] = [];
-	const addBoxes = (node: Node, level: number, x1: number, x2: number) => {
-		boxes.push({
+	let boxes: Box[] = [];
+	const nodeForBox = new Map<Box, Node>();
+	const addBox = (node: Node, level: number, x1: number, x2: number) => {
+		const box: Box = {
 			label: node.func ? labelFor(node.func) : 'root',
 			x1,
 			x2,
 			level,
 			group: group(node),
 			id: node.func?.ID ?? 0,
-		});
+		};
+		boxes.push(box);
+		nodeForBox.set(box, node);
+	};
+	const addBoxesUp = (node: Node, level: number, x1: number, x2: number) => {
+		if (node.parents.length === 0) {
+			return;
+		}
+		const parent = node.parents[0];
+		addBoxesUp(parent, level - 1, x1, x2);
+		addBox(parent, level, x1, x2);
+	};
+	const addBoxesDown = (node: Node, level: number, x1: number, x2: number) => {
+		addBox(node, level, x1, x2);
 
 		let cost = 0;
 		const w = x2 - x1;
@@ -67,22 +85,39 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			const c1 = cost / node.cost;
 			cost += child.cost;
 			const c2 = cost / node.cost;
-			addBoxes(child, level + 1, x1 + c1 * w, x1 + c2 * w);
+			addBoxesDown(child, level + 1, x1 + c1 * w, x1 + c2 * w);
 		}
 	};
 
-	const tree: Node = { cost: 0, children: [] };
+	const tree: Node = { cost: 0, parents: [], children: [] };
 	profile.Sample?.forEach((s) => addTree(s, 0, tree));
-	addBoxes(tree, 0, 0, 1);
+	addBoxesDown(tree, 0, 0, 1);
 
 	const elem = (
 		<Boxes
-			focusColor="--vscode-focusBorder"
+			focusColor="white"
 			primaryColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
 			boxes={boxes}
 			onHovered={(x) => (elem.hovered = x)}
-			onFocused={(x) => (elem.focused = x)}
+			onFocused={(x) => {
+				const node = x && nodeForBox.get(x);
+				boxes = [];
+				nodeForBox.clear();
+				if (node) {
+					addBoxesUp(node, -1, 0, 1);
+					boxes.push({
+						label: `${node.cost}`,
+						x1: 0,
+						x2: 1,
+						level: 0,
+						group: 0,
+						id: -1,
+					});
+				}
+				addBoxesDown(node || tree, 1, 0, 1);
+				elem.boxes = boxes;
+			}}
 		/>
 	);
 
@@ -97,6 +132,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 interface Node {
 	func?: Func;
 	cost: number;
+	parents: Node[];
 	children: (Node | number)[];
 }
 
