@@ -13,7 +13,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 	const go = await goExt.activate();
 	await registerTestController(ctx, go);
-	await registerProfileEditor(ctx);
+	await registerProfileEditor(ctx, go);
 
 	ctx.subscriptions.push(vscode.window.registerUriHandler(new UriHandler()));
 }

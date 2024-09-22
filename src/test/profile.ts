@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
 import {
 	type ExtensionContext,
 	type TestRun,
@@ -11,13 +12,12 @@ import {
 	type WebviewPanel,
 } from 'vscode';
 import type { GoTestItem } from './item';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { correctBinname, getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
 import { Browser } from '../browser';
 import { Context } from './testing';
-import { UriHandler } from '../urlHandler';
 import moment from 'moment';
 
 export class ProfileType {
@@ -272,20 +272,29 @@ export class ProfileDocument2 {
 
 export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument2> {
 	readonly #ext: ExtensionContext;
+	readonly #go: GoExtensionAPI;
 
-	constructor(ext: ExtensionContext) {
+	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
 		this.#ext = ext;
+		this.#go = go;
 	}
 
 	openCustomDocument(uri: Uri, context: CustomDocumentOpenContext, token: CancellationToken): ProfileDocument2 {
 		return new ProfileDocument2(uri);
 	}
 
-	resolveCustomEditor(
+	async resolveCustomEditor(
 		document: ProfileDocument2,
 		panel: WebviewPanel,
 		token: CancellationToken,
-	): Thenable<void> | void {
+	): Promise<void> {
+		const { binPath } = this.#go.settings.getExecutionCommand('vscgo') || {};
+		if (!binPath) {
+			throw new Error('Cannot locate vscgo');
+		}
+
+		const { stdout: pprof } = await promisify(execFile)(binPath, ['dump-pprof', document.uri.fsPath]);
+
 		const uriFor = (path: string) => panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
 		panel.webview.options = { enableScripts: true, enableCommandUris: true };
 		panel.webview.html = `
@@ -296,6 +305,7 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 					<meta name="viewport" content="width=device-width, initial-scale=1.0">
 					<title>Profile Custom Editor</title>
 					<link href="${uriFor('pprof.css')}" rel="stylesheet">
+					<script id="profile-data" type="application/json">${pprof}</script>
 				</head>
 				<body>
 					<script src="${uriFor('pprof.js')}"></script>

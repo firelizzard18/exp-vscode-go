@@ -61,23 +61,17 @@ vec3 hsv2rgb(vec3 c) {
 void main() {
 	gl_Position = projection * vec4(boxes[0], boxes[1], 0, 1);
 
-	mediump int graph_id = int(boxes[2]);
-	mediump int color_hash = hash(graph_id); // djb2's prime, just some bogus stuff
-	lowp int categorization = int(boxes[3]);
+	mediump int group = int(boxes[2]);
+	mediump int color_hash = hash(group); // djb2's prime, just some bogus stuff
+	mediump float h = wrap(vary_by(primary_color[0], float(color_hash & 255) / 255.0f, 0.1f));
+	mediump float s = clamp(vary_by(primary_color[1], float((color_hash >> 8) & 255) / 255.0f, 0.1f), 0.0f, 1.0f);
+	v_color = vec4(hsv2rgb(vec3(h, s, primary_color[2])), primary_color[3]);
 
-	if(focused == graph_id) {
+	mediump int id = int(boxes[3]);
+	if(focused == id) {
 		v_color = focus_color;
-	} else if(categorization == 0) { // system
-		v_color = vec4(0.6f, 0.6f, 0.6f, 1);
-	} else if(categorization == 3) { // deemphasize
-		v_color = vec4(0.6f, 0.6f, 0.6f, 1) * 0.4f;
-	} else {
-		mediump float h = wrap(vary_by(primary_color[0], float(color_hash & 255) / 255.0f, 0.1f));
-		mediump float s = clamp(vary_by(primary_color[1], float((color_hash >> 8) & 255) / 255.0f, 0.1f), 0.0f, 1.0f);
-		v_color = vec4(hsv2rgb(vec3(h, s, primary_color[2])), primary_color[3]);
 	}
-
-	if(hovered == graph_id) {
-		v_color *= 0.8f;
+	if(hovered == id) {
+		v_color[0] *= 0.8f;
 	}
 }

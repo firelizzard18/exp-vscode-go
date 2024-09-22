@@ -8,8 +8,8 @@ import { languages } from 'vscode';
 import { ProfileDocument, ProfileEditorProvider } from './profile';
 import { Browser } from '../browser';
 
-export async function registerProfileEditor(ctx: ExtensionContext) {
-	const provider = new ProfileEditorProvider(ctx);
+export async function registerProfileEditor(ctx: ExtensionContext, go: GoExtensionAPI) {
+	const provider = new ProfileEditorProvider(ctx, go);
 	ctx.subscriptions.push(
 		window.registerCustomEditorProvider('goExp.pprof', provider, {
 			webviewOptions: {
