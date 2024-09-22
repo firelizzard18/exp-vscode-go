@@ -32,21 +32,6 @@ export interface ICanvasSize {
 
 const boxHeight = 18;
 
-const pixelRatio = (function () {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const ctx = document.createElement('canvas').getContext('2d') as any;
-	const dpr = window.devicePixelRatio || 1;
-	const bsr =
-		ctx.webkitBackingStorePixelRatio ||
-		ctx.mozBackingStorePixelRatio ||
-		ctx.msBackingStorePixelRatio ||
-		ctx.oBackingStorePixelRatio ||
-		ctx.backingStorePixelRatio ||
-		1;
-
-	return dpr / bsr;
-})();
-
 const must = function <T>(value: T | null | undefined | (() => T | null | undefined), op: string): T {
 	if (value instanceof Function) {
 		value = value();
@@ -65,25 +50,55 @@ export class Boxes {
 	) {}
 
 	render() {
-		const glCanvas = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
-		const textCanvas = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
+		const el = (<div className="boxes" />) as JSX.HTMLRenderable<HTMLDivElement>;
 
-		setTimeout(() => {
-			this.#renderer = new Renderer({ ...this.props, glCanvas: glCanvas.el, textCanvas: textCanvas.el });
-		}, 0);
+		const setRenderer = () => {
+			// Creating new canvases each time seems bad, but it was not letting
+			// me change the size of the canvas
+			el.el.innerHTML = '';
+			const { el: glCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
+			const { el: textCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
+			textCanvas.width = el.el.clientWidth * devicePixelRatio;
+			textCanvas.height = el.el.clientHeight * devicePixelRatio;
+			glCanvas.width = el.el.clientWidth * devicePixelRatio;
+			glCanvas.height = el.el.clientHeight * devicePixelRatio;
+			el.el.appendChild(glCanvas);
+			el.el.appendChild(textCanvas);
 
-		const el = (
-			<div className="boxes">
-				{glCanvas}
-				{textCanvas}
-			</div>
-		) as JSX.HTMLRenderable<HTMLDivElement>;
-		el.el.addEventListener('mousemove', (event) => this.#renderer?.didMoveMouse(event));
+			this.#renderer = new Renderer({ ...this.props, glCanvas, textCanvas });
+		};
+
+		this.#update(() => setRenderer());
+		addEventListener('resize', () => this.#update(() => setRenderer()));
+
+		el.el.addEventListener('mousemove', (event) => {
+			this.#renderer?.didMoveMouse(event);
+			this.#update(() => {
+				this.#renderer?.redraw();
+			});
+		});
+
 		return el;
 	}
 
-	setBoxes(boxes: Box[]) {
-		this.#renderer!.setBoxes(boxes);
+	set boxes(boxes: Box[]) {
+		this.props.boxes = boxes;
+		this.#renderer!.boxes = boxes;
+		this.#update(() => this.#renderer?.redraw());
+	}
+
+	#lastUpdate?: number;
+	#renderQueue: (() => void)[] = [];
+	#update(fn: () => void) {
+		if (this.#lastUpdate) {
+			cancelAnimationFrame(this.#lastUpdate);
+		}
+		this.#renderQueue.push(fn);
+		this.#lastUpdate = requestAnimationFrame(() => {
+			const fns = this.#renderQueue.slice();
+			this.#renderQueue.splice(0, this.#renderQueue.length);
+			fns.forEach((fn) => fn());
+		});
 	}
 }
 
@@ -119,16 +134,12 @@ class Renderer {
 		glCanvas: HTMLCanvasElement;
 		textCanvas: HTMLCanvasElement;
 	}) {
-		textCanvas.width = textCanvas.clientWidth * pixelRatio;
-		textCanvas.height = textCanvas.clientHeight * pixelRatio;
 		this.ctx = must(textCanvas.getContext('2d'), 'get 2D context');
-		this.ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+		this.ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 		this.ctx.fillStyle = resolveColor(textColor).css();
 		this.ctx.font = '12px monospace';
 		this.ctx.textBaseline = 'middle';
 
-		glCanvas.width = glCanvas.clientWidth * pixelRatio;
-		glCanvas.height = glCanvas.clientHeight * pixelRatio;
 		this.gl = must(glCanvas.getContext('webgl2'), 'get WebGL context');
 		this.program = compileProgram(this.gl, vertexShaderSource, fragmentShaderSource);
 
@@ -154,52 +165,44 @@ class Renderer {
 		this.gl.uniformMatrix4fv(this.location.projection, false, projectionMatrix);
 
 		// Initialize
-		this.setBoxes(boxes);
-		this.setFocusColor(focusColor);
-		this.setPrimaryColor(primaryColor);
+		this.boxes = boxes;
+		this.focusColor = focusColor;
+		this.primaryColor = primaryColor;
 		this.redraw();
 	}
-
-	vertexCount = 0;
-	boxes: Box[] = [];
 
 	didMoveMouse(event: MouseEvent) {
 		// -1 makes the transition between boxes smoother
-		const x = (event.clientX * pixelRatio - 1) / this.gl.canvas.width;
+		const x = (event.clientX * devicePixelRatio - 1) / this.gl.canvas.width;
 		const y = Math.floor((event.clientY - 1) / boxHeight);
-		const box = this.boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y);
-		if (box) {
-			this.setHovered(box);
-		} else {
-			this.setHovered();
-		}
-		this.redraw();
+		this.hovered = this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y);
 	}
 
-	setHovered(hovered?: Box) {
+	set hovered(hovered: Box | null | undefined) {
 		this.gl.uniform1i(this.location.hovered, hovered ? hovered.id : -1);
 	}
 
-	setFocused(focused?: Box) {
+	set focused(focused: Box | null | undefined) {
 		this.gl.uniform1i(this.location.focused, focused ? focused.id : -1);
 	}
 
-	setFocusColor(color: string) {
+	set focusColor(color: string) {
 		const rgba = resolveColor(color).rgba();
 		rgba[3] = 255;
 		this.gl.uniform4fv(this.location.focusColor, new Float32Array(rgba.map((r) => r / 255)));
 	}
 
-	setPrimaryColor(color: string) {
+	set primaryColor(color: string) {
 		const parsed = resolveColor(color);
 		const hsv = parsed.luminance(Math.min(parsed.luminance(), 0.25)).hsv();
 		this.gl.uniform4f(this.location.primaryColor, hsv[0] / 360, hsv[1], hsv[2], parsed.alpha());
 	}
 
-	setBoxes(boxes: Box[]) {
-		this.boxes = boxes;
-		this.setHovered();
-		this.setFocused();
+	#boxes: Box[] = [];
+	set boxes(boxes: Box[]) {
+		this.#boxes = boxes;
+		this.hovered = null;
+		this.focused = null;
 
 		const { gl } = this;
 
@@ -247,7 +250,6 @@ class Renderer {
 				i * 4 + 2, // bottom left
 			]),
 		);
-		this.vertexCount = indices.length;
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
 		gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
@@ -260,8 +262,8 @@ class Renderer {
 		const width = this.gl.canvas.width;
 		const x1 = Math.ceil(box.x1 * width) + 1;
 		const x2 = Math.ceil(box.x2 * width) - 1;
-		const y1 = Math.ceil(box.level * boxHeight * pixelRatio + 1);
-		const y2 = Math.ceil((box.level + 1) * boxHeight * pixelRatio - 1);
+		const y1 = Math.ceil(box.level * boxHeight * devicePixelRatio + 1);
+		const y2 = Math.ceil((box.level + 1) * boxHeight * devicePixelRatio - 1);
 		return { x1, x2, y1, y2 };
 	}
 
@@ -271,19 +273,19 @@ class Renderer {
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
 		gl.enableVertexAttribArray(this.location.boxes);
-		gl.drawElements(gl.TRIANGLES, this.vertexCount, gl.UNSIGNED_SHORT, 0);
+		gl.drawElements(gl.TRIANGLES, this.#boxes.length * 2 * 3, gl.UNSIGNED_SHORT, 0);
 
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-		this.boxes.forEach((box) => {
+		this.#boxes.forEach((box) => {
 			let label = box.label;
 			const { x1, x2, y1, y2 } = this.#boxPos(box);
-			const w = (x2 - x1) / pixelRatio - 2;
+			const w = (x2 - x1) / devicePixelRatio - 2;
 			const m = ctx.measureText(label + '…');
 			if (m.width > w) {
 				const n = Math.floor((label.length * w) / m.width / 2);
 				label = `${label.slice(0, n)}…${label.slice(label.length - n)}`;
 			}
-			ctx.fillText(label, x1 / pixelRatio + 2, (y1 + y2) / 2 / pixelRatio, w);
+			ctx.fillText(label, x1 / devicePixelRatio + 2, (y1 + y2) / 2 / devicePixelRatio, w);
 		});
 	}
 }
