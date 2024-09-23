@@ -91,39 +91,57 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 
 	const tree: Node = { cost: 0, parents: [], children: [] };
 	profile.Sample?.forEach((s) => addTree(s, 0, tree));
-	addBoxesDown(tree, 0, 0, 1);
 
+	const centerLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
+	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const elem = (
 		<Boxes
 			focusColor="white"
 			primaryColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
+			textColor2="--vscode-editor-foreground"
 			boxes={boxes}
-			onHovered={(x) => (elem.hovered = x)}
-			onFocused={(x) => {
-				const node = x && nodeForBox.get(x);
-				boxes = [];
-				nodeForBox.clear();
-				if (node) {
-					addBoxesUp(node, -1, 0, 1);
-					boxes.push({
-						label: `${node.cost}`,
-						x1: 0,
-						x2: 1,
-						level: 0,
-						group: 0,
-						id: -1,
-					});
-				}
-				addBoxesDown(node || tree, 1, 0, 1);
-				elem.boxes = boxes;
-			}}
+			onHovered={(x) => ((elem.hovered = x), hover(x && nodeForBox.get(x)))}
+			onFocused={(x) => focus(x && nodeForBox.get(x))}
 		/>
-	);
+	) as Boxes;
+
+	const hover = (node?: Node) => {
+		if (node) rightLabel.el.innerText = amountFor(profile.SampleType[i], node, tree);
+		else rightLabel.el.innerHTML = '&nbsp;';
+	};
+
+	const focus = (node?: Node) => {
+		if (!node) return;
+		boxes = [];
+		nodeForBox.clear();
+		if (node === tree) {
+			centerLabel.el.innerText = amountFor(profile.SampleType[i], tree, tree);
+		} else {
+			centerLabel.el.innerHTML = '&nbsp;';
+			addBoxesUp(node, -1, 0, 1);
+			boxes.push({
+				label: amountFor(profile.SampleType[i], node, tree),
+				x1: 0,
+				x2: 1,
+				level: 0,
+				group: -1,
+				id: -1,
+				alignLabel: 'center',
+			});
+		}
+		addBoxesDown(node, 1, 0, 1);
+		elem.boxes = boxes;
+	};
+	focus(tree);
 
 	return (
 		<div className="flame-graph">
-			{/* <span>This is a flame graph</span> */}
+			<div className="header">
+				<span className="left" />
+				<span className="center">{centerLabel}</span>
+				<span className="right">{rightLabel}</span>
+			</div>
 			{elem}
 		</div>
 	);
@@ -145,4 +163,27 @@ function labelFor(func: Func) {
 
 	i = label.substring(0, label.indexOf('.')).lastIndexOf('/');
 	return label.substring(i + 1);
+}
+
+function amountFor(typ: ValueType, node: Node, root: Node) {
+	const percent = (node.cost / root.cost) * 100;
+	if (typ.Unit === 'count') return `${node.cost} (${percent.toFixed(0)}%)`;
+
+	let { cost } = node;
+	let power = 0;
+	while (cost > 100 && power < 4) power++, (cost /= 1024);
+	return `${cost.toPrecision(2)} ${suffixFor(typ, power)} (${percent.toFixed(0)}%)`;
+}
+
+function suffixFor(typ: ValueType, power: number) {
+	switch (typ.Unit) {
+		case 'bytes':
+			if (power === 0) return 'B';
+			if (power === 1) return 'kiB';
+			if (power === 2) return 'MiB';
+			if (power === 3) return 'GiB';
+			if (power === 4) return 'TiB';
+			break;
+	}
+	throw new Error(`Unsupported unit ${typ.Unit} or power ${power}`);
 }

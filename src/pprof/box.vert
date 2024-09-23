@@ -62,6 +62,11 @@ void main() {
 	gl_Position = projection * vec4(boxes[0], boxes[1], 0, 1);
 
 	mediump int group = int(boxes[2]);
+	if(group == -1) {
+		v_color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+		return;
+	}
+
 	mediump int color_hash = hash(group); // djb2's prime, just some bogus stuff
 	mediump float h = wrap(vary_by(primary_color[0], float(color_hash & 255) / 255.0f, 0.1f));
 	mediump float s = clamp(vary_by(primary_color[1], float((color_hash >> 8) & 255) / 255.0f, 0.1f), 0.0f, 1.0f);

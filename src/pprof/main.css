@@ -17,6 +17,26 @@ body {
     height: 100%;
 }
 
+.flame-graph .header {
+	display: flex;
+	flex-flow: row;
+	font-family: monospace;
+	font-size: 12px;
+}
+
+.flame-graph .header span {
+	flex: 1;
+}
+
+.flame-graph .header .center {
+	font-weight: bold;
+	text-align: center;
+}
+
+.flame-graph .header .right {
+	text-align: right;
+}
+
 .boxes {
 	flex: 1;
 	position: relative;

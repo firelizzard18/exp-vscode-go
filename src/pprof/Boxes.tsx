@@ -6,7 +6,7 @@ import { compileProgram } from './gl';
 import { createElement, render } from './jsx';
 import fragmentShaderSource from './box.frag';
 import vertexShaderSource from './box.vert';
-import chroma from 'chroma-js';
+import chroma, { Color } from 'chroma-js';
 import { mat4 } from 'gl-matrix';
 
 export interface Box {
@@ -16,6 +16,7 @@ export interface Box {
 	group: number;
 	x1: number;
 	x2: number;
+	alignLabel?: 'left' | 'center' | 'right';
 }
 
 export interface IBounds {
@@ -50,6 +51,7 @@ export class Boxes {
 			focusColor: string;
 			primaryColor: string;
 			textColor: string;
+			textColor2: string;
 			boxes: Box[];
 			onHovered?: (box?: Box) => void;
 			onFocused?: (box?: Box) => void;
@@ -79,14 +81,25 @@ export class Boxes {
 		addEventListener('resize', () => this.#update(() => setRenderer()));
 
 		el.el.addEventListener('mousemove', (event) => {
-			this.props.onHovered?.(this.#renderer?.boxAt(event.clientX, event.clientY));
+			if (!this.#renderer || !this.props.onHovered) return;
+			const { x, y } = this.#targetXY(event);
+			x && y && this.props.onHovered(this.#renderer.boxAt(x, y));
 		});
 
 		el.el.addEventListener('click', (event) => {
-			this.props.onFocused?.(this.#renderer?.boxAt(event.clientX, event.clientY));
+			if (!this.#renderer || !this.props.onFocused) return;
+			const { x, y } = this.#targetXY(event);
+			x && y && this.props.onFocused(this.#renderer.boxAt(x, y));
 		});
 
 		return el;
+	}
+
+	#targetXY(event: MouseEvent) {
+		if (!(event.target instanceof Element)) return {};
+		const { top, left } = event.target.getBoundingClientRect();
+		const { clientX, clientY } = event;
+		return { x: clientX - left, y: clientY - top };
 	}
 
 	set hovered(box: Box | null | undefined) {
@@ -137,10 +150,14 @@ class Renderer {
 		readonly primaryColor: WebGLUniformLocation;
 	};
 
+	readonly textColor: Color;
+	readonly textColor2: Color;
+
 	constructor({
 		focusColor,
 		primaryColor,
 		textColor,
+		textColor2,
 		boxes,
 		glCanvas,
 		textCanvas,
@@ -148,13 +165,16 @@ class Renderer {
 		focusColor: string;
 		primaryColor: string;
 		textColor: string;
+		textColor2: string;
 		boxes: Box[];
 		glCanvas: HTMLCanvasElement;
 		textCanvas: HTMLCanvasElement;
 	}) {
+		this.textColor = resolveColor(textColor);
+		this.textColor2 = resolveColor(textColor2);
+
 		this.ctx = must(textCanvas.getContext('2d'), 'get 2D context');
 		this.ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-		this.ctx.fillStyle = resolveColor(textColor).css();
 		this.ctx.font = '12px monospace';
 		this.ctx.textBaseline = 'middle';
 
@@ -300,13 +320,21 @@ class Renderer {
 		this.#boxes.forEach((box) => {
 			let label = box.label;
 			const { x1, x2, y1, y2 } = this.#boxPos(box);
+			const y = (y1 + y2) / 2 / devicePixelRatio;
 			const w = (x2 - x1) / devicePixelRatio - 2;
 			const m = ctx.measureText(label + '…');
 			if (m.width > w) {
 				const n = Math.floor((label.length * w) / m.width / 2);
 				label = `${label.slice(0, n)}…${label.slice(label.length - n)}`;
 			}
-			ctx.fillText(label, x1 / devicePixelRatio + 2, (y1 + y2) / 2 / devicePixelRatio, w);
+			ctx.textAlign = box.alignLabel ?? 'left';
+			if (box.id < 0) {
+				ctx.fillStyle = this.textColor2.css();
+				ctx.fillText(label, (x1 + x2) / 2 / devicePixelRatio, y, w);
+			} else {
+				ctx.fillStyle = this.textColor.css();
+				ctx.fillText(label, x1 / devicePixelRatio + 2, y, w);
+			}
 		});
 	}
 }
