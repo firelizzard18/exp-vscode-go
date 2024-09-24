@@ -33,6 +33,7 @@ const must = function <T>(value: T | null | undefined | (() => T | null | undefi
 
 export class Boxes<B extends Box = Box> {
 	#renderer?: Renderer<B>;
+	#el?: JSX.HTMLRenderable<HTMLDivElement>;
 
 	constructor(
 		private readonly props: {
@@ -47,16 +48,18 @@ export class Boxes<B extends Box = Box> {
 	) {}
 
 	render() {
-		const el = (<div className="boxes" />) as JSX.HTMLRenderable<HTMLDivElement>;
 		const { el: glCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
 		const { el: textCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
+		this.#el = (
+			<div className="boxes">
+				<span className="spacer" />
+				{glCanvas}
+				{textCanvas}
+			</div>
+		) as JSX.HTMLRenderable<HTMLDivElement>;
 
 		const setRenderer = () => {
-			el.el.innerHTML = '';
-			const width = Math.floor(el.el.clientWidth * devicePixelRatio);
-			const height = Math.floor(el.el.clientHeight * devicePixelRatio);
-			el.el.appendChild(glCanvas);
-			el.el.appendChild(textCanvas);
+			const { width, height } = this.#size();
 
 			if (!this.#renderer) {
 				this.#renderer = new Renderer({ ...this.props, glCanvas, textCanvas, width, height });
@@ -68,19 +71,44 @@ export class Boxes<B extends Box = Box> {
 		this.#update(() => setRenderer());
 		addEventListener('resize', () => this.#update(() => setRenderer()));
 
-		el.el.addEventListener('mousemove', (event) => {
+		this.#el.el.addEventListener('mousemove', (event) => {
 			if (!this.#renderer || !this.props.onHovered) return;
 			const { x, y } = this.#targetXY(event);
 			x && y && this.props.onHovered(this.#renderer.boxAt(x, y));
 		});
 
-		el.el.addEventListener('click', (event) => {
+		this.#el.el.addEventListener('click', (event) => {
 			if (!this.#renderer || !this.props.onFocused) return;
 			const { x, y } = this.#targetXY(event);
 			x && y && this.props.onFocused(this.#renderer.boxAt(x, y));
 		});
 
-		return el;
+		return this.#el;
+	}
+
+	#size() {
+		if (!this.#el) return { width: 0, height: 0 };
+
+		// Remove <canvas> children
+		const children = Array.from(this.#el.el.children).filter((x) => x instanceof HTMLCanvasElement);
+		children.forEach((x) => x.remove());
+
+		// Resize the spacer
+		const minLevel = Math.min(...this.props.boxes.map((b) => b.level));
+		const maxLevel = Math.max(...this.props.boxes.map((b) => b.level));
+		this.#el.el.childNodes.forEach((x) => {
+			if (x instanceof HTMLElement && x.classList.contains('spacer')) {
+				x.style.height = `${(maxLevel - minLevel + 1) * boxHeight}px`;
+			}
+		});
+
+		// Calculate canvas size
+		const width = Math.floor(this.#el.el.clientWidth * devicePixelRatio);
+		const height = Math.floor(this.#el.el.clientHeight * devicePixelRatio);
+
+		// Restore <canvas> children
+		children.forEach((x) => this.#el!.el.appendChild(x));
+		return { width, height };
 	}
 
 	#targetXY(event: MouseEvent) {
@@ -103,7 +131,7 @@ export class Boxes<B extends Box = Box> {
 	set boxes(boxes: B[]) {
 		this.props.boxes = boxes;
 		this.#renderer && (this.#renderer.boxes = boxes);
-		this.#update(() => this.#renderer?.redraw());
+		this.#update(() => this.#renderer?.redraw(this.#size()));
 	}
 
 	#lastUpdate?: number;
@@ -314,6 +342,11 @@ class Renderer<B extends Box> {
 			gl.viewport(0, 0, size.width, size.height);
 			gl.canvas.width = size.width;
 			gl.canvas.height = size.height;
+
+			ctx.canvas.style.width = `${size.width / devicePixelRatio}px`;
+			ctx.canvas.style.height = `${size.height / devicePixelRatio}px`;
+			(gl.canvas as HTMLCanvasElement).style.width = `${size.width / devicePixelRatio}px`;
+			(gl.canvas as HTMLCanvasElement).style.height = `${size.height / devicePixelRatio}px`;
 		}
 
 		gl.clear(gl.COLOR_BUFFER_BIT);
