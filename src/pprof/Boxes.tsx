@@ -19,18 +19,6 @@ export interface Box {
 	alignLabel?: 'left' | 'center' | 'right';
 }
 
-export interface IBounds {
-	minX: number;
-	maxX: number;
-	y: number;
-	level: number;
-}
-
-export interface ICanvasSize {
-	width: number;
-	height: number;
-}
-
 const boxHeight = 18;
 
 const must = function <T>(value: T | null | undefined | (() => T | null | undefined), op: string): T {
@@ -60,21 +48,21 @@ export class Boxes<B extends Box = Box> {
 
 	render() {
 		const el = (<div className="boxes" />) as JSX.HTMLRenderable<HTMLDivElement>;
+		const { el: glCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
+		const { el: textCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
 
 		const setRenderer = () => {
-			// Creating new canvases each time seems bad, but it was not letting
-			// me change the size of the canvas
 			el.el.innerHTML = '';
-			const { el: glCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
-			const { el: textCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
-			textCanvas.width = el.el.clientWidth * devicePixelRatio;
-			textCanvas.height = el.el.clientHeight * devicePixelRatio;
-			glCanvas.width = el.el.clientWidth * devicePixelRatio;
-			glCanvas.height = el.el.clientHeight * devicePixelRatio;
+			const width = Math.floor(el.el.clientWidth * devicePixelRatio);
+			const height = Math.floor(el.el.clientHeight * devicePixelRatio);
 			el.el.appendChild(glCanvas);
 			el.el.appendChild(textCanvas);
 
-			this.#renderer = new Renderer({ ...this.props, glCanvas, textCanvas });
+			if (!this.#renderer) {
+				this.#renderer = new Renderer({ ...this.props, glCanvas, textCanvas, width, height });
+			} else {
+				this.#renderer.redraw({ width, height });
+			}
 		};
 
 		this.#update(() => setRenderer());
@@ -161,6 +149,8 @@ class Renderer<B extends Box> {
 		boxes,
 		glCanvas,
 		textCanvas,
+		width,
+		height,
 	}: {
 		focusColor: string;
 		primaryColor: string;
@@ -169,14 +159,18 @@ class Renderer<B extends Box> {
 		boxes: B[];
 		glCanvas: HTMLCanvasElement;
 		textCanvas: HTMLCanvasElement;
+		width: number;
+		height: number;
 	}) {
 		this.textColor = resolveColor(textColor);
 		this.textColor2 = resolveColor(textColor2);
 
+		textCanvas.width = width;
+		textCanvas.height = height;
+		glCanvas.width = width;
+		glCanvas.height = height;
+
 		this.ctx = must(textCanvas.getContext('2d'), 'get 2D context');
-		this.ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-		this.ctx.font = '12px monospace';
-		this.ctx.textBaseline = 'middle';
 
 		this.gl = must(glCanvas.getContext('webgl2'), 'get WebGL context');
 		this.program = compileProgram(this.gl, vertexShaderSource, fragmentShaderSource);
@@ -206,7 +200,7 @@ class Renderer<B extends Box> {
 		this.boxes = boxes;
 		this.focusColor = focusColor;
 		this.primaryColor = primaryColor;
-		this.redraw();
+		this.redraw({ width, height });
 	}
 
 	boxAt(cx: number, cy: number) {
@@ -308,8 +302,20 @@ class Renderer<B extends Box> {
 		return { x1, x2, y1, y2 };
 	}
 
-	redraw() {
+	redraw(size?: { width: number; height: number }) {
 		const { gl, ctx } = this;
+		if (size) {
+			ctx.canvas.width = size.width;
+			ctx.canvas.height = size.height;
+			ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+			ctx.font = '12px monospace';
+			ctx.textBaseline = 'middle';
+
+			gl.viewport(0, 0, size.width, size.height);
+			gl.canvas.width = size.width;
+			gl.canvas.height = size.height;
+		}
+
 		gl.clear(gl.COLOR_BUFFER_BIT);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
