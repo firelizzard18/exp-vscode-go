@@ -384,12 +384,14 @@ export function createElement<P = never, C extends Array<any> = never>(
 	props: P,
 	...children: C
 ) {
+	children = children.flat() as C;
 	if (typeof tag !== 'string') {
 		return new tag(props, children);
 	}
 
 	const el = document.createElement(tag);
 	Object.assign(el, props);
+
 	return {
 		el,
 		render() {

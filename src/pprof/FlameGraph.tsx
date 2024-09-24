@@ -25,10 +25,22 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	let i = profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
 	if (i < 0) i = profile.SampleType.findIndex((x) => x.Type === 'cpu');
 	if (i < 0) i = 0;
-	const typ = profile.SampleType[i];
-	const total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
+	let typ = profile.SampleType[i];
+	let total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
 	const costOf = (box: BoxPlus) => box.calls?.reduce((sum, x) => sum + x.sample.Value[i], 0) ?? 0;
 
+	const initialBoxes = [...graph.down(i)];
+	let focused = initialBoxes.find((x) => !x.func)!;
+
+	const selectSample = (
+		<select onchange={() => changeSample()}>
+			{profile.SampleType.map((x, j) => (
+				<option value={`${j}`} selected={i === j}>
+					{x.Type}
+				</option>
+			))}
+		</select>
+	) as JSX.HTMLRenderable<HTMLSelectElement>;
 	const centerLabel = (<span>{amountFor(typ, total, total)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const elem = (
@@ -37,11 +49,18 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			primaryColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
 			textColor2="--vscode-editor-foreground"
-			boxes={[...graph.down(i)]}
+			boxes={initialBoxes}
 			onHovered={(x) => ((elem.hovered = x), hover(x))}
 			onFocused={(x) => focus(x)}
 		/>
 	) as Boxes<BoxPlus>;
+
+	const changeSample = () => {
+		i = selectSample.el.selectedIndex;
+		typ = profile.SampleType[i];
+		total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
+		focus(focused);
+	};
 
 	const hover = (box?: BoxPlus) => {
 		if (box) rightLabel.el.innerText = amountFor(typ, costOf(box), total);
@@ -51,6 +70,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	const focus = (box?: BoxPlus) => {
 		if (!box) return;
 
+		focused = box;
 		if (box.func) {
 			centerLabel.el.innerHTML = '&nbsp;';
 			elem.boxes = [
@@ -75,7 +95,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	return (
 		<div className="flame-graph">
 			<div className="header">
-				<span className="left" />
+				<span className="left">{selectSample}</span>
 				<span className="center">{centerLabel}</span>
 				<span className="right">{rightLabel}</span>
 			</div>
@@ -88,11 +108,11 @@ interface Unit {
 	powers: string[];
 	divisor: number;
 	threshold: number;
-	precision: number;
+	precision?: number;
 }
 
 const Units: Record<string, Unit> = {
-	count: { powers: [''], divisor: 1, threshold: 1, precision: 1000 },
+	count: { powers: [''], divisor: 1, threshold: Infinity },
 	bytes: { powers: ['B', 'kiB', 'MiB', 'GiB', 'TiB'], divisor: 1024, threshold: 100, precision: 2 },
 	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, threshold: 1000, precision: 3 },
 };

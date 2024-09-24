@@ -1,7 +1,4 @@
-body {
-	margin: 0;
-	padding: 0;
-}
+/* ********** Application-specific styling ********** */
 
 .flame-graph {
 	display: flex;
@@ -17,6 +14,12 @@ body {
 
 .flame-graph .header span {
 	flex: 1;
+}
+
+.flame-graph .header .center,
+.flame-graph .header .right {
+	display: flex;
+	align-items: center;
 }
 
 .flame-graph .header .center {
@@ -43,4 +46,35 @@ body {
 	left: 0;
     display: block; /* https://stackoverflow.com/a/36975280 */
 	pointer-events: none;
+}
+
+/* ********** General styling ********** */
+
+body {
+	margin: 0;
+	padding: 0;
+}
+
+select {
+    border-color: var(--vscode-dropdown-border);
+    border: none;
+    cursor: pointer;
+    line-height: inherit;
+    margin-top: 0;
+    min-height: 20px;
+    min-width: 90px;
+}
+
+select:focus {
+	opacity: 1;
+    outline-color: var(--vscode-focusBorder);
+    outline-offset: -1px;
+    outline-style: solid;
+    outline-width: 1px;
+}
+
+select, option {
+    background-color: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+	padding: 0 22px 0 6px;
 }
