@@ -27,7 +27,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	if (i < 0) i = 0;
 	const typ = profile.SampleType[i];
 	const total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
-	const costOf = (box: BoxPlus) => box.calls.reduce((sum, x) => sum + x.sample.Value[i], 0);
+	const costOf = (box: BoxPlus) => box.calls?.reduce((sum, x) => sum + x.sample.Value[i], 0) ?? 0;
 
 	const centerLabel = (<span>{amountFor(typ, total, total)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
