@@ -5,7 +5,7 @@ import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
-import { ProfileDocument, ProfileEditorProvider } from './profile';
+import { ProfileEditorProvider } from './profile';
 import { Browser } from '../browser';
 
 export async function registerProfileEditor(ctx: ExtensionContext, go: GoExtensionAPI) {
@@ -62,9 +62,6 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	// [Command] Run Test, Debug Test
 	command('goExp.test.run', (item: TestItem) => manager.enabled && manager.runTest(item));
 	command('goExp.test.debug', (item: TestItem) => manager.enabled && manager.debugTest(item));
-
-	// [Command] Open profile
-	command('goExp.openProfile', async (path: string) => await ProfileDocument.open(ctx, go, path));
 
 	// [Command] Browser navigation
 	command('goExp.browser.back', () => Browser.active?.back());

@@ -2,7 +2,6 @@ import vscode from 'vscode';
 import { registerProfileEditor, registerTestController } from './test/register';
 import { cleanupTempDir } from './utils/util';
 import { GoExtensionAPI } from './vscode-go';
-import { UriHandler } from './urlHandler';
 
 export async function activate(ctx: vscode.ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -14,8 +13,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
 	const go = await goExt.activate();
 	await registerTestController(ctx, go);
 	await registerProfileEditor(ctx, go);
-
-	ctx.subscriptions.push(vscode.window.registerUriHandler(new UriHandler()));
 }
 
 export function deactivate() {

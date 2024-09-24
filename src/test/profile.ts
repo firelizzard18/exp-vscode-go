@@ -180,7 +180,7 @@ export class CapturedProfile implements GoTestItem {
 	}
 }
 
-export class ProfileDocument {
+class OldDoc {
 	static async open(ext: ExtensionContext, go: GoExtensionAPI, path: string): Promise<void> {
 		const r = await this.#open(go, path);
 		const base = Uri.parse(`http://localhost:${r.port}/ui`);
@@ -260,7 +260,7 @@ export class ProfileDocument {
 	}
 }
 
-export class ProfileDocument2 {
+class ProfileDocument {
 	readonly uri: Uri;
 
 	constructor(uri: Uri) {
@@ -270,7 +270,7 @@ export class ProfileDocument2 {
 	dispose() {}
 }
 
-export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument2> {
+export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
 	readonly #ext: ExtensionContext;
 	readonly #go: GoExtensionAPI;
 
@@ -279,15 +279,11 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 		this.#go = go;
 	}
 
-	openCustomDocument(uri: Uri, context: CustomDocumentOpenContext, token: CancellationToken): ProfileDocument2 {
-		return new ProfileDocument2(uri);
+	openCustomDocument(uri: Uri, context: CustomDocumentOpenContext, token: CancellationToken): ProfileDocument {
+		return new ProfileDocument(uri);
 	}
 
-	async resolveCustomEditor(
-		document: ProfileDocument2,
-		panel: WebviewPanel,
-		token: CancellationToken,
-	): Promise<void> {
+	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken): Promise<void> {
 		const { binPath } = this.#go.settings.getExecutionCommand('vscgo') || {};
 		if (!binPath) {
 			throw new Error('Cannot locate vscgo');

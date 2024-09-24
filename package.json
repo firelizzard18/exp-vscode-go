@@ -141,11 +141,6 @@
         "category": "Test"
       },
       {
-        "command": "goExp.openProfile",
-        "title": "Go: Open profile",
-        "description": "Open a pprof file"
-      },
-      {
         "command": "goExp.browser.back",
         "title": "Back",
         "icon": "$(arrow-left)"
@@ -173,10 +168,6 @@
         },
         {
           "command": "goExp.test.debug",
-          "when": "false"
-        },
-        {
-          "command": "goExp.openProfile",
           "when": "false"
         },
         {
