@@ -64,7 +64,7 @@ export class Boxes<B extends Box = Box> {
 			if (!this.#renderer) {
 				this.#renderer = new Renderer({ ...this.props, glCanvas, textCanvas, width, height });
 			} else {
-				this.#renderer.redraw({ width, height });
+				this.#renderer.draw(this.props.boxes, { width, height });
 			}
 		};
 
@@ -90,15 +90,16 @@ export class Boxes<B extends Box = Box> {
 		if (!this.#el) return { width: 0, height: 0 };
 
 		// Remove <canvas> children
-		const children = Array.from(this.#el.el.children).filter((x) => x instanceof HTMLCanvasElement);
+		const children = Array.from(this.#el.el.children);
 		children.forEach((x) => x.remove());
 
 		// Resize the spacer
 		const minLevel = Math.min(...this.props.boxes.map((b) => b.level));
 		const maxLevel = Math.max(...this.props.boxes.map((b) => b.level));
-		this.#el.el.childNodes.forEach((x) => {
+		children.forEach((x) => {
 			if (x instanceof HTMLElement && x.classList.contains('spacer')) {
 				x.style.height = `${(maxLevel - minLevel + 1) * boxHeight}px`;
+				this.#el?.el.appendChild(x);
 			}
 		});
 
@@ -120,18 +121,17 @@ export class Boxes<B extends Box = Box> {
 
 	set hovered(box: B | null | undefined) {
 		this.#renderer && (this.#renderer.hovered = box);
-		this.#update(() => this.#renderer?.redraw());
+		this.#update(() => this.#renderer?.draw());
 	}
 
 	set focused(box: B | null | undefined) {
 		this.#renderer && (this.#renderer.focused = box);
-		this.#update(() => this.#renderer?.redraw());
+		this.#update(() => this.#renderer?.draw());
 	}
 
 	set boxes(boxes: B[]) {
 		this.props.boxes = boxes;
-		this.#renderer && (this.#renderer.boxes = boxes);
-		this.#update(() => this.#renderer?.redraw(this.#size()));
+		this.#update(() => this.#renderer?.draw(boxes, this.#size()));
 	}
 
 	#lastUpdate?: number;
@@ -220,22 +220,10 @@ class Renderer<B extends Box> {
 		this.gl.clearColor(0, 0, 0, 0);
 		this.gl.useProgram(this.program);
 
-		const projectionMatrix = mat4.create();
-		mat4.ortho(projectionMatrix, 0, this.gl.canvas.width, this.gl.canvas.height, 0, -1, 1);
-		this.gl.uniformMatrix4fv(this.location.projection, false, projectionMatrix);
-
 		// Initialize
-		this.boxes = boxes;
 		this.focusColor = focusColor;
 		this.primaryColor = primaryColor;
-		this.redraw({ width, height });
-	}
-
-	boxAt(cx: number, cy: number) {
-		// -1 makes the transition between boxes smoother
-		const x = (cx * devicePixelRatio - 1) / this.gl.canvas.width;
-		const y = Math.floor((cy - 1) / boxHeight);
-		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y + this.#minLevel);
+		this.draw(boxes, { width, height });
 	}
 
 	set hovered(hovered: B | null | undefined) {
@@ -258,15 +246,72 @@ class Renderer<B extends Box> {
 		this.gl.uniform4f(this.location.primaryColor, hsv[0] / 360, hsv[1], hsv[2], parsed.alpha());
 	}
 
-	#boxes: B[] = [];
+	boxAt(cx: number, cy: number) {
+		// -1 makes the transition between boxes smoother
+		const x = (cx * devicePixelRatio - 1) / this.gl.canvas.width;
+		const y = Math.floor((cy - 1) / boxHeight);
+		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y + this.#minLevel);
+	}
+
+	#boxPos(box: B) {
+		const width = this.gl.canvas.width;
+		const level = box.level - this.#minLevel;
+		const x1 = Math.ceil(box.x1 * width) + 1;
+		const x2 = Math.ceil(box.x2 * width) - 1;
+		const y1 = Math.ceil(level * boxHeight * devicePixelRatio) + 1;
+		const y2 = Math.ceil((level + 1) * boxHeight * devicePixelRatio) - 1;
+		return { x1, x2, y1, y2 };
+	}
+
 	#minLevel = 0;
-	set boxes(boxes: B[]) {
-		this.#boxes = boxes;
-		this.#minLevel = Math.min(...boxes.map((b) => b.level));
-		this.hovered = null;
-		this.focused = null;
+	#boxes: B[] = [];
+	draw(boxes?: B[], size?: { width: number; height: number }) {
+		if (size) {
+			this.#setSize(size);
+		}
+
+		if (boxes && boxes !== this.#boxes) {
+			this.#boxes = boxes;
+			this.#minLevel = Math.min(...boxes.map((b) => b.level));
+			this.hovered = null;
+			this.focused = null;
+
+			this.#drawBoxes(boxes);
+			this.#drawLabels(boxes);
+		}
 
 		const { gl } = this;
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
+		gl.enableVertexAttribArray(this.location.boxes);
+		gl.drawElements(gl.TRIANGLES, this.#boxes.length * 2 * 3, gl.UNSIGNED_SHORT, 0);
+	}
+
+	#setSize(size: { width: number; height: number }) {
+		const { gl, ctx } = this;
+		ctx.canvas.width = size.width;
+		ctx.canvas.height = size.height;
+		ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+		ctx.font = '12px monospace';
+		ctx.textBaseline = 'middle';
+
+		gl.viewport(0, 0, size.width, size.height);
+		gl.canvas.width = size.width;
+		gl.canvas.height = size.height;
+		const projectionMatrix = mat4.create();
+		mat4.ortho(projectionMatrix, 0, size.width, size.height, 0, -1, 1);
+		gl.uniformMatrix4fv(this.location.projection, false, projectionMatrix);
+
+		ctx.canvas.style.width = `${size.width / devicePixelRatio}px`;
+		ctx.canvas.style.height = `${size.height / devicePixelRatio}px`;
+		(gl.canvas as HTMLCanvasElement).style.width = `${size.width / devicePixelRatio}px`;
+		(gl.canvas as HTMLCanvasElement).style.height = `${size.height / devicePixelRatio}px`;
+	}
+
+	#drawBoxes(boxes: B[]) {
+		// This doesn't actually _draw_ the boxes, it recalculates their sizes,
+		// but it reads better this way
 
 		const vertices = new Float32Array(
 			boxes.flatMap((box) => {
@@ -313,6 +358,7 @@ class Renderer<B extends Box> {
 			]),
 		);
 
+		const { gl } = this;
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
 		gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
@@ -320,43 +366,10 @@ class Renderer<B extends Box> {
 		gl.vertexAttribPointer(this.location.boxes, 4, gl.FLOAT, false, 0, 0);
 	}
 
-	#boxPos(box: B) {
-		const width = this.gl.canvas.width;
-		const level = box.level - this.#minLevel;
-		const x1 = Math.ceil(box.x1 * width) + 1;
-		const x2 = Math.ceil(box.x2 * width) - 1;
-		const y1 = Math.ceil(level * boxHeight * devicePixelRatio + 1);
-		const y2 = Math.ceil((level + 1) * boxHeight * devicePixelRatio - 1);
-		return { x1, x2, y1, y2 };
-	}
-
-	redraw(size?: { width: number; height: number }) {
-		const { gl, ctx } = this;
-		if (size) {
-			ctx.canvas.width = size.width;
-			ctx.canvas.height = size.height;
-			ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-			ctx.font = '12px monospace';
-			ctx.textBaseline = 'middle';
-
-			gl.viewport(0, 0, size.width, size.height);
-			gl.canvas.width = size.width;
-			gl.canvas.height = size.height;
-
-			ctx.canvas.style.width = `${size.width / devicePixelRatio}px`;
-			ctx.canvas.style.height = `${size.height / devicePixelRatio}px`;
-			(gl.canvas as HTMLCanvasElement).style.width = `${size.width / devicePixelRatio}px`;
-			(gl.canvas as HTMLCanvasElement).style.height = `${size.height / devicePixelRatio}px`;
-		}
-
-		gl.clear(gl.COLOR_BUFFER_BIT);
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
-		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
-		gl.enableVertexAttribArray(this.location.boxes);
-		gl.drawElements(gl.TRIANGLES, this.#boxes.length * 2 * 3, gl.UNSIGNED_SHORT, 0);
-
+	#drawLabels(boxes: B[]) {
+		const { ctx } = this;
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-		this.#boxes.forEach((box) => {
+		boxes.forEach((box) => {
 			let label = box.label;
 			const { x1, x2, y1, y2 } = this.#boxPos(box);
 			const y = (y1 + y2) / 2 / devicePixelRatio;
