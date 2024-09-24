@@ -23,6 +23,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	}
 
 	let i = profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
+	if (i < 0) i = profile.SampleType.findIndex((x) => x.Type === 'cpu');
 	if (i < 0) i = 0;
 	const typ = profile.SampleType[i];
 	const total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
@@ -83,27 +84,28 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	);
 }
 
-function amountFor(typ: ValueType, cost: number, total: number) {
-	const percent = (cost / total) * 100;
-	if (typ.Unit === 'count') return `${cost} (${percent.toFixed(0)}%)`;
-
-	let costValue = cost;
-	let power = 0;
-	while (costValue > 100 && power < 4) power++, (costValue /= 1024);
-	return `${costValue.toPrecision(2)} ${suffixFor(typ, power)} (${percent.toFixed(0)}%)`;
+interface Unit {
+	powers: string[];
+	divisor: number;
+	threshold: number;
+	precision: number;
 }
 
-function suffixFor(typ: ValueType, power: number) {
-	switch (typ.Unit) {
-		case 'bytes':
-			if (power === 0) return 'B';
-			if (power === 1) return 'kiB';
-			if (power === 2) return 'MiB';
-			if (power === 3) return 'GiB';
-			if (power === 4) return 'TiB';
-			break;
-	}
-	throw new Error(`Unsupported unit ${typ.Unit} or power ${power}`);
+const Units: Record<string, Unit> = {
+	count: { powers: [''], divisor: 1, threshold: 1, precision: 1000 },
+	bytes: { powers: ['B', 'kiB', 'MiB', 'GiB', 'TiB'], divisor: 1024, threshold: 100, precision: 2 },
+	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, threshold: 1000, precision: 3 },
+};
+
+function amountFor(typ: ValueType, cost: number, total: number) {
+	if (!(typ.Unit in Units)) throw new Error(`Unsupported unit ${typ.Unit}`);
+	let value = cost;
+	let power = 0;
+	const { powers, divisor, threshold, precision } = Units[typ.Unit];
+	while (value > threshold && power < powers.length) power++, (value /= divisor);
+
+	const percent = (cost / total) * 100;
+	return `${value.toPrecision(precision)} ${powers[power]} (${percent.toFixed(0)}%)`;
 }
 
 interface Call {
