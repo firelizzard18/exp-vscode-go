@@ -13,7 +13,7 @@ import type {
 	TestRunProfileKind,
 	TestRunRequest,
 	TestTag,
-	WorkspaceFolder
+	WorkspaceFolder,
 } from 'vscode';
 import { Uri } from 'vscode';
 import { Commands, ConfigValue, Context, TestController, Workspace, FileSystem } from '../../../src/test/testing';
@@ -60,7 +60,7 @@ export class TestHost implements Context {
 		this.manager.setup({
 			createTestController: () => this.controller,
 			registerCodeLensProvider: () => ({ dispose: () => {} }),
-			showQuickPick: () => Promise.resolve(undefined)
+			showQuickPick: () => Promise.resolve(undefined),
 		});
 	}
 }
@@ -72,7 +72,7 @@ export function withWorkspace(name: string, uri: string): HostConfig {
 		host.workspace.workspaceFolders.push({
 			name,
 			uri: Uri.parse(uri),
-			index: host.workspace.workspaceFolders.length
+			index: host.workspace.workspaceFolders.length,
 		});
 }
 
@@ -91,7 +91,7 @@ class TestCommands implements Commands {
 		// Assume that gopls is in ~/go/bin and has test support
 		const r = cp.spawnSync(path.join(os.homedir(), 'go', 'bin', 'gopls'), ['execute', cmd, JSON.stringify(args)], {
 			encoding: 'utf-8',
-			cwd: this.#host.dir
+			cwd: this.#host.dir,
 		});
 		if (r.error) throw new Error('gopls error', { cause: r.error });
 		const x = JSON.parse(r.stdout);
@@ -116,7 +116,7 @@ class TestWorkspace implements Workspace {
 		showFiles: config['goExp.testExplorer.showFiles'].default,
 		nestPackages: config['goExp.testExplorer.nestPackages'].default,
 		nestSubtests: config['goExp.testExplorer.nestSubtests'].default,
-		runPackageBenchmarks: config['goExp.testExplorer.runPackageBenchmarks'].default
+		runPackageBenchmarks: config['goExp.testExplorer.runPackageBenchmarks'].default,
 	};
 
 	readonly fs = new MockFileSystem();
@@ -127,7 +127,7 @@ class TestWorkspace implements Workspace {
 
 	getWorkspaceFolder(uri: Uri): WorkspaceFolder | undefined {
 		return this.workspaceFolders.find(
-			(ws) => ws.uri.fsPath === uri.fsPath || uri.fsPath.startsWith(`${ws.uri.fsPath}/`)
+			(ws) => ws.uri.fsPath === uri.fsPath || uri.fsPath.startsWith(`${ws.uri.fsPath}/`),
 		);
 	}
 
@@ -142,7 +142,7 @@ class TestWorkspace implements Workspace {
 					return;
 				}
 				return this.config[section.substring(prefix.length) as keyof Configuration] as T;
-			}
+			},
 		};
 	}
 }
@@ -164,7 +164,7 @@ class TestGoExtensionAPI implements GoExtensionAPI {
 				return;
 			}
 			return { binPath: 'go' };
-		}
+		},
 	};
 }
 
@@ -218,7 +218,7 @@ export class MockTestController implements TestController {
 		kind: TestRunProfileKind,
 		runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
 		isDefault?: boolean,
-		tag?: TestTag
+		tag?: TestTag,
 	): TestRunProfile {
 		return new MockTestRunProfile(label, kind, runHandler, isDefault, tag);
 	}
@@ -247,7 +247,7 @@ class MockTestRunProfile implements TestRunProfile {
 		kind: TestRunProfileKind,
 		runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
 		isDefault?: boolean,
-		tag?: TestTag
+		tag?: TestTag,
 	) {
 		this.label = label;
 		this.kind = kind;
@@ -286,7 +286,7 @@ class MapTestItemCollection implements TestItemCollection {
 		return this.#items.size;
 	}
 
-	async replace(items: readonly TestItem[]): Promise<void> {
+	replace(items: readonly TestItem[]) {
 		this.#items = new Map(items.map((x) => [x.id, x]));
 	}
 
@@ -294,7 +294,7 @@ class MapTestItemCollection implements TestItemCollection {
 		this.#items.forEach((item) => callback.call(thisArg, item, this));
 	}
 
-	async add(item: TestItem): Promise<void> {
+	add(item: TestItem) {
 		this.#items.set(item.id, item);
 	}
 

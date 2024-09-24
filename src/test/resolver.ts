@@ -100,7 +100,7 @@ export class TestResolver {
 		item.tags = tags;
 
 		if (add) {
-			await children.add(item);
+			children.add(item);
 		}
 
 		// Automatically resolve files and tests since once we have the package
@@ -140,7 +140,8 @@ export class TestResolver {
 	 */
 	async reloadView() {
 		const goRoots = await this.#goRoots.getChildren();
-		await this.#ctrl.items.replace(
+		this.#ctrl.items.replace([]); // force reload
+		this.#ctrl.items.replace(
 			await Promise.all(goRoots.map(async (x) => this.#createOrUpdate(x, this.#ctrl.items))),
 		);
 
@@ -166,7 +167,7 @@ export class TestResolver {
 				return;
 			}
 
-			await container.replace(await Promise.all(children.map(async (x) => this.#createOrUpdate(x, container))));
+			container.replace(await Promise.all(children.map(async (x) => this.#createOrUpdate(x, container))));
 		} finally {
 			item.busy = false;
 

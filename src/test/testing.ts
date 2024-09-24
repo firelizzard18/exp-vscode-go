@@ -19,11 +19,6 @@ declare module 'vscode' {
 	export interface EventEmitter<T> {
 		fire(data: T): void | Promise<void>;
 	}
-
-	export interface TestItemCollection {
-		replace(items: readonly TestItem[]): Promise<void>;
-		add(item: TestItem): Promise<void>;
-	}
 }
 
 export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
