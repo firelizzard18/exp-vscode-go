@@ -3,96 +3,32 @@ import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
 
 export function FlameGraph({ profile }: { profile: Profile }) {
-	let i = profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
-	if (i < 0) i = 0;
-
+	const graph = new CallGraph();
 	const functions = new Map((profile.Function || []).map((f) => [f.ID, f]));
 	const location = new Map((profile.Location || []).map((l) => [l.ID, l]));
+	for (const sample of profile.Sample || []) {
+		const funcs = sample.Location.slice()
+			.reverse()
+			.flatMap((l) => location.get(l)!.Line.slice().reverse())
+			.map((l) => functions.get(l.Function)!);
 
-	const addTree = (sample: Sample, level: number, parent: Node, funcs?: Func[]) => {
-		if (!funcs) {
-			funcs = sample.Location.slice()
-				.reverse()
-				.flatMap((l) => location.get(l)!.Line.slice().reverse())
-				.map((l) => functions.get(l.Function)!);
-		}
+		let last: Func | undefined;
+		funcs.forEach((func, depth) => {
+			const call: Call = { callee: func, sample, depth };
+			if (last) call.caller = last;
+			last = func;
+			graph.add(call);
+		});
+		graph.add({ caller: last, sample, depth: funcs.length });
+	}
 
-		const v = sample.Value[i];
-		parent.cost += v;
-		if (level >= funcs.length) {
-			parent.children.push(v);
-			return;
-		}
+	let i = profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
+	if (i < 0) i = 0;
+	const typ = profile.SampleType[i];
+	const total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
+	const costOf = (box: BoxPlus) => box.calls.reduce((sum, x) => sum + x.sample.Value[i], 0);
 
-		const func = funcs[level];
-		let node = parent.children.filter((n) => typeof n === 'object').find((n) => n.func === func);
-		if (!node) {
-			node = { func, cost: 0, parents: [], children: [] };
-			parent.children.push(node);
-		}
-
-		if (!node.parents.includes(parent)) {
-			node.parents.push(parent);
-		}
-
-		addTree(sample, level + 1, node);
-	};
-
-	const groups = new Map<string, number>();
-	const group = (node: Node) => {
-		if (!node.func) return 0;
-
-		let g = groups.get(node.func.Filename);
-		if (g !== undefined) return g;
-
-		g = groups.size + 1;
-		groups.set(node.func.Filename, g);
-		return g;
-	};
-
-	let boxes: Box[] = [];
-	const nodeForBox = new Map<Box, Node>();
-	const addBox = (node: Node, level: number, x1: number, x2: number) => {
-		const box: Box = {
-			label: node.func ? labelFor(node.func) : 'root',
-			x1,
-			x2,
-			level,
-			group: group(node),
-			id: node.func?.ID ?? 0,
-		};
-		boxes.push(box);
-		nodeForBox.set(box, node);
-	};
-	const addBoxesUp = (node: Node, level: number, x1: number, x2: number) => {
-		if (node.parents.length === 0) {
-			return;
-		}
-		const parent = node.parents[0];
-		addBoxesUp(parent, level - 1, x1, x2);
-		addBox(parent, level, x1, x2);
-	};
-	const addBoxesDown = (node: Node, level: number, x1: number, x2: number) => {
-		addBox(node, level, x1, x2);
-
-		let cost = 0;
-		const w = x2 - x1;
-		for (const child of node.children) {
-			if (typeof child === 'number') {
-				cost += child;
-				continue;
-			}
-			const c1 = cost / node.cost;
-			cost += child.cost;
-			const c2 = cost / node.cost;
-			addBoxesDown(child, level + 1, x1 + c1 * w, x1 + c2 * w);
-		}
-	};
-
-	const tree: Node = { cost: 0, parents: [], children: [] };
-	profile.Sample?.forEach((s) => addTree(s, 0, tree));
-
-	const centerLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
+	const centerLabel = (<span>{amountFor(typ, total, total)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const elem = (
 		<Boxes
@@ -100,40 +36,40 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			primaryColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
 			textColor2="--vscode-editor-foreground"
-			boxes={boxes}
-			onHovered={(x) => ((elem.hovered = x), hover(x && nodeForBox.get(x)))}
-			onFocused={(x) => focus(x && nodeForBox.get(x))}
+			boxes={[...graph.down(i)]}
+			onHovered={(x) => ((elem.hovered = x), hover(x))}
+			onFocused={(x) => focus(x)}
 		/>
-	) as Boxes;
+	) as Boxes<BoxPlus>;
 
-	const hover = (node?: Node) => {
-		if (node) rightLabel.el.innerText = amountFor(profile.SampleType[i], node, tree);
+	const hover = (box?: BoxPlus) => {
+		if (box) rightLabel.el.innerText = amountFor(typ, costOf(box), total);
 		else rightLabel.el.innerHTML = '&nbsp;';
 	};
 
-	const focus = (node?: Node) => {
-		if (!node) return;
-		boxes = [];
-		nodeForBox.clear();
-		if (node === tree) {
-			centerLabel.el.innerText = amountFor(profile.SampleType[i], tree, tree);
-		} else {
+	const focus = (box?: BoxPlus) => {
+		if (!box) return;
+
+		if (box.func) {
 			centerLabel.el.innerHTML = '&nbsp;';
-			addBoxesUp(node, -1, 0, 1);
-			boxes.push({
-				label: amountFor(profile.SampleType[i], node, tree),
-				x1: 0,
-				x2: 1,
-				level: 0,
-				group: -1,
-				id: -1,
-				alignLabel: 'center',
-			});
+			elem.boxes = [
+				...graph.up(i, box.func),
+				{
+					label: amountFor(typ, costOf(box), total),
+					x1: 0,
+					x2: 1,
+					level: 0,
+					group: -1,
+					id: -1,
+					alignLabel: 'center',
+				} as BoxPlus,
+				...graph.down(i, box.func),
+			];
+		} else {
+			centerLabel.el.innerText = amountFor(typ, total, total);
+			elem.boxes = [...graph.down(i, box.func)];
 		}
-		addBoxesDown(node, 1, 0, 1);
-		elem.boxes = boxes;
 	};
-	focus(tree);
 
 	return (
 		<div className="flame-graph">
@@ -147,32 +83,14 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	);
 }
 
-interface Node {
-	func?: Func;
-	cost: number;
-	parents: Node[];
-	children: (Node | number)[];
-}
+function amountFor(typ: ValueType, cost: number, total: number) {
+	const percent = (cost / total) * 100;
+	if (typ.Unit === 'count') return `${cost} (${percent.toFixed(0)}%)`;
 
-function labelFor(func: Func) {
-	let label = func.Name;
-
-	// Trim the domain, e.g. github.com/, gitlab.com/, etc
-	let i = label.indexOf('/');
-	label = label.substring(i + 1);
-
-	i = label.substring(0, label.indexOf('.')).lastIndexOf('/');
-	return label.substring(i + 1);
-}
-
-function amountFor(typ: ValueType, node: Node, root: Node) {
-	const percent = (node.cost / root.cost) * 100;
-	if (typ.Unit === 'count') return `${node.cost} (${percent.toFixed(0)}%)`;
-
-	let { cost } = node;
+	let costValue = cost;
 	let power = 0;
-	while (cost > 100 && power < 4) power++, (cost /= 1024);
-	return `${cost.toPrecision(2)} ${suffixFor(typ, power)} (${percent.toFixed(0)}%)`;
+	while (costValue > 100 && power < 4) power++, (costValue /= 1024);
+	return `${costValue.toPrecision(2)} ${suffixFor(typ, power)} (${percent.toFixed(0)}%)`;
 }
 
 function suffixFor(typ: ValueType, power: number) {
@@ -186,4 +104,165 @@ function suffixFor(typ: ValueType, power: number) {
 			break;
 	}
 	throw new Error(`Unsupported unit ${typ.Unit} or power ${power}`);
+}
+
+interface Call {
+	caller?: Func;
+	callee?: Func;
+	depth: number;
+	sample: Sample;
+}
+
+interface BoxPlus extends Box {
+	func?: Func;
+	calls: Call[];
+	cost: number;
+}
+
+class CallGraph {
+	readonly #calls = new Map<Func | undefined, { to: Call[]; from: Call[] }>();
+	readonly #groups = new Map<string, number>();
+
+	readonly to = (func: Func) => this.#for(func).to;
+	readonly from = (func: Func) => this.#for(func).from;
+	readonly entries = () => this.#for().from;
+	readonly exits = () => this.#for().to;
+
+	add(call: Call) {
+		this.#for(call.caller).from.push(call);
+		this.#for(call.callee).to.push(call);
+
+		for (const func of [call.caller, call.callee]) {
+			if (func && !this.#groups.has(func.Filename)) {
+				this.#groups.set(func.Filename, this.#groups.size + 1);
+			}
+		}
+	}
+
+	#for(func?: Func) {
+		if (!this.#calls.has(func)) {
+			this.#calls.set(func, { to: [], from: [] });
+		}
+		return this.#calls.get(func)!;
+	}
+
+	*down(value: number, func?: Func): Generator<BoxPlus> {
+		const previous = func ? this.#firstCall(func, +1) : null;
+		for (const x of this.#walk(value, func, 1, 0, 1, previous, +1)) {
+			yield {
+				...x,
+				label: labelFor(x.func),
+				group: !x.func ? 0 : this.#groups.get(x.func.Filename)!,
+				id: !x.func ? 0 : x.func.ID,
+			};
+		}
+	}
+
+	*up(value: number, func: Func): Generator<BoxPlus> {
+		const previous = func ? this.#firstCall(func, -1) : null;
+		let first = true;
+		for (const x of this.#walk(value, func, 0, 0, 1, previous, -1)) {
+			if (first) {
+				// Skip the first entry
+				first = false;
+			} else {
+				yield {
+					...x,
+					label: labelFor(x.func),
+					group: !x.func ? 0 : this.#groups.get(x.func.Filename)!,
+					id: !x.func ? 0 : x.func.ID,
+				};
+			}
+		}
+	}
+
+	#firstCall(func: Func, dir: 1 | -1) {
+		// Get *non-recursive* calls to func. That is, if a sample has multiple
+		// calls to func (e.g. recursion), only include the topmost.
+		const calls = dir > 0 ? this.to(func) : this.from(func);
+		return calls.filter((x) => !calls.some((y) => x.depth > y.depth && x.sample === y.sample));
+	}
+
+	*#walk(
+		value: number,
+		func: Func | undefined,
+		level: number,
+		x1: number,
+		x2: number,
+		previous: Call[] | null,
+		dir: 1 | -1,
+	): Generator<{
+		x1: number;
+		x2: number;
+		level: number;
+		func?: Func;
+		calls: Call[];
+		cost: number;
+	}> {
+		let calls = !func ? this.entries() : dir > 0 ? this.from(func) : this.to(func);
+		if (previous) {
+			calls = calls.filter(({ sample: s1, depth: d1 }) =>
+				previous.some(({ sample: s2, depth: d2 }) => s1 === s2 && d1 === d2 + dir),
+			);
+		}
+
+		const cost = calls.reduce((sum, call) => sum + call.sample.Value[value], 0);
+		yield {
+			x1,
+			x2,
+			level,
+			func,
+			calls,
+			cost,
+		};
+
+		let runningCost = 0;
+		const w = x2 - x1;
+		for (const [func, calls2] of groupBy(calls, dir > 0 ? (x) => x.callee : (x) => x.caller)) {
+			const c1 = runningCost / cost;
+			calls2.forEach((x) => (runningCost += x.sample.Value[value]));
+			const c2 = runningCost / cost;
+			if (func) {
+				yield* this.#walk(value, func, level + dir, x1 + c1 * w, x1 + c2 * w, calls2, dir);
+			} else if (dir < 0) {
+				yield {
+					x1: x1 + c1 * w,
+					x2: x1 + c2 * w,
+					level: level + dir,
+					calls: calls2,
+					cost: runningCost,
+				};
+			}
+		}
+	}
+}
+
+function labelFor(func?: Func) {
+	if (!func) {
+		return 'root';
+	}
+
+	let label = func.Name;
+
+	// Remove generic parameters
+	label = label.replace(/\[.*\]/, '');
+
+	// Trim the domain, e.g. github.com/, gitlab.com/, etc
+	let i = label.indexOf('/');
+	label = label.substring(i + 1);
+
+	i = label.substring(0, label.indexOf('.')).lastIndexOf('/');
+	return label.substring(i + 1);
+}
+
+function groupBy<V, K>(items: V[], key: (item: V) => K): Map<K, V[]> {
+	const groups = new Map<K, V[]>();
+	for (const item of items) {
+		const k = key(item);
+		if (!groups.has(k)) {
+			groups.set(k, []);
+		}
+		groups.get(k)!.push(item);
+	}
+	return groups;
 }

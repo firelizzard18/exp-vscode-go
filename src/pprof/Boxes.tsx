@@ -43,8 +43,8 @@ const must = function <T>(value: T | null | undefined | (() => T | null | undefi
 	return value;
 };
 
-export class Boxes {
-	#renderer?: Renderer;
+export class Boxes<B extends Box = Box> {
+	#renderer?: Renderer<B>;
 
 	constructor(
 		private readonly props: {
@@ -52,9 +52,9 @@ export class Boxes {
 			primaryColor: string;
 			textColor: string;
 			textColor2: string;
-			boxes: Box[];
-			onHovered?: (box?: Box) => void;
-			onFocused?: (box?: Box) => void;
+			boxes: B[];
+			onHovered?: (box?: B) => void;
+			onFocused?: (box?: B) => void;
 		},
 	) {}
 
@@ -102,17 +102,17 @@ export class Boxes {
 		return { x: clientX - left, y: clientY - top };
 	}
 
-	set hovered(box: Box | null | undefined) {
+	set hovered(box: B | null | undefined) {
 		this.#renderer && (this.#renderer.hovered = box);
 		this.#update(() => this.#renderer?.redraw());
 	}
 
-	set focused(box: Box | null | undefined) {
+	set focused(box: B | null | undefined) {
 		this.#renderer && (this.#renderer.focused = box);
 		this.#update(() => this.#renderer?.redraw());
 	}
 
-	set boxes(boxes: Box[]) {
+	set boxes(boxes: B[]) {
 		this.props.boxes = boxes;
 		this.#renderer && (this.#renderer.boxes = boxes);
 		this.#update(() => this.#renderer?.redraw());
@@ -133,7 +133,7 @@ export class Boxes {
 	}
 }
 
-class Renderer {
+class Renderer<B extends Box> {
 	readonly ctx: CanvasRenderingContext2D;
 	readonly gl: WebGL2RenderingContext;
 	readonly program: WebGLProgram;
@@ -166,7 +166,7 @@ class Renderer {
 		primaryColor: string;
 		textColor: string;
 		textColor2: string;
-		boxes: Box[];
+		boxes: B[];
 		glCanvas: HTMLCanvasElement;
 		textCanvas: HTMLCanvasElement;
 	}) {
@@ -216,11 +216,11 @@ class Renderer {
 		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y + this.#minLevel);
 	}
 
-	set hovered(hovered: Box | null | undefined) {
+	set hovered(hovered: B | null | undefined) {
 		this.gl.uniform1i(this.location.hovered, hovered ? hovered.id : -1);
 	}
 
-	set focused(focused: Box | null | undefined) {
+	set focused(focused: B | null | undefined) {
 		this.gl.uniform1i(this.location.focused, focused ? focused.id : -1);
 	}
 
@@ -236,9 +236,9 @@ class Renderer {
 		this.gl.uniform4f(this.location.primaryColor, hsv[0] / 360, hsv[1], hsv[2], parsed.alpha());
 	}
 
-	#boxes: Box[] = [];
+	#boxes: B[] = [];
 	#minLevel = 0;
-	set boxes(boxes: Box[]) {
+	set boxes(boxes: B[]) {
 		this.#boxes = boxes;
 		this.#minLevel = Math.min(...boxes.map((b) => b.level));
 		this.hovered = null;
@@ -298,7 +298,7 @@ class Renderer {
 		gl.vertexAttribPointer(this.location.boxes, 4, gl.FLOAT, false, 0, 0);
 	}
 
-	#boxPos(box: Box) {
+	#boxPos(box: B) {
 		const width = this.gl.canvas.width;
 		const level = box.level - this.#minLevel;
 		const x1 = Math.ceil(box.x1 * width) + 1;
