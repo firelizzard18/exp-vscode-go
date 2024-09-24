@@ -270,14 +270,15 @@ class Renderer<B extends Box> {
 			this.#setSize(size);
 		}
 
-		if (boxes && boxes !== this.#boxes) {
-			this.#boxes = boxes;
-			this.#minLevel = Math.min(...boxes.map((b) => b.level));
+		if (size || (boxes && boxes !== this.#boxes)) {
+			if (boxes) this.#boxes = boxes;
+
+			this.#minLevel = Math.min(...this.#boxes.map((b) => b.level));
 			this.hovered = null;
 			this.focused = null;
 
-			this.#drawBoxes(boxes);
-			this.#drawLabels(boxes);
+			this.#drawBoxes(this.#boxes);
+			this.#drawLabels(this.#boxes);
 		}
 
 		const { gl } = this;
