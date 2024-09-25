@@ -12,7 +12,7 @@ import {
 	type WebviewPanel,
 } from 'vscode';
 import type { GoTestItem } from './item';
-import { execFile, spawn } from 'node:child_process';
+import { ChildProcess, execFile, spawn } from 'node:child_process';
 import { correctBinname, getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
@@ -180,94 +180,20 @@ export class CapturedProfile implements GoTestItem {
 	}
 }
 
-class OldDoc {
-	static async open(ext: ExtensionContext, go: GoExtensionAPI, path: string): Promise<void> {
-		const r = await this.#open(go, path);
-		const base = Uri.parse(`http://localhost:${r.port}/ui`);
-		const browser = new Browser(ext, 'pprof', base, 'Profile', {
-			viewColumn: ViewColumn.Active,
-			preserveFocus: true,
-		});
-
-		if (r.proc) {
-			browser.panel.onDidDispose(() => killProcessTree(r.proc));
-			browser.navigate(base);
-		} else {
-			browser.show(r.error.html || r.error.message);
-		}
-	}
-
-	static async #open(go: GoExtensionAPI, path: string) {
-		const foundDot = await new Promise<boolean>((resolve, reject) => {
-			const proc = spawn(correctBinname('dot'), ['-V']);
-
-			proc.on('error', (err) => {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				if ((err as any).code === 'ENOENT') resolve(false);
-				else reject(err);
-			});
-
-			proc.on('exit', (code, signal) => {
-				if (signal) reject(new Error(`Received signal ${signal}`));
-				else if (code) reject(new Error(`Exited with code ${code}`));
-				else resolve(true);
-			});
-		});
-		if (!foundDot) {
-			return {
-				error: {
-					message: 'Failed to execute dot',
-					html: 'The `dot` command is required to display this profile. Please install Graphviz.',
-				},
-			};
-		}
-
-		const { binPath: goRuntimePath } = go.settings.getExecutionCommand('go') || {};
-		if (!goRuntimePath) {
-			return {
-				error: {
-					message: 'Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH',
-				},
-			};
-		}
-
-		try {
-			const proc = spawn(goRuntimePath, ['tool', 'pprof', '-http=:', '-no_browser', path]);
-			const port = await new Promise<string | undefined>((resolve, reject) => {
-				proc.on('error', (err) => reject(err));
-				proc.on('exit', (code, signal) => reject(signal || code));
-
-				let stderr = '';
-				function captureStdout(b: Buffer) {
-					stderr += b.toString('utf-8');
-
-					const m = stderr.match(/^Serving web UI on http:\/\/localhost:(?<port>\d+)\n/);
-					if (!m) return;
-
-					resolve(m.groups?.port);
-					proc.stdout.off('data', captureStdout);
-				}
-
-				proc.stderr.on('data', captureStdout);
-			});
-
-			return { proc, port };
-		} catch (error) {
-			return {
-				error: { message: `${error}` },
-			};
-		}
-	}
-}
-
 class ProfileDocument {
 	readonly uri: Uri;
+	readonly server: string;
+	readonly proc: ChildProcess;
 
-	constructor(uri: Uri) {
+	constructor(uri: Uri, proc: ChildProcess, server: string) {
 		this.uri = uri;
+		this.proc = proc;
+		this.server = server;
 	}
 
-	dispose() {}
+	dispose() {
+		killProcessTree(this.proc);
+	}
 }
 
 export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
@@ -279,18 +205,47 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 		this.#go = go;
 	}
 
-	openCustomDocument(uri: Uri, context: CustomDocumentOpenContext, token: CancellationToken): ProfileDocument {
-		return new ProfileDocument(uri);
-	}
-
-	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken): Promise<void> {
+	async openCustomDocument(
+		uri: Uri,
+		context: CustomDocumentOpenContext,
+		token: CancellationToken,
+	): Promise<ProfileDocument> {
 		const { binPath } = this.#go.settings.getExecutionCommand('vscgo') || {};
 		if (!binPath) {
 			throw new Error('Cannot locate vscgo');
 		}
 
-		const { stdout: pprof } = await promisify(execFile)(binPath, ['dump-pprof', document.uri.fsPath]);
+		const proc = spawn(binPath, ['serve-pprof', ':', uri.fsPath]);
+		token.onCancellationRequested(() => killProcessTree(proc));
 
+		const server = await new Promise<string>((resolve, reject) => {
+			proc.on('error', (err) => reject(err));
+			proc.on('exit', (code, signal) => reject(signal || code));
+
+			let stdout = '';
+			function capture(b: Buffer) {
+				stdout += b.toString('utf-8');
+				if (!stdout.includes('\n')) return;
+
+				try {
+					const {
+						Listen: { IP, Port },
+					} = JSON.parse(stdout);
+					resolve(`http://${IP.includes(':') ? `[${IP}]` : IP}:${Port}`);
+				} catch (error) {
+					killProcessTree(proc);
+					reject(error);
+				}
+				proc.stdout.off('data', capture);
+			}
+
+			proc.stdout.on('data', capture);
+		});
+
+		return new ProfileDocument(uri, proc, server);
+	}
+
+	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken): Promise<void> {
 		const uriFor = (path: string) => panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
 		panel.webview.options = { enableScripts: true, enableCommandUris: true };
 		panel.webview.html = `
@@ -301,7 +256,7 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 					<meta name="viewport" content="width=device-width, initial-scale=1.0">
 					<title>Profile Custom Editor</title>
 					<link href="${uriFor('pprof.css')}" rel="stylesheet">
-					<script id="profile-data" type="application/json">${pprof}</script>
+					<script id="profile-data" type="application/json" src="${document.server}"></script>
 				</head>
 				<body>
 					<script src="${uriFor('pprof.js')}"></script>

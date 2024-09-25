@@ -4,15 +4,25 @@ import { createElement, render } from './jsx';
 import { FlameGraph } from './FlameGraph';
 
 function Main() {
-	let profile: Profile;
-	try {
-		const el = document.getElementById('profile-data');
-		profile = JSON.parse(el!.innerText);
-	} catch (_) {
-		return <span>Unable to locate profile data</span>;
-	}
+	const div = (
+		<div>
+			<span className="loading">Loading profile data...</span>
+		</div>
+	) as JSX.HTMLRenderable<HTMLDivElement>;
 
-	return <FlameGraph profile={profile} />;
+	(async () => {
+		const el = document.getElementById('profile-data') as HTMLScriptElement;
+		const r = await fetch(el.src);
+		const profile = await r.json();
+		div.el.innerHTML = '';
+		render(<FlameGraph profile={profile} />, div.el);
+	})().catch((e) => {
+		console.error(e);
+		div.el.innerHTML = '';
+		render(<span>Unable to locate profile data</span>, div.el);
+	});
+
+	return div;
 }
 
 render(<Main />, document.body);
