@@ -5,21 +5,10 @@ import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
-import { ProfileEditorProvider } from './profile';
 import { Browser } from '../browser';
+import { registerProfileEditor } from './profile';
 
-export async function registerProfileEditor(ctx: ExtensionContext, go: GoExtensionAPI) {
-	const provider = new ProfileEditorProvider(ctx, go);
-	ctx.subscriptions.push(
-		window.registerCustomEditorProvider('goExp.pprof', provider, {
-			webviewOptions: {
-				retainContextWhenHidden: true, // TODO: Can we persist the state?
-			},
-		}),
-	);
-}
-
-export async function registerTestController(ctx: ExtensionContext, go: GoExtensionAPI) {
+export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
 		workspace,
 		go,
@@ -35,6 +24,11 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 		},
 	};
 
+	await registerTestController(ctx, testCtx);
+	await registerProfileEditor(ctx, testCtx);
+}
+
+async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
 		ctx.subscriptions.push(event((e) => doSafe(testCtx, msg, () => fn(e))));
 	};

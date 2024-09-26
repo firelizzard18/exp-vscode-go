@@ -1,24 +1,58 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
-import { promisify } from 'node:util';
 import {
+	Uri,
+	window,
 	type ExtensionContext,
 	type TestRun,
-	Uri,
 	type CustomReadonlyEditorProvider,
-	ViewColumn,
 	type CancellationToken,
 	type CustomDocumentOpenContext,
 	type WebviewPanel,
+	commands,
+	Disposable,
+	workspace,
+	Range,
 } from 'vscode';
 import type { GoTestItem } from './item';
-import { ChildProcess, execFile, spawn } from 'node:child_process';
-import { correctBinname, getTempDirPath } from '../utils/util';
+import { ChildProcess, spawn } from 'node:child_process';
+import { getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
-import { Browser } from '../browser';
-import { Context } from './testing';
+import { Context, doSafe } from './testing';
 import moment from 'moment';
+import { HoverEvent, Message } from '../pprof/messages';
+
+export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
+	const command = (name: string, fn: (...args: any[]) => any) => {
+		ctx.subscriptions.push(
+			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args))),
+		);
+	};
+
+	// Register the custom editor
+	const provider = new ProfileEditorProvider(ctx, testCtx.go);
+	ctx.subscriptions.push(
+		window.registerCustomEditorProvider('goExp.pprof', provider, {
+			webviewOptions: {
+				retainContextWhenHidden: true, // TODO: Can we persist the state?
+			},
+		}),
+	);
+
+	// [Command] Show source
+	command('goExp.pprof.showSource', async () => {
+		const x = ProfileDocument.active;
+		const { func } = x?.hovered || {};
+		if (!func) return;
+		const doc = await workspace.openTextDocument(func.file);
+		await window.showTextDocument(doc, {
+			preview: true,
+			selection: new Range(func.line - 1, 0, func.line - 1, 0),
+		});
+	});
+}
 
 export class ProfileType {
 	constructor(
@@ -181,24 +215,87 @@ export class CapturedProfile implements GoTestItem {
 }
 
 class ProfileDocument {
-	readonly uri: Uri;
-	readonly server: string;
-	readonly proc: ChildProcess;
+	static #active?: ProfileDocument;
+	static get active() {
+		return this.#active;
+	}
 
-	constructor(uri: Uri, proc: ChildProcess, server: string) {
+	readonly #ext: ExtensionContext;
+	readonly uri: Uri;
+	readonly #server: string;
+	readonly #proc: ChildProcess;
+	readonly #subscriptions: Disposable[] = [];
+
+	#hovered: HoverEvent = { event: 'hovered' };
+	get hovered() {
+		return this.#hovered;
+	}
+
+	constructor(ext: ExtensionContext, uri: Uri, proc: ChildProcess, server: string) {
+		this.#ext = ext;
 		this.uri = uri;
-		this.proc = proc;
-		this.server = server;
+		this.#proc = proc;
+		this.#server = server;
 	}
 
 	dispose() {
-		killProcessTree(this.proc);
+		killProcessTree(this.#proc);
+		this.#subscriptions.forEach((x) => x.dispose());
+	}
+
+	resolve(panel: WebviewPanel) {
+		const uriFor = (path: string) => panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
+
+		ProfileDocument.#active = this;
+		panel.onDidChangeViewState(
+			(e) => {
+				if (e.webviewPanel.active) {
+					ProfileDocument.#active = this;
+					console.log('Active', this);
+				} else if (ProfileDocument.#active === this) {
+					ProfileDocument.#active = undefined;
+					console.log('Inactive', this);
+				}
+			},
+			null,
+			this.#subscriptions,
+		);
+
+		panel.webview.options = { enableScripts: true, enableCommandUris: true };
+		panel.webview.onDidReceiveMessage((x) => this.#didReceiveMessage(x), null, this.#subscriptions);
+		panel.webview.html = `
+			<!DOCTYPE html>
+			<html lang="en">
+				<head>
+					<meta charset="UTF-8">
+					<meta name="viewport" content="width=device-width, initial-scale=1.0">
+					<title>Profile Custom Editor</title>
+					<link href="${uriFor('pprof.css')}" rel="stylesheet">
+					<script id="profile-data" type="application/json" src="${this.#server}"></script>
+				</head>
+				<body>
+					<script src="${uriFor('pprof.js')}"></script>
+				</body>
+			</html>
+		`;
+	}
+
+	#didReceiveMessage(message: Message) {
+		if ('event' in message) {
+			switch (message.event) {
+				case 'hovered':
+					this.#hovered = message;
+					break;
+			}
+		}
 	}
 }
 
 export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
 	readonly #ext: ExtensionContext;
 	readonly #go: GoExtensionAPI;
+
+	static #active?: WebviewPanel;
 
 	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
 		this.#ext = ext;
@@ -242,26 +339,10 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 			proc.stdout.on('data', capture);
 		});
 
-		return new ProfileDocument(uri, proc, server);
+		return new ProfileDocument(this.#ext, uri, proc, server);
 	}
 
-	async resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken): Promise<void> {
-		const uriFor = (path: string) => panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
-		panel.webview.options = { enableScripts: true, enableCommandUris: true };
-		panel.webview.html = `
-			<!DOCTYPE html>
-			<html lang="en">
-				<head>
-					<meta charset="UTF-8">
-					<meta name="viewport" content="width=device-width, initial-scale=1.0">
-					<title>Profile Custom Editor</title>
-					<link href="${uriFor('pprof.css')}" rel="stylesheet">
-					<script id="profile-data" type="application/json" src="${document.server}"></script>
-				</head>
-				<body>
-					<script src="${uriFor('pprof.js')}"></script>
-				</body>
-			</html>
-		`;
+	resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken) {
+		document.resolve(panel);
 	}
 }

@@ -3,7 +3,7 @@ import './main.css';
 import { createElement, render } from './jsx';
 import { FlameGraph } from './FlameGraph';
 
-function Main() {
+function App() {
 	const div = (
 		<div>
 			<span className="loading">Loading profile data...</span>
@@ -25,4 +25,4 @@ function Main() {
 	return div;
 }
 
-render(<Main />, document.body);
+render(<App />, document.body);

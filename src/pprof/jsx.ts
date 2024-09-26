@@ -1,5 +1,60 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
+
+// vscode webview API
+
+export function createElement<T extends HTMLElement>(
+	tag: keyof HTMLTypes,
+	props: JSX.Attributes<T>,
+	...children: JSX.Renderable[]
+): JSX.HTMLRenderable<T>;
+
+export function createElement<P, N extends Node, R extends JSX.Renderable<N>>(tag: JSX.Component<P, N, R>, props: P): R;
+
+export function createElement<P, N extends Node, R extends JSX.Renderable<N>, C extends Array<any>>(
+	tag: JSX.ParentComponent<P, N, R, C>,
+	props: P,
+	...children: C
+): R;
+
+export function createElement<P = never, C extends Array<any> = never>(
+	tag: string | (new (props: P) => JSX.Renderable) | (new (props: P, children: C) => JSX.Renderable),
+	props: P,
+	...children: C
+) {
+	children = children.flat() as C;
+	if (typeof tag !== 'string') {
+		return new tag(props, children);
+	}
+
+	const el = document.createElement(tag);
+	for (const name in props) {
+		if (name.startsWith('data-')) {
+			let v: any = props[name];
+			if (typeof v !== 'string') v = JSON.stringify(v);
+			el.setAttribute(name, v);
+		} else {
+			(el as any)[name] = props[name];
+		}
+	}
+	Object.assign(el, props);
+
+	return {
+		el,
+		render() {
+			children.forEach((x) => render(x, el));
+			return el;
+		},
+	};
+}
+
+export function render(element: Node | JSX.Renderable, container: ParentNode): void {
+	while (typeof element === 'object' && element && 'render' in element) {
+		element = element.render();
+	}
+	container.append(element);
+}
+
 declare global {
 	namespace JSX {
 		// // We don't just because		//// historically does more than we need it to.
@@ -363,47 +418,4 @@ interface HTMLTypes {
 	video: DOMFactory<HTMLVideoElement>;
 	wbr: DOMFactory<HTMLElement>;
 	// webview: DOMFactory<HTMLWebViewElement>;
-}
-
-export function createElement<T extends HTMLElement>(
-	tag: keyof HTMLTypes,
-	props: JSX.Attributes<T>,
-	...children: JSX.Renderable[]
-): JSX.HTMLRenderable<T>;
-
-export function createElement<P, N extends Node, R extends JSX.Renderable<N>>(tag: JSX.Component<P, N, R>, props: P): R;
-
-export function createElement<P, N extends Node, R extends JSX.Renderable<N>, C extends Array<any>>(
-	tag: JSX.ParentComponent<P, N, R, C>,
-	props: P,
-	...children: C
-): R;
-
-export function createElement<P = never, C extends Array<any> = never>(
-	tag: string | (new (props: P) => JSX.Renderable) | (new (props: P, children: C) => JSX.Renderable),
-	props: P,
-	...children: C
-) {
-	children = children.flat() as C;
-	if (typeof tag !== 'string') {
-		return new tag(props, children);
-	}
-
-	const el = document.createElement(tag);
-	Object.assign(el, props);
-
-	return {
-		el,
-		render() {
-			children.forEach((x) => render(x, el));
-			return el;
-		},
-	};
-}
-
-export function render(element: Node | JSX.Renderable, container: ParentNode): void {
-	while (typeof element === 'object' && element && 'render' in element) {
-		element = element.render();
-	}
-	container.append(element);
 }

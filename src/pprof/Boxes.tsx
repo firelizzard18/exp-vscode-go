@@ -3,7 +3,7 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { compileProgram } from './gl';
-import { createElement, render } from './jsx';
+import { createElement } from './jsx';
 import fragmentShaderSource from './box.frag';
 import vertexShaderSource from './box.vert';
 import chroma, { Color } from 'chroma-js';
@@ -51,7 +51,7 @@ export class Boxes<B extends Box = Box> {
 		const { el: glCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
 		const { el: textCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
 		this.#el = (
-			<div className="boxes">
+			<div className="boxes" data-vscode-context={{ preventDefaultContextMenuItems: true }}>
 				<span className="spacer" />
 				{glCanvas}
 				{textCanvas}
@@ -71,17 +71,24 @@ export class Boxes<B extends Box = Box> {
 		this.#update(() => setRenderer());
 		addEventListener('resize', () => this.#update(() => setRenderer()));
 
-		this.#el.el.addEventListener('mousemove', (event) => {
-			if (!this.#renderer || !this.props.onHovered) return;
+		const lastBox = {
+			onHovered: null as B | null | undefined,
+			onFocused: null as B | null | undefined,
+		};
+		const fireEvent = (event: MouseEvent, handler: 'onHovered' | 'onFocused') => {
+			if (!this.#renderer || !this.props[handler]) return;
 			const { x, y } = this.#targetXY(event);
-			x && y && this.props.onHovered(this.#renderer.boxAt(x, y));
-		});
+			if (!x || !y) return;
 
-		this.#el.el.addEventListener('click', (event) => {
-			if (!this.#renderer || !this.props.onFocused) return;
-			const { x, y } = this.#targetXY(event);
-			x && y && this.props.onFocused(this.#renderer.boxAt(x, y));
-		});
+			const box = this.#renderer.boxAt(x, y);
+			if (box === lastBox[handler]) return;
+			lastBox[handler] = box;
+
+			this.props[handler](box);
+		};
+
+		this.#el.el.addEventListener('mousemove', (event) => fireEvent(event, 'onHovered'));
+		this.#el.el.addEventListener('click', (event) => fireEvent(event, 'onFocused'));
 
 		return this.#el;
 	}

@@ -30,7 +30,7 @@
     "golang.go"
   ],
   "scripts": {
-    "bundle": "esbuild main=src/extension.ts pprof=src/pprof/main.tsx --bundle --outdir=dist --external:vscode --external:react/jsx-runtime --format=cjs --platform=node --loader:.frag=text --loader:.vert=text",
+    "bundle": "esbuild main=src/extension.ts pprof=src/pprof/App.tsx --bundle --outdir=dist --external:vscode --external:react/jsx-runtime --format=cjs --platform=node --loader:.frag=text --loader:.vert=text",
     "watch": "npm run bundle -- --sourcemap=inline --watch",
     "package": "yarn run vsce package",
     "lint": "eslint src --ext ts",
@@ -154,6 +154,11 @@
         "command": "goExp.browser.forward",
         "title": "Forward",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "goExp.pprof.showSource",
+        "title": "Show Source",
+        "description": "Show the source code for the selected function"
       }
     ],
     "menus": {
@@ -181,6 +186,10 @@
         {
           "command": "goExp.browser.forward",
           "when": "false"
+        },
+        {
+          "command": "goExp.pprof.showSource",
+          "when": "false"
         }
       ],
       "testing/item/context": [
@@ -188,6 +197,12 @@
           "command": "goExp.testExplorer.refresh",
           "when": "controllerId == 'goExp'",
           "group": "inline"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "goExp.pprof.showSource",
+          "when": "webviewId == 'goExp.pprof' && hoveredFunction"
         }
       ],
       "editor/title": [

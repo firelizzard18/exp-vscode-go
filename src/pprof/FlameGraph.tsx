@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
+import { postMessage } from './State';
 
 export function FlameGraph({ profile }: { profile: Profile }) {
 	const graph = new CallGraph();
@@ -43,17 +44,18 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	) as JSX.HTMLRenderable<HTMLSelectElement>;
 	const centerLabel = (<span>{amountFor(typ, total, total)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
-	const elem = (
+	const boxes = (
 		<Boxes
 			focusColor="white"
 			primaryColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
 			textColor2="--vscode-editor-foreground"
 			boxes={initialBoxes}
-			onHovered={(x) => ((elem.hovered = x), hover(x))}
+			onHovered={(x) => ((boxes.hovered = x), hover(x))}
 			onFocused={(x) => focus(x)}
 		/>
 	) as Boxes<BoxPlus>;
+	const boxesDiv = (<div>{boxes}</div>) as JSX.HTMLRenderable<HTMLDivElement>;
 
 	const changeSample = () => {
 		i = selectSample.el.selectedIndex;
@@ -63,8 +65,28 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	};
 
 	const hover = (box?: BoxPlus) => {
-		if (box) rightLabel.el.innerText = amountFor(typ, costOf(box), total);
-		else rightLabel.el.innerHTML = '&nbsp;';
+		if (box) {
+			rightLabel.el.innerText = amountFor(typ, costOf(box), total);
+		} else {
+			rightLabel.el.innerHTML = '&nbsp;';
+		}
+		if (box?.func) {
+			boxesDiv.el.dataset.vscodeContext = JSON.stringify({
+				hoveredFunction: true,
+			});
+			postMessage({
+				event: 'hovered',
+				func: {
+					file: box.func.Filename,
+					line: box.func.StartLine,
+				},
+			});
+		} else {
+			boxesDiv.el.dataset.vscodeContext = '{}';
+			postMessage({
+				event: 'hovered',
+			});
+		}
 	};
 
 	const focus = (box?: BoxPlus) => {
@@ -73,7 +95,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		focused = box;
 		if (box.func) {
 			centerLabel.el.innerHTML = '&nbsp;';
-			elem.boxes = [
+			boxes.boxes = [
 				...graph.up(i, box.func),
 				{
 					label: amountFor(typ, costOf(box), total),
@@ -88,7 +110,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			];
 		} else {
 			centerLabel.el.innerText = amountFor(typ, total, total);
-			elem.boxes = [...graph.down(i, box.func)];
+			boxes.boxes = [...graph.down(i, box.func)];
 		}
 	};
 
@@ -99,7 +121,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 				<span className="center">{centerLabel}</span>
 				<span className="right">{rightLabel}</span>
 			</div>
-			{elem}
+			{boxesDiv}
 		</div>
 	);
 }
