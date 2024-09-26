@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
-import { postMessage } from './State';
+import { postMessage, State } from './State';
 
 export function FlameGraph({ profile }: { profile: Profile }) {
 	const graph = new CallGraph();
@@ -23,7 +23,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		graph.add({ caller: last, sample, depth: funcs.length });
 	}
 
-	let i = profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
+	let i = State.sample ?? profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
 	if (i < 0) i = profile.SampleType.findIndex((x) => x.Type === 'cpu');
 	if (i < 0) i = 0;
 	let typ = profile.SampleType[i];
@@ -59,6 +59,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 
 	const changeSample = () => {
 		i = selectSample.el.selectedIndex;
+		State.sample = i;
 		typ = profile.SampleType[i];
 		total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
 		focus(focused);
@@ -93,6 +94,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		if (!box) return;
 
 		focused = box;
+		State.focused = box.func?.ID;
 		if (box.func) {
 			centerLabel.el.innerHTML = '&nbsp;';
 			boxes.boxes = [
@@ -113,6 +115,10 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			boxes.boxes = [...graph.down(i, box.func)];
 		}
 	};
+
+	if (State.focused) {
+		focus(initialBoxes.find((x) => x.func?.ID === State.focused));
+	}
 
 	return (
 		<div className="flame-graph">

@@ -2,8 +2,18 @@
 import './main.css';
 import { createElement, render } from './jsx';
 import { FlameGraph } from './FlameGraph';
+import { State } from './State';
 
 function App() {
+	const { profile } = State;
+	if (profile) {
+		return (
+			<div>
+				<FlameGraph profile={profile} />
+			</div>
+		);
+	}
+
 	const div = (
 		<div>
 			<span className="loading">Loading profile data...</span>
@@ -15,6 +25,7 @@ function App() {
 		const r = await fetch(el.src);
 		const profile = await r.json();
 		div.el.innerHTML = '';
+		State.profile = profile;
 		render(<FlameGraph profile={profile} />, div.el);
 	})().catch((e) => {
 		console.error(e);

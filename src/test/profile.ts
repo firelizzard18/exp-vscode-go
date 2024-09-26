@@ -33,13 +33,7 @@ export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Cont
 
 	// Register the custom editor
 	const provider = new ProfileEditorProvider(ctx, testCtx.go);
-	ctx.subscriptions.push(
-		window.registerCustomEditorProvider('goExp.pprof', provider, {
-			webviewOptions: {
-				retainContextWhenHidden: true, // TODO: Can we persist the state?
-			},
-		}),
-	);
+	ctx.subscriptions.push(window.registerCustomEditorProvider('goExp.pprof', provider));
 
 	// [Command] Show source
 	command('goExp.pprof.showSource', async () => {
