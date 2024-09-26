@@ -14,6 +14,9 @@ import {
 	Disposable,
 	workspace,
 	Range,
+	TextEditorDecorationType,
+	DecorationOptions,
+	DecorationInstanceRenderOptions,
 } from 'vscode';
 import type { GoTestItem } from './item';
 import { ChildProcess, spawn } from 'node:child_process';
@@ -36,16 +39,7 @@ export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Cont
 	ctx.subscriptions.push(window.registerCustomEditorProvider('goExp.pprof', provider));
 
 	// [Command] Show source
-	command('goExp.pprof.showSource', async () => {
-		const x = ProfileDocument.active;
-		const { func } = x?.hovered || {};
-		if (!func) return;
-		const doc = await workspace.openTextDocument(func.file);
-		await window.showTextDocument(doc, {
-			preview: true,
-			selection: new Range(func.line - 1, 0, func.line - 1, 0),
-		});
-	});
+	command('goExp.pprof.showSource', () => ProfileDocument.active?.showSource());
 }
 
 export class ProfileType {
@@ -208,25 +202,24 @@ export class CapturedProfile implements GoTestItem {
 	}
 }
 
+const nbsp = '\u00A0';
+
 class ProfileDocument {
 	static #active?: ProfileDocument;
 	static get active() {
 		return this.#active;
 	}
 
-	readonly #ext: ExtensionContext;
+	readonly #provider: ProfileEditorProvider;
 	readonly uri: Uri;
 	readonly #server: string;
 	readonly #proc: ChildProcess;
 	readonly #subscriptions: Disposable[] = [];
 
 	#hovered: HoverEvent = { event: 'hovered' };
-	get hovered() {
-		return this.#hovered;
-	}
 
-	constructor(ext: ExtensionContext, uri: Uri, proc: ChildProcess, server: string) {
-		this.#ext = ext;
+	constructor(provider: ProfileEditorProvider, uri: Uri, proc: ChildProcess, server: string) {
+		this.#provider = provider;
 		this.uri = uri;
 		this.#proc = proc;
 		this.#server = server;
@@ -238,17 +231,13 @@ class ProfileDocument {
 	}
 
 	resolve(panel: WebviewPanel) {
-		const uriFor = (path: string) => panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
-
 		ProfileDocument.#active = this;
 		panel.onDidChangeViewState(
 			(e) => {
 				if (e.webviewPanel.active) {
 					ProfileDocument.#active = this;
-					console.log('Active', this);
 				} else if (ProfileDocument.#active === this) {
 					ProfileDocument.#active = undefined;
-					console.log('Inactive', this);
 				}
 			},
 			null,
@@ -264,11 +253,11 @@ class ProfileDocument {
 					<meta charset="UTF-8">
 					<meta name="viewport" content="width=device-width, initial-scale=1.0">
 					<title>Profile Custom Editor</title>
-					<link href="${uriFor('pprof.css')}" rel="stylesheet">
+					<link href="${this.#provider.uriFor(panel, 'pprof.css')}" rel="stylesheet">
 					<script id="profile-data" type="application/json" src="${this.#server}"></script>
 				</head>
 				<body>
-					<script src="${uriFor('pprof.js')}"></script>
+					<script src="${this.#provider.uriFor(panel, 'pprof.js')}"></script>
 				</body>
 			</html>
 		`;
@@ -283,17 +272,85 @@ class ProfileDocument {
 			}
 		}
 	}
+
+	async showSource() {
+		const { func, lines } = this.#hovered;
+		if (!func) return;
+
+		const range = new Range(func.line - 1, 0, func.line - 1, 0);
+		const doc = await workspace.openTextDocument(func.file);
+		const editor = await window.showTextDocument(doc, {
+			preview: true,
+			selection: range,
+		});
+
+		if (!lines) return;
+
+		const valueWidth = Math.max(...lines.map(({ value }) => value.length));
+		const unitWidth = Math.max(...lines.map(({ unit }) => unit.length));
+		const ratioWidth = Math.max(...lines.map(({ ratio }) => ratio.length + 3));
+		const fullWidth = valueWidth + 1 + unitWidth + 1 + ratioWidth + 1;
+
+		editor.setDecorations(
+			this.#provider.decoration,
+			lines.map(({ line, value, unit, ratio }) => {
+				const valueStr = value.padStart(valueWidth, nbsp);
+				const unitStr = unit.padStart(unitWidth + 1, nbsp);
+				const ratioStr = `(${ratio}%)`.padStart(ratioWidth + 1, nbsp);
+				return {
+					range: new Range(line, 0, line, 0),
+					renderOptions: {
+						before: {
+							contentText: `${valueStr}${unitStr}${ratioStr}`,
+							width: `${fullWidth}ch`,
+							color: 'rgba(153, 153, 153, 0.65)',
+						},
+					},
+				};
+			}),
+		);
+
+		// Add empty decorations so everything is aligned
+		let lastLine = 0;
+		const empty: number[] = [];
+		for (const { line } of lines) {
+			for (; lastLine < line; lastLine++) {
+				empty.push(lastLine);
+			}
+			lastLine = line + 1;
+		}
+		for (; lastLine < doc.lineCount; lastLine++) {
+			empty.push(lastLine);
+		}
+		editor.setDecorations(
+			this.#provider.emptyDecoration,
+			empty.map((line) => ({
+				range: new Range(line, 0, line, 0),
+				renderOptions: { before: { contentText: '', width: `${fullWidth}ch` } },
+			})),
+		);
+	}
 }
 
 export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
 	readonly #ext: ExtensionContext;
 	readonly #go: GoExtensionAPI;
-
-	static #active?: WebviewPanel;
+	readonly decoration: TextEditorDecorationType;
+	readonly emptyDecoration: TextEditorDecorationType;
 
 	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
 		this.#ext = ext;
 		this.#go = go;
+		this.decoration = window.createTextEditorDecorationType({
+			backgroundColor: 'rgba(255, 255, 255, 0.1)',
+			isWholeLine: true,
+		});
+		this.emptyDecoration = window.createTextEditorDecorationType({});
+		ext.subscriptions.push(this.decoration);
+	}
+
+	uriFor(panel: WebviewPanel, path: string) {
+		return panel.webview.asWebviewUri(Uri.joinPath(this.#ext.extensionUri, 'dist', path));
 	}
 
 	async openCustomDocument(
@@ -333,7 +390,7 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 			proc.stdout.on('data', capture);
 		});
 
-		return new ProfileDocument(this.#ext, uri, proc, server);
+		return new ProfileDocument(this, uri, proc, server);
 	}
 
 	resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken) {

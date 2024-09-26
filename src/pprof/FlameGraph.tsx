@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
+import { LineData } from './messages';
 import { postMessage, State } from './State';
 
 export function FlameGraph({ profile }: { profile: Profile }) {
@@ -11,16 +12,18 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		const funcs = sample.Location.slice()
 			.reverse()
 			.flatMap((l) => location.get(l)!.Line.slice().reverse())
-			.map((l) => functions.get(l.Function)!);
+			.map((l) => ({ line: l, func: functions.get(l.Function)! }));
 
-		let last: Func | undefined;
-		funcs.forEach((func, depth) => {
-			const call: Call = { callee: func, sample, depth };
-			if (last) call.caller = last;
-			last = func;
+		let last: (typeof funcs)[0] | undefined;
+		funcs.forEach(({ func, line }, depth) => {
+			const call: Call = { callee: func, sample, depth, line: last?.line };
+			if (last) call.caller = last.func;
+			last = { func, line };
 			graph.add(call);
 		});
-		graph.add({ caller: last, sample, depth: funcs.length });
+		if (last) {
+			graph.add({ caller: last.func, line: last.line, sample, depth: funcs.length });
+		}
 	}
 
 	let i = State.sample ?? profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
@@ -28,6 +31,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	if (i < 0) i = 0;
 	let typ = profile.SampleType[i];
 	let total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
+	let lineData = new Map([...functions.values()].map((x) => [x, graph.lineDataFor(x, typ, i, total)]));
 	const costOf = (box: BoxPlus) => box.calls?.reduce((sum, x) => sum + x.sample.Value[i], 0) ?? 0;
 
 	const initialBoxes = [...graph.down(i)];
@@ -62,6 +66,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		State.sample = i;
 		typ = profile.SampleType[i];
 		total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
+		lineData = new Map([...functions.values()].map((x) => [x, graph.lineDataFor(x, typ, i, total)]));
 		focus(focused);
 	};
 
@@ -81,6 +86,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 					file: box.func.Filename,
 					line: box.func.StartLine,
 				},
+				lines: lineData.get(box.func),
 			});
 		} else {
 			boxesDiv.el.dataset.vscodeContext = '{}';
@@ -145,20 +151,25 @@ const Units: Record<string, Unit> = {
 	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, threshold: 1000, precision: 3 },
 };
 
-function amountFor(typ: ValueType, cost: number, total: number) {
+function powerOf(typ: ValueType, cost: number) {
 	if (!(typ.Unit in Units)) throw new Error(`Unsupported unit ${typ.Unit}`);
 	let value = cost;
 	let power = 0;
 	const { powers, divisor, threshold, precision } = Units[typ.Unit];
 	while (value > threshold && power < powers.length) power++, (value /= divisor);
+	return { value: value.toPrecision(precision), unit: powers[power] };
+}
 
+function amountFor(typ: ValueType, cost: number, total: number) {
+	const { value, unit } = powerOf(typ, cost);
 	const percent = (cost / total) * 100;
-	return `${value.toPrecision(precision)} ${powers[power]} (${percent.toFixed(0)}%)`;
+	return `${value} ${unit} (${percent.toFixed(0)}%)`;
 }
 
 interface Call {
 	caller?: Func;
 	callee?: Func;
+	line?: Line;
 	depth: number;
 	sample: Sample;
 }
@@ -224,6 +235,22 @@ class CallGraph {
 				};
 			}
 		}
+	}
+
+	lineDataFor(func: Func, typ: ValueType, sample: number, total: number) {
+		const calls = groupBy(
+			this.from(func).filter((x): x is Call & { line: Line } => !!x.line),
+			(x) => x.line.Line,
+		);
+		const data = [...calls]
+			.map(([line, calls]) => [line, calls.reduce((sum, x) => sum + x.sample.Value[sample], 0)] as const)
+			.map(([line, cost]) => lineDataFor(typ, line, cost, total));
+
+		const cost = this.from(func).reduce((sum, x) => sum + x.sample.Value[sample], 0);
+		data.unshift(lineDataFor(typ, func.StartLine, cost, total));
+
+		data.sort((a, b) => a.line - b.line);
+		return data;
 	}
 
 	#firstCall(func: Func, dir: 1 | -1) {
@@ -315,4 +342,14 @@ function groupBy<V, K>(items: V[], key: (item: V) => K): Map<K, V[]> {
 		groups.get(k)!.push(item);
 	}
 	return groups;
+}
+
+function lineDataFor(typ: ValueType, line: number, cost: number, total: number): LineData {
+	const { value, unit } = powerOf(typ, cost);
+	return {
+		line: line - 1, // vscode uses 0-based lines
+		value,
+		unit,
+		ratio: ((cost / total) * 100).toFixed(0),
+	};
 }
