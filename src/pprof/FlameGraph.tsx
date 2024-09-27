@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
-import { LineData, Message } from './messages';
+import { LineData } from './messages';
 import { addMessageListener, FlameGraphSettings, sendMessage, State } from './State';
 
 interface Unit {
@@ -34,27 +34,26 @@ interface BoxPlus extends Box {
 
 export function FlameGraph({ profile }: { profile: Profile }) {
 	const settings = State.flameGraph;
-	if (settings.sample < 0) {
-		const s =
-			profile.SampleType.find((x) => x.Type === profile.DefaultSampleType) ||
-			profile.SampleType.find((x) => x.Type === 'cpu') ||
-			profile.SampleType[0];
-		settings.sample = profile.SampleType.indexOf(s);
-	}
+	const graph = new CallGraph(profile, settings);
 
 	const applyChange = (label: string, s: Partial<FlameGraphSettings>) => {
 		if (Object.keys(s).every((x) => (settings as any)[x] === (s as any)[x])) return;
 		const before = Object.assign({}, settings);
 		const after = Object.assign(settings, s);
 		State.flameGraph = after;
+		console.debug('Change', { before, after });
 		sendMessage({ event: 'action', label, action: { action: 'flame-graph', before, after } });
 		didChange(before);
 	};
 
-	const didChange = (before: FlameGraphSettings) => {
+	let lineData: Map<Func, LineData[]>;
+	let total: number;
+	let boxes: BoxPlus[];
+	const didChange = (before?: FlameGraphSettings) => {
 		const changed = {
-			sample: before.sample !== settings.sample,
-			ignored: before.ignored !== settings.ignored,
+			sample: !before || before.sample !== settings.sample,
+			ignored: !before || before.ignored.join(',') !== settings.ignored.join(','),
+			focused: !before || before.focused !== settings.focused,
 		} as const;
 
 		State.flameGraph = settings;
@@ -69,8 +68,30 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			graph.rebuild();
 		}
 
-		if (changed.sample || changed.ignored) {
-			focus(focused);
+		if (changed.sample || changed.ignored || changed.focused) {
+			const func = typeof settings.focused === 'number' ? graph.function(settings.focused) : undefined;
+			if (func) {
+				label.center.el.innerHTML = '&nbsp;';
+				const down = [...graph.down(func)];
+				const cost = down[0].calls.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
+				boxes = [
+					...graph.up(func),
+					{
+						label: amountFor(profile.SampleType[settings.sample], cost, total),
+						x1: 0,
+						x2: 1,
+						level: 0,
+						group: -1,
+						id: -1,
+						alignLabel: 'center',
+					} as BoxPlus,
+					...down,
+				];
+			} else {
+				label.center.el.innerText = amountFor(profile.SampleType[settings.sample], total, total);
+				boxes = [...graph.down()];
+			}
+			boxesEl.boxes = boxes;
 		}
 	};
 
@@ -82,6 +103,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 				const { before, after } = msg.action;
 				Object.assign(settings, before);
 				didChange(after);
+				console.debug('Undo', { before, after });
 				break;
 			}
 
@@ -89,6 +111,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 				const { before, after } = msg.action;
 				Object.assign(settings, after);
 				didChange(before);
+				console.debug('Redo', { after: before, before: after });
 				break;
 			}
 
@@ -100,18 +123,6 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			}
 		}
 	});
-
-	const graph = new CallGraph(profile, settings);
-	let lineData = graph.lineData();
-	let total = graph.totalCost();
-
-	const initialBoxes = [...graph.down()];
-	let focused = initialBoxes.find((x) => !x.func)!;
-
-	const valueStringFor = (box: BoxPlus) => {
-		const cost = box.calls?.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
-		return amountFor(profile.SampleType[settings.sample], cost, total);
-	};
 
 	const control = {
 		sample: (
@@ -126,26 +137,27 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	};
 
 	const label = {
-		center: (<span>{valueStringFor(focused)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
+		center: (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
 		right: (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
 	} as const;
 
-	const boxes = (
+	const boxesEl = (
 		<Boxes
 			focusColor="white"
 			primaryColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
 			textColor2="--vscode-editor-foreground"
-			boxes={initialBoxes}
-			onHovered={(x) => ((boxes.hovered = x), hover(x))}
-			onFocused={(x) => focus(x)}
+			boxes={[] as BoxPlus[]}
+			onHovered={(x) => ((boxesEl.hovered = x), hover(x))}
+			onFocused={(x) => x && applyChange(`Focus ${labelFor(x.func)}`, { focused: x.func ? x.func.ID : null })}
 		/>
 	) as Boxes<BoxPlus>;
-	const boxesDiv = (<div>{boxes}</div>) as JSX.HTMLRenderable<HTMLDivElement>;
+	const boxesDiv = (<div>{boxesEl}</div>) as JSX.HTMLRenderable<HTMLDivElement>;
 
 	const hover = (box?: BoxPlus) => {
-		if (box) {
-			label.right.el.innerText = valueStringFor(focused);
+		if (box?.calls) {
+			const cost = box.calls.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
+			label.right.el.innerText = amountFor(profile.SampleType[settings.sample], cost, total);
 		} else {
 			label.right.el.innerHTML = '&nbsp;';
 		}
@@ -170,35 +182,14 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		}
 	};
 
-	const focus = (box?: BoxPlus) => {
-		if (!box) return;
-
-		focused = box;
-		applyChange('Change focus', { focused: box.func?.ID });
-		if (box.func) {
-			label.center.el.innerHTML = '&nbsp;';
-			boxes.boxes = [
-				...graph.up(box.func),
-				{
-					label: valueStringFor(box),
-					x1: 0,
-					x2: 1,
-					level: 0,
-					group: -1,
-					id: -1,
-					alignLabel: 'center',
-				} as BoxPlus,
-				...graph.down(box.func),
-			];
-		} else {
-			label.center.el.innerText = amountFor(profile.SampleType[settings.sample], total, total);
-			boxes.boxes = [...graph.down(box.func)];
-		}
-	};
-
-	if (settings.focused) {
-		focus(initialBoxes.find((x) => x.func?.ID === settings.focused));
+	if (settings.sample < 0) {
+		const s =
+			profile.SampleType.find((x) => x.Type === profile.DefaultSampleType) ||
+			profile.SampleType.find((x) => x.Type === 'cpu') ||
+			profile.SampleType[0];
+		settings.sample = profile.SampleType.indexOf(s);
 	}
+	didChange();
 
 	return (
 		<div className="flame-graph">
@@ -236,6 +227,11 @@ class CallGraph {
 	readonly totalCost = () => this.#profile.Sample?.reduce((sum, x) => sum + x.Value[this.#settings.sample], 0) ?? 1;
 	readonly lineData = () => new Map([...this.#functions.values()].map((x) => [x, this.#lineDataFor(x)]));
 	readonly function = (id: number) => this.#functions.get(id);
+
+	focused() {
+		const { focused } = this.#settings;
+		return typeof focused === 'number' ? this.function(focused) : undefined;
+	}
 
 	rebuild() {
 		this.#calls.clear();

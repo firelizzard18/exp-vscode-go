@@ -25,7 +25,7 @@ interface StateData {
 
 export interface FlameGraphSettings {
 	sample: number;
-	focused?: number;
+	focused: number | null;
 	ignored: number[];
 }
 
@@ -38,7 +38,7 @@ export const State = new (class {
 	}
 
 	get flameGraph(): FlameGraphSettings {
-		return this.#get('flameGraph') || { sample: -1, ignored: [] };
+		return this.#get('flameGraph') || { sample: -1, ignored: [], focused: null };
 	}
 	set flameGraph(flameGraph: FlameGraphSettings) {
 		this.#set('flameGraph', flameGraph);
