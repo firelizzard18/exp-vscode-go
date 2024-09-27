@@ -9,7 +9,11 @@ export function postMessage(message: Message) {
 
 interface StateData {
 	profile?: Profile;
-	sample?: number;
+	flameGraph?: FlameGraphSettings;
+}
+
+export interface FlameGraphSettings {
+	sample: number;
 	focused?: number;
 }
 
@@ -21,18 +25,11 @@ export const State = new (class {
 		this.#set('profile', profile);
 	}
 
-	get sample(): number | undefined {
-		return this.#get('sample');
+	get flameGraph(): FlameGraphSettings {
+		return this.#get('flameGraph') || { sample: -1 };
 	}
-	set sample(sample: number) {
-		this.#set('sample', sample);
-	}
-
-	get focused(): number | undefined {
-		return this.#get('focused');
-	}
-	set focused(focused: number | undefined) {
-		this.#set('focused', focused);
+	set flameGraph(flameGraph: FlameGraphSettings) {
+		this.#set('flameGraph', flameGraph);
 	}
 
 	#get<K extends keyof StateData>(key: K): StateData[K] | undefined;

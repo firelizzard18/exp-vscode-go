@@ -2,52 +2,77 @@
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
 import { LineData } from './messages';
-import { postMessage, State } from './State';
+import { FlameGraphSettings, postMessage, State } from './State';
+
+interface Unit {
+	powers: string[];
+	divisor: number;
+	threshold: number;
+	precision?: number;
+}
+
+const Units: Record<string, Unit> = {
+	count: { powers: [''], divisor: 1, threshold: Infinity },
+	bytes: { powers: ['B', 'kiB', 'MiB', 'GiB', 'TiB'], divisor: 1024, threshold: 100, precision: 2 },
+	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, threshold: 1000, precision: 3 },
+};
+
+interface Call {
+	caller?: Func;
+	callee?: Func;
+	line?: Line;
+	depth: number;
+	sample: Sample;
+}
+
+interface BoxPlus extends Box {
+	func?: Func;
+	calls: Call[];
+	cost: number;
+}
 
 export function FlameGraph({ profile }: { profile: Profile }) {
-	const graph = new CallGraph();
-	const functions = new Map((profile.Function || []).map((f) => [f.ID, f]));
-	const location = new Map((profile.Location || []).map((l) => [l.ID, l]));
-	for (const sample of profile.Sample || []) {
-		const funcs = sample.Location.slice()
-			.reverse()
-			.flatMap((l) => location.get(l)!.Line.slice().reverse())
-			.map((l) => ({ line: l, func: functions.get(l.Function)! }));
-
-		let last: (typeof funcs)[0] | undefined;
-		funcs.forEach(({ func, line }, depth) => {
-			const call: Call = { callee: func, sample, depth, line: last?.line };
-			if (last) call.caller = last.func;
-			last = { func, line };
-			graph.add(call);
-		});
-		if (last) {
-			graph.add({ caller: last.func, line: last.line, sample, depth: funcs.length });
-		}
+	const settings = State.flameGraph;
+	if (settings.sample < 0) {
+		const s =
+			profile.SampleType.find((x) => x.Type === profile.DefaultSampleType) ||
+			profile.SampleType.find((x) => x.Type === 'cpu') ||
+			profile.SampleType[0];
+		settings.sample = profile.SampleType.indexOf(s);
 	}
 
-	let i = State.sample ?? profile.SampleType.findIndex((x) => x.Type === profile.DefaultSampleType);
-	if (i < 0) i = profile.SampleType.findIndex((x) => x.Type === 'cpu');
-	if (i < 0) i = 0;
-	let typ = profile.SampleType[i];
-	let total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
-	let lineData = new Map([...functions.values()].map((x) => [x, graph.lineDataFor(x, typ, i, total)]));
-	const costOf = (box: BoxPlus) => box.calls?.reduce((sum, x) => sum + x.sample.Value[i], 0) ?? 0;
+	const graph = new CallGraph(profile, settings);
+	let lineData = graph.lineData();
+	let total = graph.totalCost();
 
-	const initialBoxes = [...graph.down(i)];
+	const initialBoxes = [...graph.down()];
 	let focused = initialBoxes.find((x) => !x.func)!;
+
+	const labelFor = (box: BoxPlus) => {
+		const cost = box.calls?.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
+		return amountFor(profile.SampleType[settings.sample], cost, total);
+	};
+
+	const changeSample = () => {
+		settings.sample = selectSample.el.selectedIndex;
+		State.flameGraph = settings;
+		lineData = graph.lineData();
+		total = graph.totalCost();
+		focus(focused);
+	};
 
 	const selectSample = (
 		<select onchange={() => changeSample()}>
 			{profile.SampleType.map((x, j) => (
-				<option value={`${j}`} selected={i === j}>
+				<option value={`${j}`} selected={settings.sample === j}>
 					{x.Type}
 				</option>
 			))}
 		</select>
 	) as JSX.HTMLRenderable<HTMLSelectElement>;
-	const centerLabel = (<span>{amountFor(typ, total, total)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
+	const centerLabel = (<span>{labelFor(focused)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
 	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
+
 	const boxes = (
 		<Boxes
 			focusColor="white"
@@ -61,18 +86,9 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	) as Boxes<BoxPlus>;
 	const boxesDiv = (<div>{boxes}</div>) as JSX.HTMLRenderable<HTMLDivElement>;
 
-	const changeSample = () => {
-		i = selectSample.el.selectedIndex;
-		State.sample = i;
-		typ = profile.SampleType[i];
-		total = profile.Sample?.reduce((sum, x) => sum + x.Value[i], 0) ?? 1;
-		lineData = new Map([...functions.values()].map((x) => [x, graph.lineDataFor(x, typ, i, total)]));
-		focus(focused);
-	};
-
 	const hover = (box?: BoxPlus) => {
 		if (box) {
-			rightLabel.el.innerText = amountFor(typ, costOf(box), total);
+			rightLabel.el.innerText = labelFor(focused);
 		} else {
 			rightLabel.el.innerHTML = '&nbsp;';
 		}
@@ -100,13 +116,14 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		if (!box) return;
 
 		focused = box;
-		State.focused = box.func?.ID;
+		settings.focused = box.func?.ID;
+		State.flameGraph = settings;
 		if (box.func) {
 			centerLabel.el.innerHTML = '&nbsp;';
 			boxes.boxes = [
-				...graph.up(i, box.func),
+				...graph.up(box.func),
 				{
-					label: amountFor(typ, costOf(box), total),
+					label: labelFor(box),
 					x1: 0,
 					x2: 1,
 					level: 0,
@@ -114,16 +131,16 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 					id: -1,
 					alignLabel: 'center',
 				} as BoxPlus,
-				...graph.down(i, box.func),
+				...graph.down(box.func),
 			];
 		} else {
-			centerLabel.el.innerText = amountFor(typ, total, total);
-			boxes.boxes = [...graph.down(i, box.func)];
+			centerLabel.el.innerText = amountFor(profile.SampleType[settings.sample], total, total);
+			boxes.boxes = [...graph.down(box.func)];
 		}
 	};
 
-	if (State.focused) {
-		focus(initialBoxes.find((x) => x.func?.ID === State.focused));
+	if (settings.focused) {
+		focus(initialBoxes.find((x) => x.func?.ID === settings.focused));
 	}
 
 	return (
@@ -138,58 +155,51 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	);
 }
 
-interface Unit {
-	powers: string[];
-	divisor: number;
-	threshold: number;
-	precision?: number;
-}
-
-const Units: Record<string, Unit> = {
-	count: { powers: [''], divisor: 1, threshold: Infinity },
-	bytes: { powers: ['B', 'kiB', 'MiB', 'GiB', 'TiB'], divisor: 1024, threshold: 100, precision: 2 },
-	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, threshold: 1000, precision: 3 },
-};
-
-function powerOf(typ: ValueType, cost: number) {
-	if (!(typ.Unit in Units)) throw new Error(`Unsupported unit ${typ.Unit}`);
-	let value = cost;
-	let power = 0;
-	const { powers, divisor, threshold, precision } = Units[typ.Unit];
-	while (value > threshold && power < powers.length) power++, (value /= divisor);
-	return { value: value.toPrecision(precision), unit: powers[power] };
-}
-
-function amountFor(typ: ValueType, cost: number, total: number) {
-	const { value, unit } = powerOf(typ, cost);
-	const percent = (cost / total) * 100;
-	return `${value} ${unit} (${percent.toFixed(0)}%)`;
-}
-
-interface Call {
-	caller?: Func;
-	callee?: Func;
-	line?: Line;
-	depth: number;
-	sample: Sample;
-}
-
-interface BoxPlus extends Box {
-	func?: Func;
-	calls: Call[];
-	cost: number;
-}
-
 class CallGraph {
+	readonly #profile: Profile;
+	readonly #settings: FlameGraphSettings;
+	readonly #functions: Map<number, Func>;
+	readonly #locations: Map<number, Location>;
 	readonly #calls = new Map<Func | undefined, { to: Call[]; from: Call[] }>();
 	readonly #groups = new Map<string, number>();
+
+	constructor(profile: Profile, settings: FlameGraphSettings) {
+		this.#profile = profile;
+		this.#settings = settings;
+
+		this.#functions = new Map((profile.Function || []).map((f) => [f.ID, f]));
+		this.#locations = new Map((profile.Location || []).map((l) => [l.ID, l]));
+		for (const sample of profile.Sample || []) {
+			const funcs = sample.Location.slice()
+				.reverse()
+				.flatMap((l) => this.#locations.get(l)!.Line.slice().reverse())
+				.map((l) => ({ line: l, func: this.#functions.get(l.Function)! }));
+
+			let last: (typeof funcs)[0] | undefined;
+			funcs.forEach(({ func, line }, depth) => {
+				const call: Call = { callee: func, sample, depth, line: last?.line };
+				if (last) call.caller = last.func;
+				last = { func, line };
+				this.#add(call);
+			});
+			if (last) {
+				this.#add({ caller: last.func, line: last.line, sample, depth: funcs.length });
+			}
+		}
+	}
 
 	readonly to = (func: Func) => this.#for(func).to;
 	readonly from = (func: Func) => this.#for(func).from;
 	readonly entries = () => this.#for().from;
 	readonly exits = () => this.#for().to;
+	readonly totalCost = () => this.#profile.Sample?.reduce((sum, x) => sum + x.Value[this.#settings.sample], 0) ?? 1;
+	readonly lineData = () => new Map([...this.#functions.values()].map((x) => [x, this.#lineDataFor(x)]));
 
-	add(call: Call) {
+	get functions() {
+		return this.#functions.values();
+	}
+
+	#add(call: Call) {
 		this.#for(call.caller).from.push(call);
 		this.#for(call.callee).to.push(call);
 
@@ -207,9 +217,9 @@ class CallGraph {
 		return this.#calls.get(func)!;
 	}
 
-	*down(value: number, func?: Func): Generator<BoxPlus> {
+	*down(func?: Func): Generator<BoxPlus> {
 		const previous = func ? this.#firstCall(func, +1) : null;
-		for (const x of this.#walk(value, func, 1, 0, 1, previous, +1)) {
+		for (const x of this.#walk(this.#settings.sample, func, 1, 0, 1, previous, +1)) {
 			yield {
 				...x,
 				label: labelFor(x.func),
@@ -219,10 +229,10 @@ class CallGraph {
 		}
 	}
 
-	*up(value: number, func: Func): Generator<BoxPlus> {
+	*up(func: Func): Generator<BoxPlus> {
 		const previous = func ? this.#firstCall(func, -1) : null;
 		let first = true;
-		for (const x of this.#walk(value, func, 0, 0, 1, previous, -1)) {
+		for (const x of this.#walk(this.#settings.sample, func, 0, 0, 1, previous, -1)) {
 			if (first) {
 				// Skip the first entry
 				first = false;
@@ -237,11 +247,14 @@ class CallGraph {
 		}
 	}
 
-	lineDataFor(func: Func, typ: ValueType, sample: number, total: number) {
+	#lineDataFor(func: Func) {
 		const calls = groupBy(
 			this.from(func).filter((x): x is Call & { line: Line } => !!x.line),
 			(x) => x.line.Line,
 		);
+		const { sample } = this.#settings;
+		const typ = this.#profile.SampleType[sample];
+		const total = this.totalCost();
 		const data = [...calls]
 			.map(([line, calls]) => [line, calls.reduce((sum, x) => sum + x.sample.Value[sample], 0)] as const)
 			.map(([line, cost]) => lineDataFor(typ, line, cost, total));
@@ -312,6 +325,21 @@ class CallGraph {
 			}
 		}
 	}
+}
+
+function powerOf(typ: ValueType, cost: number) {
+	if (!(typ.Unit in Units)) throw new Error(`Unsupported unit ${typ.Unit}`);
+	let value = cost;
+	let power = 0;
+	const { powers, divisor, threshold, precision } = Units[typ.Unit];
+	while (value > threshold && power < powers.length) power++, (value /= divisor);
+	return { value: value.toPrecision(precision), unit: powers[power] };
+}
+
+function amountFor(typ: ValueType, cost: number, total: number) {
+	const { value, unit } = powerOf(typ, cost);
+	const percent = (cost / total) * 100;
+	return `${value} ${unit} (${percent.toFixed(0)}%)`;
 }
 
 function labelFor(func?: Func) {
