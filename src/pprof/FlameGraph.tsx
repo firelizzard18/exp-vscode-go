@@ -54,24 +54,29 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	};
 
 	const changeSample = () => {
-		settings.sample = selectSample.el.selectedIndex;
+		settings.sample = control.sample.el.selectedIndex;
 		State.flameGraph = settings;
 		lineData = graph.lineData();
 		total = graph.totalCost();
 		focus(focused);
 	};
 
-	const selectSample = (
-		<select onchange={() => changeSample()}>
-			{profile.SampleType.map((x, j) => (
-				<option value={`${j}`} selected={settings.sample === j}>
-					{x.Type}
-				</option>
-			))}
-		</select>
-	) as JSX.HTMLRenderable<HTMLSelectElement>;
-	const centerLabel = (<span>{labelFor(focused)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
-	const rightLabel = (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>;
+	const control = {
+		sample: (
+			<select onchange={() => changeSample()}>
+				{profile.SampleType.map((x, j) => (
+					<option value={`${j}`} selected={settings.sample === j}>
+						{x.Type}
+					</option>
+				))}
+			</select>
+		) as JSX.HTMLRenderable<HTMLSelectElement>,
+	};
+
+	const label = {
+		center: (<span>{labelFor(focused)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
+		right: (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
+	} as const;
 
 	const boxes = (
 		<Boxes
@@ -88,9 +93,9 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 
 	const hover = (box?: BoxPlus) => {
 		if (box) {
-			rightLabel.el.innerText = labelFor(focused);
+			label.right.el.innerText = labelFor(focused);
 		} else {
-			rightLabel.el.innerHTML = '&nbsp;';
+			label.right.el.innerHTML = '&nbsp;';
 		}
 		if (box?.func) {
 			boxesDiv.el.dataset.vscodeContext = JSON.stringify({
@@ -120,7 +125,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		settings.focused = box.func?.ID;
 		State.flameGraph = settings;
 		if (box.func) {
-			centerLabel.el.innerHTML = '&nbsp;';
+			label.center.el.innerHTML = '&nbsp;';
 			boxes.boxes = [
 				...graph.up(box.func),
 				{
@@ -135,7 +140,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 				...graph.down(box.func),
 			];
 		} else {
-			centerLabel.el.innerText = amountFor(profile.SampleType[settings.sample], total, total);
+			label.center.el.innerText = amountFor(profile.SampleType[settings.sample], total, total);
 			boxes.boxes = [...graph.down(box.func)];
 		}
 	};
@@ -158,9 +163,9 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	return (
 		<div className="flame-graph">
 			<div className="header">
-				<span className="left">{selectSample}</span>
-				<span className="center">{centerLabel}</span>
-				<span className="right">{rightLabel}</span>
+				<span className="left">{control.sample}</span>
+				<span className="center">{label.center}</span>
+				<span className="right">{label.right}</span>
 			</div>
 			{boxesDiv}
 		</div>
