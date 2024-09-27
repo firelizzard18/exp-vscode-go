@@ -17,6 +17,13 @@ import {
 	TextEditorDecorationType,
 	DecorationOptions,
 	DecorationInstanceRenderOptions,
+	CustomEditorProvider,
+	CustomDocumentBackup,
+	CustomDocumentBackupContext,
+	CustomDocumentContentChangeEvent,
+	CustomDocumentEditEvent,
+	Event,
+	EventEmitter,
 } from 'vscode';
 import type { GoTestItem } from './item';
 import { ChildProcess, spawn } from 'node:child_process';
@@ -282,11 +289,22 @@ class ProfileDocument {
 	}
 
 	#didReceiveMessage(message: Message) {
-		if ('event' in message) {
-			switch (message.event) {
-				case 'hovered':
-					this.#hovered = message;
-					break;
+		if (!('event' in message)) return;
+
+		switch (message.event) {
+			case 'hovered':
+				this.#hovered = message;
+				break;
+
+			case 'action': {
+				const { action, label } = message;
+				this.#provider.didChange.fire({
+					document: this,
+					label,
+					undo: () => this.#postMessage({ command: 'undo', action }),
+					redo: () => this.#postMessage({ command: 'redo', action }),
+				});
+				break;
 			}
 		}
 	}
@@ -357,11 +375,14 @@ class ProfileDocument {
 	}
 }
 
-export class ProfileEditorProvider implements CustomReadonlyEditorProvider<ProfileDocument> {
+export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocument> {
 	readonly #ext: ExtensionContext;
 	readonly #go: GoExtensionAPI;
 	readonly decoration: TextEditorDecorationType;
 	readonly emptyDecoration: TextEditorDecorationType;
+
+	readonly didChange = new EventEmitter<CustomDocumentEditEvent<ProfileDocument>>();
+	readonly onDidChangeCustomDocument = this.didChange.event;
 
 	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
 		this.#ext = ext;
@@ -372,6 +393,34 @@ export class ProfileEditorProvider implements CustomReadonlyEditorProvider<Profi
 		});
 		this.emptyDecoration = window.createTextEditorDecorationType({});
 		ext.subscriptions.push(this.decoration);
+	}
+
+	async saveCustomDocument(document: ProfileDocument, cancellation: CancellationToken): Promise<void> {
+		// Not actually editable
+	}
+
+	async saveCustomDocumentAs(
+		document: ProfileDocument,
+		destination: Uri,
+		cancellation: CancellationToken,
+	): Promise<void> {
+		await workspace.fs.copy(document.uri, destination);
+	}
+
+	async revertCustomDocument(document: ProfileDocument, cancellation: CancellationToken): Promise<void> {
+		// TODO: Undo entire stack?
+	}
+
+	async backupCustomDocument(
+		document: ProfileDocument,
+		context: CustomDocumentBackupContext,
+		cancellation: CancellationToken,
+	): Promise<CustomDocumentBackup> {
+		// Nothing to do
+		return {
+			id: `${document.uri}`,
+			delete() {},
+		};
 	}
 
 	uriFor(panel: WebviewPanel, path: string) {

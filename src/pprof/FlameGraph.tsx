@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
@@ -41,6 +42,65 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		settings.sample = profile.SampleType.indexOf(s);
 	}
 
+	const applyChange = (label: string, s: Partial<FlameGraphSettings>) => {
+		if (Object.keys(s).every((x) => (settings as any)[x] === (s as any)[x])) return;
+		const before = Object.assign({}, settings);
+		const after = Object.assign(settings, s);
+		State.flameGraph = after;
+		sendMessage({ event: 'action', label, action: { action: 'flame-graph', before, after } });
+		didChange(before);
+	};
+
+	const didChange = (before: FlameGraphSettings) => {
+		const changed = {
+			sample: before.sample !== settings.sample,
+			ignored: before.ignored !== settings.ignored,
+		} as const;
+
+		State.flameGraph = settings;
+
+		if (changed.sample) {
+			lineData = graph.lineData();
+			total = graph.totalCost();
+			control.sample.el.selectedIndex = settings.sample;
+		}
+
+		if (changed.ignored) {
+			graph.rebuild();
+		}
+
+		if (changed.sample || changed.ignored) {
+			focus(focused);
+		}
+	};
+
+	// TODO: Dispose listener if the element is removed from the DOM
+	addMessageListener((msg) => {
+		if (!('command' in msg)) return;
+		switch (msg.command) {
+			case 'undo': {
+				const { before, after } = msg.action;
+				Object.assign(settings, before);
+				didChange(after);
+				break;
+			}
+
+			case 'redo': {
+				const { before, after } = msg.action;
+				Object.assign(settings, after);
+				didChange(before);
+				break;
+			}
+
+			case 'ignore-func': {
+				const func = graph.function(msg.func.id);
+				if (!func) return;
+				applyChange(`Ignore ${labelFor(func)}`, { ignored: [...settings.ignored, func.ID] });
+				break;
+			}
+		}
+	});
+
 	const graph = new CallGraph(profile, settings);
 	let lineData = graph.lineData();
 	let total = graph.totalCost();
@@ -48,22 +108,14 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	const initialBoxes = [...graph.down()];
 	let focused = initialBoxes.find((x) => !x.func)!;
 
-	const labelFor = (box: BoxPlus) => {
+	const valueStringFor = (box: BoxPlus) => {
 		const cost = box.calls?.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
 		return amountFor(profile.SampleType[settings.sample], cost, total);
 	};
 
-	const changeSample = () => {
-		settings.sample = control.sample.el.selectedIndex;
-		State.flameGraph = settings;
-		lineData = graph.lineData();
-		total = graph.totalCost();
-		focus(focused);
-	};
-
 	const control = {
 		sample: (
-			<select onchange={() => changeSample()}>
+			<select onchange={() => applyChange('Change sample', { sample: control.sample.el.selectedIndex })}>
 				{profile.SampleType.map((x, j) => (
 					<option value={`${j}`} selected={settings.sample === j}>
 						{x.Type}
@@ -74,7 +126,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	};
 
 	const label = {
-		center: (<span>{labelFor(focused)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
+		center: (<span>{valueStringFor(focused)}</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
 		right: (<span>&nbsp;</span>) as JSX.HTMLRenderable<HTMLSpanElement>,
 	} as const;
 
@@ -93,7 +145,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 
 	const hover = (box?: BoxPlus) => {
 		if (box) {
-			label.right.el.innerText = labelFor(focused);
+			label.right.el.innerText = valueStringFor(focused);
 		} else {
 			label.right.el.innerHTML = '&nbsp;';
 		}
@@ -122,14 +174,13 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		if (!box) return;
 
 		focused = box;
-		settings.focused = box.func?.ID;
-		State.flameGraph = settings;
+		applyChange('Change focus', { focused: box.func?.ID });
 		if (box.func) {
 			label.center.el.innerHTML = '&nbsp;';
 			boxes.boxes = [
 				...graph.up(box.func),
 				{
-					label: labelFor(box),
+					label: valueStringFor(box),
 					x1: 0,
 					x2: 1,
 					level: 0,
@@ -148,17 +199,6 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	if (settings.focused) {
 		focus(initialBoxes.find((x) => x.func?.ID === settings.focused));
 	}
-
-	// TODO: Dispose listener if the element is removed from the DOM
-	addMessageListener((msg) => {
-		if (!('command' in msg)) return;
-		switch (msg.command) {
-			case 'ignore-func':
-				graph.ignore(msg.func.id);
-				focus(focused);
-				break;
-		}
-	});
 
 	return (
 		<div className="flame-graph">
@@ -186,7 +226,7 @@ class CallGraph {
 
 		this.#functions = new Map((profile.Function || []).map((f) => [f.ID, f]));
 		this.#locations = new Map((profile.Location || []).map((l) => [l.ID, l]));
-		this.#build();
+		this.rebuild();
 	}
 
 	readonly to = (func: Func) => this.#for(func).to;
@@ -195,14 +235,9 @@ class CallGraph {
 	readonly exits = () => this.#for().to;
 	readonly totalCost = () => this.#profile.Sample?.reduce((sum, x) => sum + x.Value[this.#settings.sample], 0) ?? 1;
 	readonly lineData = () => new Map([...this.#functions.values()].map((x) => [x, this.#lineDataFor(x)]));
+	readonly function = (id: number) => this.#functions.get(id);
 
-	ignore(id: number) {
-		this.#settings.ignored.push(id);
-		State.flameGraph = this.#settings;
-		this.#build();
-	}
-
-	#build() {
+	rebuild() {
 		this.#calls.clear();
 		for (const sample of this.#profile.Sample || []) {
 			const funcs = sample.Location.slice()
