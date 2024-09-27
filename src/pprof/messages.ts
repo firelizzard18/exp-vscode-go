@@ -1,12 +1,20 @@
-export type Message = HoverEvent;
+export type Message = HoverEvent | FunctionCommand;
+
+export interface FunctionCommand {
+	readonly command: 'ignore-func';
+	readonly func: FuncData;
+}
 
 export interface HoverEvent {
 	readonly event: 'hovered';
-	readonly func?: {
-		readonly file: string;
-		readonly line: number;
-	};
+	readonly func?: FuncData;
 	readonly lines?: readonly LineData[];
+}
+
+interface FuncData {
+	readonly id: number;
+	readonly file: string;
+	readonly line: number;
 }
 
 export interface LineData {

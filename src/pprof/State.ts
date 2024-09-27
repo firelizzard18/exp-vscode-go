@@ -3,8 +3,19 @@ import { Message } from './messages';
 
 const vscode = acquireVsCodeApi<StateData>();
 
-export function postMessage(message: Message) {
+export function sendMessage(message: Message) {
 	vscode.postMessage(message);
+}
+
+export function addMessageListener(fn: (_: Message) => void) {
+	const fn2 = (event: MessageEvent<Message>) => {
+		if (!event.data || typeof event.data !== 'object') return;
+		if (!('event' in event.data || 'command' in event.data)) return;
+		fn(event.data);
+	};
+
+	window.addEventListener('message', fn2);
+	return () => window.removeEventListener('message', fn2);
 }
 
 interface StateData {
@@ -15,6 +26,7 @@ interface StateData {
 export interface FlameGraphSettings {
 	sample: number;
 	focused?: number;
+	ignored: number[];
 }
 
 export const State = new (class {
@@ -26,7 +38,7 @@ export const State = new (class {
 	}
 
 	get flameGraph(): FlameGraphSettings {
-		return this.#get('flameGraph') || { sample: -1 };
+		return this.#get('flameGraph') || { sample: -1, ignored: [] };
 	}
 	set flameGraph(flameGraph: FlameGraphSettings) {
 		this.#set('flameGraph', flameGraph);

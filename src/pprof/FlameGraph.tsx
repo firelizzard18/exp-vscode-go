@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
-import { LineData } from './messages';
-import { FlameGraphSettings, postMessage, State } from './State';
+import { LineData, Message } from './messages';
+import { addMessageListener, FlameGraphSettings, sendMessage, State } from './State';
 
 interface Unit {
 	powers: string[];
@@ -96,9 +96,10 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			boxesDiv.el.dataset.vscodeContext = JSON.stringify({
 				hoveredFunction: true,
 			});
-			postMessage({
+			sendMessage({
 				event: 'hovered',
 				func: {
+					id: box.func.ID,
 					file: box.func.Filename,
 					line: box.func.StartLine,
 				},
@@ -106,7 +107,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			});
 		} else {
 			boxesDiv.el.dataset.vscodeContext = '{}';
-			postMessage({
+			sendMessage({
 				event: 'hovered',
 			});
 		}
@@ -143,6 +144,17 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		focus(initialBoxes.find((x) => x.func?.ID === settings.focused));
 	}
 
+	// TODO: Dispose listener if the element is removed from the DOM
+	addMessageListener((msg) => {
+		if (!('command' in msg)) return;
+		switch (msg.command) {
+			case 'ignore-func':
+				graph.ignore(msg.func.id);
+				focus(focused);
+				break;
+		}
+	});
+
 	return (
 		<div className="flame-graph">
 			<div className="header">
@@ -169,23 +181,7 @@ class CallGraph {
 
 		this.#functions = new Map((profile.Function || []).map((f) => [f.ID, f]));
 		this.#locations = new Map((profile.Location || []).map((l) => [l.ID, l]));
-		for (const sample of profile.Sample || []) {
-			const funcs = sample.Location.slice()
-				.reverse()
-				.flatMap((l) => this.#locations.get(l)!.Line.slice().reverse())
-				.map((l) => ({ line: l, func: this.#functions.get(l.Function)! }));
-
-			let last: (typeof funcs)[0] | undefined;
-			funcs.forEach(({ func, line }, depth) => {
-				const call: Call = { callee: func, sample, depth, line: last?.line };
-				if (last) call.caller = last.func;
-				last = { func, line };
-				this.#add(call);
-			});
-			if (last) {
-				this.#add({ caller: last.func, line: last.line, sample, depth: funcs.length });
-			}
-		}
+		this.#build();
 	}
 
 	readonly to = (func: Func) => this.#for(func).to;
@@ -195,8 +191,35 @@ class CallGraph {
 	readonly totalCost = () => this.#profile.Sample?.reduce((sum, x) => sum + x.Value[this.#settings.sample], 0) ?? 1;
 	readonly lineData = () => new Map([...this.#functions.values()].map((x) => [x, this.#lineDataFor(x)]));
 
-	get functions() {
-		return this.#functions.values();
+	ignore(id: number) {
+		this.#settings.ignored.push(id);
+		State.flameGraph = this.#settings;
+		this.#build();
+	}
+
+	#build() {
+		this.#calls.clear();
+		for (const sample of this.#profile.Sample || []) {
+			const funcs = sample.Location.slice()
+				.reverse()
+				.flatMap((l) => this.#locations.get(l)!.Line.slice().reverse())
+				.map((l) => ({ line: l, func: this.#functions.get(l.Function)! }));
+
+			if (funcs.some((x) => this.#settings.ignored.includes(x.func.ID))) continue;
+
+			let last: (typeof funcs)[0] | undefined;
+			let depth = 0;
+			for (const { func, line } of funcs) {
+				const call: Call = { callee: func, sample, depth, line: last?.line };
+				if (last) call.caller = last.func;
+				last = { func, line };
+				this.#add(call);
+				depth++;
+			}
+			if (last) {
+				this.#add({ caller: last.func, line: last.line, sample, depth: funcs.length });
+			}
+		}
 	}
 
 	#add(call: Call) {

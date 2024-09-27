@@ -40,6 +40,9 @@ export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Cont
 
 	// [Command] Show source
 	command('goExp.pprof.showSource', () => ProfileDocument.active?.showSource());
+
+	// [Command] Ignore function
+	command('goExp.pprof.ignore', () => ProfileDocument.active?.ignoreFunc());
 }
 
 export class ProfileType {
@@ -217,6 +220,7 @@ class ProfileDocument {
 	readonly #subscriptions: Disposable[] = [];
 
 	#hovered: HoverEvent = { event: 'hovered' };
+	#panel?: WebviewPanel;
 
 	constructor(provider: ProfileEditorProvider, uri: Uri, proc: ChildProcess, server: string) {
 		this.#provider = provider;
@@ -232,6 +236,7 @@ class ProfileDocument {
 
 	resolve(panel: WebviewPanel) {
 		ProfileDocument.#active = this;
+		this.#panel = panel;
 		panel.onDidChangeViewState(
 			(e) => {
 				if (e.webviewPanel.active) {
@@ -245,7 +250,15 @@ class ProfileDocument {
 		);
 
 		panel.webview.options = { enableScripts: true, enableCommandUris: true };
-		panel.webview.onDidReceiveMessage((x) => this.#didReceiveMessage(x), null, this.#subscriptions);
+		panel.webview.onDidReceiveMessage(
+			(x) => {
+				if (!x || typeof x !== 'object') return;
+				if (!('event' in x || 'command' in x)) return;
+				this.#didReceiveMessage(x);
+			},
+			null,
+			this.#subscriptions,
+		);
 		panel.webview.html = `
 			<!DOCTYPE html>
 			<html lang="en">
@@ -261,6 +274,11 @@ class ProfileDocument {
 				</body>
 			</html>
 		`;
+	}
+
+	async #postMessage(message: Message) {
+		const ok = await this.#panel?.webview.postMessage(message);
+		if (!ok) console.error('Failed to post message');
 	}
 
 	#didReceiveMessage(message: Message) {
@@ -329,6 +347,13 @@ class ProfileDocument {
 				renderOptions: { before: { contentText: '', width: `${fullWidth}ch` } },
 			})),
 		);
+	}
+
+	async ignoreFunc() {
+		const { func } = this.#hovered;
+		if (!func) return;
+
+		await this.#postMessage({ command: 'ignore-func', func });
 	}
 }
 

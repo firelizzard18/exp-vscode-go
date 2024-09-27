@@ -159,6 +159,11 @@
         "command": "goExp.pprof.showSource",
         "title": "Show Source",
         "description": "Show the source code for the selected function"
+      },
+      {
+        "command": "goExp.pprof.ignore",
+        "title": "Ignore",
+        "description": "Ignore the selected function"
       }
     ],
     "menus": {
@@ -190,6 +195,10 @@
         {
           "command": "goExp.pprof.showSource",
           "when": "false"
+        },
+        {
+          "command": "goExp.pprof.ignore",
+          "when": "false"
         }
       ],
       "testing/item/context": [
@@ -202,6 +211,10 @@
       "webview/context": [
         {
           "command": "goExp.pprof.showSource",
+          "when": "webviewId == 'goExp.pprof' && hoveredFunction"
+        },
+        {
+          "command": "goExp.pprof.ignore",
           "when": "webviewId == 'goExp.pprof' && hoveredFunction"
         }
       ],
