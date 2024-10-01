@@ -32,7 +32,7 @@ import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
 import { Context, doSafe } from './testing';
 import moment from 'moment';
-import { HoverEvent, Message } from '../pprof/messages';
+import { HoverEvent, Message } from '../../webview/pprof/messages';
 
 export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
 	const command = (name: string, fn: (...args: any[]) => any) => {

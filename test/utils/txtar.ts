@@ -42,7 +42,7 @@ class MapFS extends Map<string, MapFS | Uint8Array> implements FileSystem {
 		}
 
 		return Promise.resolve(
-			[...entry].map(([name, value]) => [name, value instanceof MapFS ? FileType.Directory : FileType.File])
+			[...entry].map(([name, value]) => [name, value instanceof MapFS ? FileType.Directory : FileType.File]),
 		);
 	}
 
@@ -109,7 +109,7 @@ enum FileType {
 	/**
 	 * A symbolic link to a file.
 	 */
-	SymbolicLink = 64
+	SymbolicLink = 64,
 }
 
 export class Workspace {

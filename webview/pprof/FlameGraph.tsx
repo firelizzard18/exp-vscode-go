@@ -2,8 +2,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box, Boxes } from './Boxes';
 import { createElement } from './jsx';
-import { LineData } from './messages';
-import { addMessageListener, FlameGraphSettings, sendMessage, State } from './State';
+import { FlameGraphSettings, LineData } from './messages';
+import { addMessageListener, sendMessage, State } from './State';
 
 interface Unit {
 	powers: string[];

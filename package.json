@@ -30,12 +30,13 @@
     "golang.go"
   ],
   "scripts": {
-    "bundle": "esbuild main=src/extension.ts pprof=src/pprof/App.tsx --bundle --outdir=dist --external:vscode --external:react/jsx-runtime --format=cjs --platform=node --loader:.frag=text --loader:.vert=text",
-    "watch": "npm run bundle -- --sourcemap=inline --watch",
-    "package": "yarn run vsce package",
+    "bundle": "esbuild main=src/extension.ts pprof=webview/pprof/App.tsx --bundle --outdir=dist --external:vscode --external:react/jsx-runtime --format=cjs --platform=node --loader:.frag=text --loader:.vert=text",
+    "watch": "yarn run bundle -- --sourcemap=inline --watch",
+    "package": "vsce package",
     "lint": "eslint src --ext ts",
     "clean": "rimraf dist out",
-    "vscode:prepublish": "tsc --noEmit && yarn run lint && yarn run bundle"
+    "check-types": "tsc -p src && tsc -p webview",
+    "vscode:prepublish": "yarn run check-types && yarn run lint && yarn run bundle"
   },
   "contributes": {
     "customEditors": [

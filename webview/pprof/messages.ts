@@ -1,4 +1,10 @@
-import { FlameGraphSettings } from './State';
+// FlameGraphSettings must live in this file so that the extension can import it
+
+export interface FlameGraphSettings {
+	sample: number;
+	focused: number | null;
+	ignored: number[];
+}
 
 type Event = HoverEvent | ActionEvent;
 type Command = FunctionCommand | UndoCommand | RedoCommand;

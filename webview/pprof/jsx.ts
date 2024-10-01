@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
 
-// vscode webview API
-
 export function createElement<T extends HTMLElement>(
 	tag: keyof HTMLTypes,
 	props: JSX.Attributes<T>,
@@ -54,6 +52,8 @@ export function render(element: Node | JSX.Renderable, container: ParentNode): v
 	}
 	container.append(element);
 }
+
+// The following is copied (with modifications) from React's type definitions
 
 declare global {
 	namespace JSX {

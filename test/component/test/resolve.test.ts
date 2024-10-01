@@ -25,7 +25,7 @@ describe('Go test controller', () => {
 
 			func TestFoo(t *testing.T)`,
 
-			'foo'
+			'foo',
 		);
 
 		it('resolves tests', async () => {
@@ -35,8 +35,8 @@ describe('Go test controller', () => {
 				{
 					kind: 'workspace',
 					uri: `${ws.uri}`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
+				},
 			]);
 		});
 	});
@@ -75,11 +75,11 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 
@@ -87,7 +87,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ showFiles: true })
+				withConfiguration({ showFiles: true }),
 			);
 
 			await expect(host).toResolve([
@@ -102,17 +102,17 @@ describe('Go test controller', () => {
 								{
 									kind: 'file',
 									uri: `${ws.uri}/bar/bar_test.go`,
-									children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-								}
-							]
+									children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
+								},
+							],
 						},
 						{
 							kind: 'file',
 							uri: `${ws.uri}/foo_test.go`,
-							children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
+						},
+					],
+				},
 			]);
 
 			// Changing config changes the resolved tests
@@ -125,11 +125,11 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 
@@ -137,7 +137,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ discovery: 'off' })
+				withConfiguration({ discovery: 'off' }),
 			);
 
 			// Nothing is resolved initially
@@ -153,10 +153,10 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
+						},
+					],
+				},
 			]);
 
 			// Toggling the config behaves preserves which files have been opened
@@ -169,11 +169,11 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 
 			host.workspace.config.discovery = 'off';
@@ -185,10 +185,10 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
+						},
+					],
+				},
 			]);
 		});
 
@@ -227,16 +227,16 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
 						{
 							kind: 'test',
 							name: 'TestFoo',
 							uri: `${ws.uri}/foo_test.go`,
-							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }],
+						},
+					],
+				},
 			]);
 		});
 
@@ -257,16 +257,16 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
 						{
 							kind: 'test',
 							name: 'TestFoo',
 							uri: `${ws.uri}/foo_test.go`,
-							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestFoo/Bar', uri: `${ws.uri}/foo_test.go` }],
+						},
+					],
+				},
 			]);
 
 			tc.removeDynamicTestCases();
@@ -279,16 +279,16 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
 						{
 							kind: 'test',
 							name: 'TestFoo',
 							uri: `${ws.uri}/foo_test.go`,
-							children: [{ kind: 'test', name: 'TestFoo/Baz', uri: `${ws.uri}/foo_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestFoo/Baz', uri: `${ws.uri}/foo_test.go` }],
+						},
+					],
+				},
 			]);
 		});
 
@@ -296,7 +296,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ exclude: { 'foo_test.go': true } })
+				withConfiguration({ exclude: { 'foo_test.go': true } }),
 			);
 
 			await expect(host).toResolve([
@@ -307,10 +307,10 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
+						},
+					],
+				},
 			]);
 
 			// Changing config changes the resolved tests
@@ -323,11 +323,11 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 
@@ -335,15 +335,15 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ exclude: { 'bar/**': true } })
+				withConfiguration({ exclude: { 'bar/**': true } }),
 			);
 
 			await expect(host).toResolve([
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
+				},
 			]);
 
 			// Changing config changes the resolved tests
@@ -356,11 +356,11 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 
@@ -368,7 +368,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ exclude: { 'foo_test.go': false } })
+				withConfiguration({ exclude: { 'foo_test.go': false } }),
 			);
 
 			await expect(host).toResolve([
@@ -379,11 +379,11 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 	});
@@ -418,7 +418,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ nestPackages: true })
+				withConfiguration({ nestPackages: true }),
 			);
 
 			await expect(host).toResolve([
@@ -434,12 +434,12 @@ describe('Go test controller', () => {
 								{
 									kind: 'package',
 									uri: `${ws.uri}/bar/baz`,
-									children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }]
-								}
-							]
-						}
-					]
-				}
+									children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }],
+								},
+							],
+						},
+					],
+				},
 			]);
 
 			// Changing config changes the resolved tests
@@ -452,15 +452,15 @@ describe('Go test controller', () => {
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar`,
-							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
+							children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
 						},
 						{
 							kind: 'package',
 							uri: `${ws.uri}/bar/baz`,
-							children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/bar/baz/baz_test.go` }],
+						},
+					],
+				},
 			]);
 		});
 	});
@@ -505,8 +505,8 @@ describe('Go test controller', () => {
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
+				},
 			]);
 		});
 
@@ -518,13 +518,13 @@ describe('Go test controller', () => {
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
 				},
 				{
 					kind: 'module',
 					uri: `${ws.uri}/bar/go.mod`,
-					children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
+				},
 			]);
 		});
 
@@ -532,7 +532,7 @@ describe('Go test controller', () => {
 			const host = new TestHost(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
-				withConfiguration({ exclude: { 'bar/**': true } })
+				withConfiguration({ exclude: { 'bar/**': true } }),
 			);
 
 			await host.manager.reloadUri(Uri.parse(`${ws.uri}/bar/bar.go`));
@@ -540,8 +540,8 @@ describe('Go test controller', () => {
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
+				},
 			]);
 
 			// Changing config changes the resolved tests
@@ -550,13 +550,13 @@ describe('Go test controller', () => {
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
 				},
 				{
 					kind: 'module',
 					uri: `${ws.uri}/bar/go.mod`,
-					children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/bar/bar_test.go` }],
+				},
 			]);
 		});
 	});
@@ -591,9 +591,9 @@ describe('Go test controller', () => {
 						{ kind: 'benchmark', name: 'BenchmarkBaz', uri: `${ws.uri}/foo_test.go` },
 						{ kind: 'example', name: 'ExampleBaz', uri: `${ws.uri}/foo_test.go` },
 						{ kind: 'fuzz', name: 'FuzzBaz', uri: `${ws.uri}/foo_test.go` },
-						{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestBaz', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 	});
@@ -628,10 +628,10 @@ describe('Go test controller', () => {
 							kind: 'test',
 							name: 'TestFoo',
 							uri: `${ws.uri}/foo_test.go`,
-							children: [{ kind: 'test', name: 'TestFoo/Subtest', uri: `${ws.uri}/foo_test.go` }]
-						}
-					]
-				}
+							children: [{ kind: 'test', name: 'TestFoo/Subtest', uri: `${ws.uri}/foo_test.go` }],
+						},
+					],
+				},
 			]);
 
 			// Changing config changes the resolved tests
@@ -642,9 +642,9 @@ describe('Go test controller', () => {
 					uri: `${ws.uri}/go.mod`,
 					children: [
 						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
-						{ kind: 'test', name: 'TestFoo/Subtest', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo/Subtest', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 	});
@@ -672,8 +672,8 @@ describe('Go test controller', () => {
 				{
 					kind: 'module',
 					uri: `${ws.uri}/go.mod`,
-					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }]
-				}
+					children: [{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }],
+				},
 			]);
 
 			await ws.writeFile(
@@ -684,7 +684,7 @@ describe('Go test controller', () => {
 				import "testing"
 
 				func TestFoo(t *testing.T) {}
-				func TestBar(t *testing.T) {}`
+				func TestBar(t *testing.T) {}`,
 			);
 			await host.manager.reloadUri(Uri.parse(`${ws.uri}/foo_test.go`), [], true);
 			await expect(host).toResolve([
@@ -693,9 +693,9 @@ describe('Go test controller', () => {
 					uri: `${ws.uri}/go.mod`,
 					children: [
 						{ kind: 'test', name: 'TestBar', uri: `${ws.uri}/foo_test.go` },
-						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` }
-					]
-				}
+						{ kind: 'test', name: 'TestFoo', uri: `${ws.uri}/foo_test.go` },
+					],
+				},
 			]);
 		});
 	});

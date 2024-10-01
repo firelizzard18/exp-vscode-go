@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-namespace */
-import { Message } from './messages';
+import { FlameGraphSettings, Message } from './messages';
 
 const vscode = acquireVsCodeApi<StateData>();
 
@@ -21,12 +21,6 @@ export function addMessageListener(fn: (_: Message) => void) {
 interface StateData {
 	profile?: Profile;
 	flameGraph?: FlameGraphSettings;
-}
-
-export interface FlameGraphSettings {
-	sample: number;
-	focused: number | null;
-	ignored: number[];
 }
 
 export const State = new (class {
