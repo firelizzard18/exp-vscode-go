@@ -143,12 +143,11 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 
 	const boxesEl = (
 		<Boxes
-			focusColor="white"
-			primaryColor="--vscode-charts-red"
+			boxColor="--vscode-charts-red"
 			textColor="--vscode-editor-background"
 			textColor2="--vscode-editor-foreground"
 			boxes={[] as BoxPlus[]}
-			onHovered={(x) => ((boxesEl.hovered = x), hover(x))}
+			onHovered={(x) => hover(x)}
 			onFocused={(x) => x && applyChange(`Focus ${labelFor(x.func)}`, { focused: x.func ? x.func.ID : null })}
 		/>
 	) as Boxes<BoxPlus>;

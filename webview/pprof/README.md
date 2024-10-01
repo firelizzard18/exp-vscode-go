@@ -31,3 +31,11 @@ switches tabs, the profile is also persisted along with the viewer state. It
 should be noted that 'persistent' is relative - data stored in this way is
 **not** persisted when the editor is closed, only when it is hidden (e.g. when
 the user switches to a different tab).
+
+## Rendering
+
+`<Boxes>` renders via two `<canvas>`es stacked on top of each other (via CSS
+positioning). The bottom canvas renders the boxes with WebGL while the top
+canvas renders text labels via a 2D rendering context. A spacer `<span>` is used
+to control the size of the container, since absolute-positioning the canvases
+prevents them from having an influence on the container's size.

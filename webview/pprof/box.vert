@@ -12,14 +12,8 @@ uniform mat4 projection;
 // current hovered graph ID, or -1
 uniform int hovered;
 
-// current focused graph ID, or -1
-uniform int focused;
-
-// color of focused elements
-uniform vec4 focus_color;
-
 // base primary color, as hsv
-uniform vec4 primary_color;
+uniform vec4 box_color;
 
 out vec4 v_color;
 
@@ -68,14 +62,11 @@ void main() {
 	}
 
 	mediump int color_hash = hash(group); // djb2's prime, just some bogus stuff
-	mediump float h = wrap(vary_by(primary_color[0], float(color_hash & 255) / 255.0f, 0.1f));
-	mediump float s = clamp(vary_by(primary_color[1], float((color_hash >> 8) & 255) / 255.0f, 0.1f), 0.0f, 1.0f);
-	v_color = vec4(hsv2rgb(vec3(h, s, primary_color[2])), primary_color[3]);
+	mediump float h = wrap(vary_by(box_color[0], float(color_hash & 255) / 255.0f, 0.1f));
+	mediump float s = clamp(vary_by(box_color[1], float((color_hash >> 8) & 255) / 255.0f, 0.1f), 0.0f, 1.0f);
+	v_color = vec4(hsv2rgb(vec3(h, s, box_color[2])), box_color[3]);
 
 	mediump int id = int(boxes[3]);
-	if(focused == id) {
-		v_color = focus_color;
-	}
 	if(hovered == id) {
 		v_color[0] *= 0.8f;
 	}

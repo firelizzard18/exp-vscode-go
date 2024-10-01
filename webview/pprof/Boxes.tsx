@@ -2,7 +2,7 @@
 // Original work copyright (c) Microsoft Corporation.
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { compileProgram } from './gl';
+import { useProgram } from './gl';
 import { createElement } from './jsx';
 import fragmentShaderSource from './box.frag';
 import vertexShaderSource from './box.vert';
@@ -10,7 +10,8 @@ import chroma, { Color } from 'chroma-js';
 import { mat4 } from 'gl-matrix';
 
 /**
- * The height of a box, in pixels.
+ * The height of a box, in pixels. This is with reference to the rendering
+ * context, i.e. it does not need to account for the device pixel ratio.
  */
 const boxHeight = 18;
 
@@ -70,8 +71,7 @@ export class Boxes<B extends Box = Box> {
 
 	constructor(
 		private readonly props: {
-			focusColor: string;
-			primaryColor: string;
+			boxColor: string;
 			textColor: string;
 			textColor2: string;
 			boxes: B[];
@@ -117,9 +117,10 @@ export class Boxes<B extends Box = Box> {
 			onFocused: null as B | null | undefined,
 		};
 
-		const fireEvent = (event: MouseEvent, handler: 'onHovered' | 'onFocused') => {
+		// Resolve a mouse event to a Box
+		const resolve = (event: MouseEvent, last: 'onHovered' | 'onFocused') => {
 			// Sanity check
-			if (!this.#renderer || !this.props[handler]) return;
+			if (!this.#renderer) return;
 
 			// Decode the position
 			const { x, y } = this.#targetXY(event);
@@ -127,18 +128,27 @@ export class Boxes<B extends Box = Box> {
 
 			// Find the box, avoid duplicate events
 			const box = this.#renderer.boxAt(x, y);
-			if (box === lastBox[handler]) return;
-			lastBox[handler] = box;
-
-			// Fire the event
-			this.props[handler](box);
+			if (box === lastBox[last]) return;
+			lastBox[last] = box;
+			return { box };
 		};
 
 		// Mouse move -> hovered
-		this.#el.el.addEventListener('mousemove', (event) => fireEvent(event, 'onHovered'));
+		this.#el.el.addEventListener('mousemove', (event) => {
+			const r = resolve(event, 'onHovered');
+			if (!r) return;
+			this.props.onHovered?.(r.box);
+
+			// Highlight the hovered box
+			this.#renderer && (this.#renderer.hovered = r.box);
+			this.#update(() => this.#renderer?.draw());
+		});
 
 		// Mouse click -> focused
-		this.#el.el.addEventListener('click', (event) => fireEvent(event, 'onFocused'));
+		this.#el.el.addEventListener('click', (event) => {
+			const r = resolve(event, 'onFocused');
+			r && this.props.onFocused?.(r.box);
+		});
 
 		return this.#el;
 	}
@@ -188,16 +198,6 @@ export class Boxes<B extends Box = Box> {
 		return { x: clientX - left, y: clientY - top };
 	}
 
-	set hovered(box: B | null | undefined) {
-		this.#renderer && (this.#renderer.hovered = box);
-		this.#update(() => this.#renderer?.draw());
-	}
-
-	set focused(box: B | null | undefined) {
-		this.#renderer && (this.#renderer.focused = box);
-		this.#update(() => this.#renderer?.draw());
-	}
-
 	/**
 	 * Update the set of {@link Box}es and redraw.
 	 */
@@ -243,17 +243,14 @@ class Renderer<B extends Box> {
 		readonly boxes: number;
 		readonly projection: WebGLUniformLocation;
 		readonly hovered: WebGLUniformLocation;
-		readonly focused: WebGLUniformLocation;
-		readonly focusColor: WebGLUniformLocation;
-		readonly primaryColor: WebGLUniformLocation;
+		readonly boxColor: WebGLUniformLocation;
 	};
 
 	readonly textColor: Color;
 	readonly textColor2: Color;
 
 	constructor({
-		focusColor,
-		primaryColor,
+		boxColor,
 		textColor,
 		textColor2,
 		boxes,
@@ -262,8 +259,7 @@ class Renderer<B extends Box> {
 		width,
 		height,
 	}: {
-		focusColor: string;
-		primaryColor: string;
+		boxColor: string;
 		textColor: string;
 		textColor2: string;
 		boxes: B[];
@@ -272,69 +268,69 @@ class Renderer<B extends Box> {
 		width: number;
 		height: number;
 	}) {
-		this.textColor = resolveColor(textColor);
-		this.textColor2 = resolveColor(textColor2);
-
+		// Set the canvas dimensions
 		textCanvas.width = width;
 		textCanvas.height = height;
 		glCanvas.width = width;
 		glCanvas.height = height;
 
+		// Create the 2D rendering context
 		this.ctx = must(textCanvas.getContext('2d'), 'get 2D context');
 
+		// Create the WebGL context and compile the shader program
 		this.gl = must(glCanvas.getContext('webgl2'), 'get WebGL context');
-		this.program = compileProgram(this.gl, vertexShaderSource, fragmentShaderSource);
+		this.program = useProgram(this.gl, vertexShaderSource, fragmentShaderSource);
 
+		// Set up a vertex buffer, and an element index (triangle) buffer
 		this.buffer = {
 			vertex: must(this.gl.createBuffer(), 'create vertex buffer'),
 			index: must(this.gl.createBuffer(), 'create index buffer'),
 		};
 
+		// Get locations for the shader's attributes and uniforms
 		this.location = {
-			boxes: must(this.gl.getAttribLocation(this.program, 'boxes'), 'get boxes'),
-			projection: must(this.gl.getUniformLocation(this.program, 'projection'), 'get projection'),
-			hovered: must(this.gl.getUniformLocation(this.program, 'hovered'), 'get hovered'),
-			focused: must(this.gl.getUniformLocation(this.program, 'focused'), 'get focused'),
-			focusColor: must(this.gl.getUniformLocation(this.program, 'focus_color'), 'get focus color'),
-			primaryColor: must(this.gl.getUniformLocation(this.program, 'primary_color'), 'get primary color'),
+			boxes: must(this.gl.getAttribLocation(this.program, 'boxes'), 'get boxes location'),
+			projection: must(this.gl.getUniformLocation(this.program, 'projection'), 'get projection location'),
+			hovered: must(this.gl.getUniformLocation(this.program, 'hovered'), 'get hovered location'),
+			boxColor: must(this.gl.getUniformLocation(this.program, 'box_color'), 'get box color location'),
 		};
 
-		this.gl.clearColor(0, 0, 0, 0);
-		this.gl.useProgram(this.program);
+		// Convert colors that may be CSS variable references into chroma
+		// colors
+		this.textColor = resolveColor(textColor);
+		this.textColor2 = resolveColor(textColor2);
+		this.boxColor = boxColor;
 
-		// Initialize
-		this.focusColor = focusColor;
-		this.primaryColor = primaryColor;
+		// Initialize and draw the first frame
 		this.draw(boxes, { width, height });
 	}
 
 	set hovered(hovered: B | null | undefined) {
+		// Set the hovered shader attribute
 		this.gl.uniform1i(this.location.hovered, hovered ? hovered.id : -1);
 	}
 
-	set focused(focused: B | null | undefined) {
-		this.gl.uniform1i(this.location.focused, focused ? focused.id : -1);
-	}
-
-	set focusColor(color: string) {
-		const rgba = resolveColor(color).rgba();
-		rgba[3] = 255;
-		this.gl.uniform4fv(this.location.focusColor, new Float32Array(rgba.map((r) => r / 255)));
-	}
-
-	set primaryColor(color: string) {
+	set boxColor(color: string) {
+		// Convert the color to HSV and set the shader attribute
 		const parsed = resolveColor(color);
 		const hsv = parsed.luminance(Math.min(parsed.luminance(), 0.25)).hsv();
-		this.gl.uniform4f(this.location.primaryColor, hsv[0] / 360, hsv[1], hsv[2], parsed.alpha());
+		this.gl.uniform4f(this.location.boxColor, hsv[0] / 360, hsv[1], hsv[2], parsed.alpha());
 	}
 
+	/**
+	 * Returns the {@link B} at the given coordinates.
+	 */
 	boxAt(cx: number, cy: number) {
-		// -1 makes the transition between boxes smoother
+		// Convert X to a percentage and Y to a level. -1 makes the transition
+		// between boxes smoother for reasons I don't understand.
 		const x = (cx * devicePixelRatio - 1) / this.gl.canvas.width;
 		const y = Math.floor((cy - 1) / boxHeight);
 		return this.#boxes.find((b) => b.x1 <= x && x <= b.x2 && b.level === y + this.#minLevel);
 	}
 
+	/**
+	 * Calculates the (X, Y) extent of a {@link B}.
+	 */
 	#boxPos(box: B) {
 		const width = this.gl.canvas.width;
 		const level = box.level - this.#minLevel;
@@ -347,45 +343,85 @@ class Renderer<B extends Box> {
 
 	#minLevel = 0;
 	#boxes: B[] = [];
+
+	/**
+	 * Draws boxes.
+	 * @param boxes - Render a new set of boxes.
+	 * @param size - Update the canvas size.
+	 */
 	draw(boxes?: B[], size?: { width: number; height: number }) {
+		// Do we need to (re)size the canvases?
 		if (size) {
 			this.#setSize(size);
 		}
 
+		// Do we need to recalculate labels and box geometries?
 		if (size || (boxes && boxes !== this.#boxes)) {
 			if (boxes) this.#boxes = boxes;
 
+			// The level of a box is allowed to be negative, but that would
+			// place it above the top of the context. Adjusting levels to be
+			// relative to the minimum level fixes that.
 			this.#minLevel = Math.min(...this.#boxes.map((b) => b.level));
+
+			// Reset hovered
 			this.hovered = null;
-			this.focused = null;
 
 			this.#drawBoxes(this.#boxes);
 			this.#drawLabels(this.#boxes);
 		}
 
 		const { gl } = this;
+
+		// Clear the color buffer (but not the depth buffer because we're not doing 3D)
+		this.gl.clearColor(0, 0, 0, 0);
 		gl.clear(gl.COLOR_BUFFER_BIT);
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
+
+		// Bind the vertex and index/element buffers
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
+
+		// Bind vertex data to the corresponding shader attribute
 		gl.enableVertexAttribArray(this.location.boxes);
+
+		// Draw the boxes. Each box consists of two triangles, each of which
+		// consist of three vertices, so the vertex count is 6 times the number
+		// of boxes. Full OpenGL supports larger polygons, but GLES/WebGL only
+		// supports triangles.
 		gl.drawElements(gl.TRIANGLES, this.#boxes.length * 2 * 3, gl.UNSIGNED_SHORT, 0);
 	}
 
+	/**
+	 * Resize the canvases.
+	 */
 	#setSize(size: { width: number; height: number }) {
+		// Update the 2D context's width and height
 		const { gl, ctx } = this;
 		ctx.canvas.width = size.width;
 		ctx.canvas.height = size.height;
+
+		// Changing the width and height appears to reset these properties, so
+		// we need to re-set them
 		ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 		ctx.font = '12px monospace';
 		ctx.textBaseline = 'middle';
 
+		// Set the viewport and width and height
 		gl.viewport(0, 0, size.width, size.height);
 		gl.canvas.width = size.width;
 		gl.canvas.height = size.height;
+
+		// Use an orthographic projection matrix set to the width and height of
+		// the viewport. The Z values are arbitrary but must contain Z=0. We
+		// might be able to eliminate this by converting the box vertex
+		// coordinates to [0, 1] instead of [0, width/height], but why fix
+		// something that isn't broken?
 		const projectionMatrix = mat4.create();
 		mat4.ortho(projectionMatrix, 0, size.width, size.height, 0, -1, 1);
 		gl.uniformMatrix4fv(this.location.projection, false, projectionMatrix);
 
+		// Use CSS to force the actual width/height to match the logical
+		// width/height (accounting for device pixel ratio)
 		ctx.canvas.style.width = `${size.width / devicePixelRatio}px`;
 		ctx.canvas.style.height = `${size.height / devicePixelRatio}px`;
 		(gl.canvas as HTMLCanvasElement).style.width = `${size.width / devicePixelRatio}px`;
@@ -396,6 +432,7 @@ class Renderer<B extends Box> {
 		// This doesn't actually _draw_ the boxes, it recalculates their sizes,
 		// but it reads better this way
 
+		// (x, y, id, group) for each corner of each box
 		const vertices = new Float32Array(
 			boxes.flatMap((box) => {
 				const { x1, x2, y1, y2 } = this.#boxPos(box);
@@ -427,6 +464,7 @@ class Renderer<B extends Box> {
 			}),
 		);
 
+		// Vertex index triples for the two triangles of each box
 		const indices = new Uint16Array(
 			boxes.flatMap((_, i) => [
 				// triangle 1:
@@ -441,27 +479,41 @@ class Renderer<B extends Box> {
 			]),
 		);
 
+		// Load the buffers into the GPU
 		const { gl } = this;
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer.vertex);
 		gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffer.index);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+		// Magic?
 		gl.vertexAttribPointer(this.location.boxes, 4, gl.FLOAT, false, 0, 0);
 	}
 
 	#drawLabels(boxes: B[]) {
 		const { ctx } = this;
+
+		// Erase any old labels
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
 		boxes.forEach((box) => {
-			let label = box.label;
+			// Calculate the box position and width
 			const { x1, x2, y1, y2 } = this.#boxPos(box);
 			const y = (y1 + y2) / 2 / devicePixelRatio;
 			const w = (x2 - x1) / devicePixelRatio - 2;
+
+			// If the label would be wider than the box, elide the middle
+			let label = box.label;
 			const m = ctx.measureText(label + '…');
 			if (m.width > w) {
 				const n = Math.floor((label.length * w) / m.width / 2);
 				label = `${label.slice(0, n)}…${label.slice(label.length - n)}`;
 			}
+
+			// Render the label. I think the logic here is a bit skewed. There
+			// should probably be one conditional (box.id) for the fill color
+			// and a separate conditional (textAlign) for the fillText
+			// arguments.
 			ctx.textAlign = box.alignLabel ?? 'left';
 			if (box.id < 0) {
 				ctx.fillStyle = this.textColor2.css();
@@ -474,13 +526,19 @@ class Renderer<B extends Box> {
 	}
 }
 
+/**
+ * Resolves a color which may be a variable or other CSS value into a
+ * {@link chroma.Color}.
+ */
 function resolveColor(color: string) {
+	// Resolve CSS variables
 	color = color.trim();
 	if (color.startsWith('--')) {
 		const x = getComputedStyle(document.documentElement).getPropertyValue(color);
 		if (x) color = x;
 	}
 
+	// Convert to a chroma color
 	if (!chroma.valid(color)) {
 		throw new Error(`Invalid color: ${color}`);
 	}

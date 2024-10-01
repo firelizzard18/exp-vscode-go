@@ -1,7 +1,7 @@
 // Heavily based on https://github.com/microsoft/vscode-js-profile-visualizer/blob/3e421036c6028d64ac534edc5a83d4fc41457626/packages/vscode-js-profile-flame/src/client/common/webgl/boxes.ts
 // Original work copyright (c) Microsoft Corporation.
 
-export function compileProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string) {
+export function useProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string) {
 	const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
 	const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
 
@@ -14,6 +14,7 @@ export function compileProgram(gl: WebGL2RenderingContext, vertexSource: string,
 	gl.attachShader(program, fragmentShader);
 	gl.linkProgram(program);
 	if (gl.getProgramParameter(program, gl.LINK_STATUS)) {
+		gl.useProgram(program);
 		return program;
 	}
 
