@@ -5,6 +5,7 @@
 		"lib": [
 			"ES2022"
 		],
+		"outDir": "../out",
 		"strict": true,
 		"esModuleInterop": true,
 		"resolveJsonModule": true,
