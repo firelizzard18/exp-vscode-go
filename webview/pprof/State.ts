@@ -3,6 +3,9 @@ import { FlameGraphSettings, Message } from './messages';
 
 const vscode = acquireVsCodeApi<StateData>();
 
+// YOU MUST NOT DECLARE A FUNCTION NAMED postMessage. It masks a global function
+// and causes bizarre and difficult to diagnose bugs.
+
 export function sendMessage(message: Message) {
 	vscode.postMessage(message);
 }

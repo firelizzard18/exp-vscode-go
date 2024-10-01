@@ -9,17 +9,47 @@ import vertexShaderSource from './box.vert';
 import chroma, { Color } from 'chroma-js';
 import { mat4 } from 'gl-matrix';
 
+/**
+ * The height of a box, in pixels.
+ */
+const boxHeight = 18;
+
 export interface Box {
+	/**
+	 * The label overlaid on the box.
+	 */
 	label: string;
+
+	/**
+	 * The ID of the box, used for hovering.
+	 */
 	id: number;
+
+	/**
+	 * The vertical level/coordinate of the box.
+	 */
 	level: number;
+
+	/**
+	 * The group the box belongs to, for coloring.
+	 */
 	group: number;
+
+	/**
+	 * The starting X position, as a percentage.
+	 */
 	x1: number;
+
+	/**
+	 * The ending X position, as a percentage.
+	 */
 	x2: number;
+
+	/**
+	 * The horizontal alignment of the label.
+	 */
 	alignLabel?: 'left' | 'center' | 'right';
 }
-
-const boxHeight = 18;
 
 const must = function <T>(value: T | null | undefined | (() => T | null | undefined), op: string): T {
 	if (value instanceof Function) {
@@ -31,6 +61,9 @@ const must = function <T>(value: T | null | undefined | (() => T | null | undefi
 	return value;
 };
 
+/**
+ * Renders a collection of {@link Box}es.
+ */
 export class Boxes<B extends Box = Box> {
 	#renderer?: Renderer<B>;
 	#el?: JSX.HTMLRenderable<HTMLDivElement>;
@@ -48,6 +81,7 @@ export class Boxes<B extends Box = Box> {
 	) {}
 
 	render() {
+		// Initialize the DOM elements
 		const { el: glCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
 		const { el: textCanvas } = (<canvas />) as JSX.HTMLRenderable<HTMLCanvasElement>;
 		this.#el = (
@@ -58,6 +92,7 @@ export class Boxes<B extends Box = Box> {
 			</div>
 		) as JSX.HTMLRenderable<HTMLDivElement>;
 
+		// A callback to (re)initialize the renderer
 		const setRenderer = () => {
 			const { width, height } = this.#size();
 
@@ -68,32 +103,51 @@ export class Boxes<B extends Box = Box> {
 			}
 		};
 
+		// Initialize the renderer in the next animation frame
 		this.#update(() => setRenderer());
+
+		// When there is a resize event, reinitialize the renderer (in the next
+		// animation frame)
 		addEventListener('resize', () => this.#update(() => setRenderer()));
 
+		// Track the last hover/focus event target to avoid issuing duplicate
+		// events
 		const lastBox = {
 			onHovered: null as B | null | undefined,
 			onFocused: null as B | null | undefined,
 		};
+
 		const fireEvent = (event: MouseEvent, handler: 'onHovered' | 'onFocused') => {
+			// Sanity check
 			if (!this.#renderer || !this.props[handler]) return;
+
+			// Decode the position
 			const { x, y } = this.#targetXY(event);
 			if (!x || !y) return;
 
+			// Find the box, avoid duplicate events
 			const box = this.#renderer.boxAt(x, y);
 			if (box === lastBox[handler]) return;
 			lastBox[handler] = box;
 
+			// Fire the event
 			this.props[handler](box);
 		};
 
+		// Mouse move -> hovered
 		this.#el.el.addEventListener('mousemove', (event) => fireEvent(event, 'onHovered'));
+
+		// Mouse click -> focused
 		this.#el.el.addEventListener('click', (event) => fireEvent(event, 'onFocused'));
 
 		return this.#el;
 	}
 
+	/**
+	 * @returns The logical size of the rendering contexts
+	 */
 	#size() {
+		// Sanity check
 		if (!this.#el) return { width: 0, height: 0 };
 
 		// Remove <canvas> children
@@ -110,7 +164,8 @@ export class Boxes<B extends Box = Box> {
 			}
 		});
 
-		// Calculate canvas size
+		// The render size is the DOM pixel width/height, multiplied by the
+		// device pixel ratio to account for high DPI displays
 		const width = Math.floor(this.#el.el.clientWidth * devicePixelRatio);
 		const height = Math.floor(this.#el.el.clientHeight * devicePixelRatio);
 
@@ -119,8 +174,15 @@ export class Boxes<B extends Box = Box> {
 		return { width, height };
 	}
 
+	/**
+	 * Decodes the (X, Y) position of a mouse event.
+	 */
 	#targetXY(event: MouseEvent) {
+		// Sanity check
 		if (!(event.target instanceof Element)) return {};
+
+		// Adjust the event coordinates to be relative to the top left corner of
+		// the element
 		const { top, left } = event.target.getBoundingClientRect();
 		const { clientX, clientY } = event;
 		return { x: clientX - left, y: clientY - top };
@@ -136,6 +198,9 @@ export class Boxes<B extends Box = Box> {
 		this.#update(() => this.#renderer?.draw());
 	}
 
+	/**
+	 * Update the set of {@link Box}es and redraw.
+	 */
 	set boxes(boxes: B[]) {
 		this.props.boxes = boxes;
 		this.#update(() => this.#renderer?.draw(boxes, this.#size()));
@@ -143,12 +208,22 @@ export class Boxes<B extends Box = Box> {
 
 	#lastUpdate?: number;
 	#renderQueue: (() => void)[] = [];
+
+	/**
+	 * Queue a function for execution on the next animation frame.
+	 */
 	#update(fn: () => void) {
+		// Cancel the previous request
 		if (this.#lastUpdate) {
 			cancelAnimationFrame(this.#lastUpdate);
 		}
+
+		// Push the function to the queue
 		this.#renderQueue.push(fn);
+
+		// Request an animation frame
 		this.#lastUpdate = requestAnimationFrame(() => {
+			// Execute and reset the queue
 			const fns = this.#renderQueue.slice();
 			this.#renderQueue.splice(0, this.#renderQueue.length);
 			fns.forEach((fn) => fn());
