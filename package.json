@@ -34,6 +34,7 @@
     "watch": "yarn run bundle -- --sourcemap=inline --watch",
     "package": "vsce package",
     "lint": "eslint src --ext ts",
+    "tests": "yarn run jest",
     "clean": "rimraf dist out",
     "check-types": "tsc -p src && tsc -p webview",
     "vscode:prepublish": "yarn run check-types && yarn run lint && yarn run bundle"
