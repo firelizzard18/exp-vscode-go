@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { CancellationToken, Memento, TestRun, TestRunProfile, TestRunProfileKind, Uri } from 'vscode';
 import type vscode from 'vscode';
-import { Package, TestCase, TestFile } from './item';
+import { Package, StaticTestCase, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './run';
 import { Flags, flags2args, Spawner, SpawnOptions } from './utils';
@@ -143,6 +143,18 @@ export class TestRunner {
 
 	// `goTest` from vscode-go
 	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun, continuous: boolean) {
+		// Determine the profile parent before removing dynamic test cases. If
+		// the request is for a single test, add the profiles to that test,
+		// otherwise add them to the package. If the profile parent is a
+		// sub-test, add the profile to its top-most parent test.
+		let profileParent = pkg.include.size === 1 ? [...pkg.include][0][0] : pkg.goItem;
+		while (profileParent instanceof TestCase) {
+			const parent = pkg.goItem.testRelations.getParent(profileParent);
+			if (!parent) break;
+			profileParent = parent;
+		}
+
+		// Enqueue tests and remove dynamic test cases
 		pkg.forEach((item, goItem) => {
 			run.enqueued(item);
 			goItem?.removeDynamicTestCases();
@@ -169,17 +181,18 @@ export class TestRunner {
 			flags.skip = makeRegex(pkg.exclude.keys());
 		}
 
-		// Profiling is disabled for continuous runs
-		if (!continuous && this.#config.settings.profile.some((x) => x.enabled)) {
-			// Create the profile directory
+		// Capture profiles
+		if (
+			// Profiling is disabled for continuous runs
+			!continuous &&
+			// Is profiling enabled?
+			this.#config.settings.profile.some((x) => x.enabled) &&
+			// Profiles can only be attached to a package or a static test case
+			(profileParent instanceof Package || profileParent instanceof StaticTestCase)
+		) {
 			const profileDir = CapturedProfile.storageDir(this.#context, run);
 			await this.#context.workspace.fs.createDirectory(profileDir);
 
-			// If the request is for a single test, add the profiles to that test,
-			// otherwise add them to the package
-			const profileParent = pkg.include.size === 1 ? [...pkg.include][0][0] : pkg.goItem;
-
-			// Setup the profiles
 			const time = new Date();
 			for (const profile of this.#config.settings.profile) {
 				if (!profile.enabled) {
@@ -238,7 +251,13 @@ export class TestRunner {
 		}
 	}
 
-	async #registerCapturedProfile(run: TestRun, item: Package | TestCase, dir: Uri, type: ProfileType, time: Date) {
+	async #registerCapturedProfile(
+		run: TestRun,
+		item: Package | StaticTestCase,
+		dir: Uri,
+		type: ProfileType,
+		time: Date
+	) {
 		const profile = await item.profiles.addProfile(dir, type, time);
 		await this.#resolver.reloadGoItem(item);
 

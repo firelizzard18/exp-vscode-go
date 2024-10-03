@@ -667,7 +667,7 @@ export class TestFile implements GoTestItem {
 			src.Tests,
 			(src) => src.Name,
 			(src) => new StaticTestCase(this.#config, this, src),
-			(src, test) => (test as StaticTestCase).update(src, ranges),
+			(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges) : []),
 			(test) => test instanceof DynamicTestCase
 		);
 	}
@@ -709,7 +709,6 @@ export abstract class TestCase implements GoTestItem {
 	readonly uri: Uri;
 	readonly kind: GoTestItem.Kind;
 	readonly name: string;
-	readonly profiles = new ProfileContainer(this);
 
 	constructor(config: TestConfig, file: TestFile, uri: Uri, kind: GoTestItem.Kind, name: string) {
 		this.#config = config;
@@ -757,7 +756,7 @@ export abstract class TestCase implements GoTestItem {
 	 */
 	getChildren() {
 		const children: (ProfileContainer | TestCase)[] = [];
-		if (this.profiles.hasChildren) {
+		if (this instanceof StaticTestCase && this.profiles.hasChildren) {
 			children.push(this.profiles);
 		}
 		if (this.#config.nestSubtests()) {
@@ -789,15 +788,13 @@ export abstract class TestCase implements GoTestItem {
 	 * Deletes all {@link DynamicTestCase}s that are children of this test case.
 	 */
 	removeDynamicTestCases() {
-		for (const item of this.file.package.testRelations.getChildren(this) || []) {
-			item.removeDynamicTestCases();
-			this.file.tests.remove(item);
-		}
-		this.file.package.testRelations.removeChildren(this);
+		this.file.package.testRelations.getChildren(this)?.forEach((x) => x.removeDynamicTestCases());
 	}
 }
 
 export class StaticTestCase extends TestCase {
+	readonly profiles = new ProfileContainer(this);
+
 	range?: Range;
 	#src?: Commands.TestCase;
 
@@ -861,6 +858,12 @@ export class DynamicTestCase extends TestCase {
 	constructor(config: TestConfig, parent: TestCase, name: string) {
 		super(config, parent.file, parent.uri, parent.kind, name);
 	}
+
+	removeDynamicTestCases(): void {
+		super.removeDynamicTestCases();
+		this.file.tests.remove(this);
+		this.file.package.testRelations.removeChild(this);
+	}
 }
 
 /**
@@ -885,7 +888,7 @@ export function findParentTestCase(allTests: TestCase[], name: string) {
  */
 export class RelationMap<Child, Parent> {
 	readonly #childParent = new Map<Child, Parent>();
-	readonly #parentChild = new Map<Parent, Child[]>();
+	readonly #parentChild = new Map<Parent, Set<Child>>();
 
 	constructor(relations: Iterable<[Child, Parent]> = []) {
 		for (const [child, parent] of relations) {
@@ -897,9 +900,9 @@ export class RelationMap<Child, Parent> {
 		this.#childParent.set(child, parent);
 		const children = this.#parentChild.get(parent);
 		if (children) {
-			children.push(child);
+			children.add(child);
 		} else {
-			this.#parentChild.set(parent, [child]);
+			this.#parentChild.set(parent, new Set([child]));
 		}
 	}
 
@@ -909,6 +912,13 @@ export class RelationMap<Child, Parent> {
 		for (const [child, parent] of relations) {
 			this.add(parent, child);
 		}
+	}
+
+	removeChild(child: Child) {
+		const parent = this.#childParent.get(child);
+		if (!parent) return;
+		this.#parentChild.get(parent)!.delete(child);
+		this.#childParent.delete(child);
 	}
 
 	removeChildren(parent: Parent) {
@@ -923,7 +933,8 @@ export class RelationMap<Child, Parent> {
 	}
 
 	getChildren(parent: Parent) {
-		return this.#parentChild.get(parent);
+		const set = this.#parentChild.get(parent);
+		return set ? [...set] : undefined;
 	}
 }
 
