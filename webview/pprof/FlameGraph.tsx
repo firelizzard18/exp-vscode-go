@@ -6,36 +6,100 @@ import { FlameGraphSettings, LineData } from './messages';
 import { addMessageListener, sendMessage, State } from './State';
 
 interface Unit {
-	powers: string[];
-	divisor: number;
-	threshold: number;
-	precision?: number;
+	powers: string[]; //   B, kB, MB
+	divisor: number; //    1000 or 1024
+	precision?: number; // The number of digits to show (omit to show all)
 }
 
+/**
+ * Defines how to translate a given metric into a more human-friendly form.
+ */
 const Units: Record<string, Unit> = {
-	count: { powers: [''], divisor: 1, threshold: Infinity },
-	bytes: { powers: ['B', 'kiB', 'MiB', 'GiB', 'TiB'], divisor: 1024, threshold: 100, precision: 2 },
-	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, threshold: 1000, precision: 3 },
+	count: { powers: [''], divisor: 1 },
+	bytes: { powers: ['B', 'kiB', 'MiB', 'GiB', 'TiB'], divisor: 1024, precision: 2 },
+	nanoseconds: { powers: ['ns', 'µs', 'ms', 's'], divisor: 1000, precision: 3 },
 };
 
+/**
+ * An edge in the call graph.
+ */
 interface Call {
+	/**
+	 * The function making the call. Omitted for entry points.
+	 */
 	caller?: Func;
+
+	/**
+	 * The function being called. Omitted for the last function in a call stack.
+	 */
 	callee?: Func;
+
+	/**
+	 * The line of the call.
+	 */
 	line?: Line;
+
+	/**
+	 * The depth of the call in the call stack.
+	 */
 	depth: number;
+
+	/**
+	 * The associated sample.
+	 */
 	sample: Sample;
 }
 
+/**
+ * A {@link Box} plus associated metadata.
+ */
 interface BoxPlus extends Box {
+	/**
+	 * The function associated with the box. Omitted for the root box.
+	 */
 	func?: Func;
+
+	/**
+	 * The set of samples (by way of {@link Call}s) that are aggregated into this box.
+	 */
 	calls: Call[];
+
+	/**
+	 * The total cost of the box.
+	 */
 	cost: number;
 }
 
+/**
+ * Renders a profile as a flame graph.
+ */
 export function FlameGraph({ profile }: { profile: Profile }) {
+	/**
+	 * Line data for VSCode.
+	 */
+	let lineData: Map<Func, LineData[]>;
+
+	/**
+	 * The total cost of the selected sample type.
+	 */
+	let total: number;
+
+	/**
+	 * The flame graph boxes.
+	 */
+	let boxes: BoxPlus[];
+
+	// Load settings from the webview's persistent state
 	const settings = State.flameGraph;
+
+	// Build the call graph
 	const graph = new CallGraph(profile, settings);
 
+	/**
+	 * Applies a change to the settings.
+	 * @param label - The label for the change (for undo).
+	 * @param s - The changes to make.
+	 */
 	const applyChange = (label: string, s: Partial<FlameGraphSettings>) => {
 		if (Object.keys(s).every((x) => (settings as any)[x] === (s as any)[x])) return;
 		const before = Object.assign({}, settings);
@@ -46,36 +110,55 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		didChange(before);
 	};
 
-	let lineData: Map<Func, LineData[]>;
-	let total: number;
-	let boxes: BoxPlus[];
+	/**
+	 * Update the flame graph state.
+	 * @param before - The settings prior to the change. Used for detecting which components of the state should be updated. Omit to update everything.
+	 */
 	const didChange = (before?: FlameGraphSettings) => {
+		// Which settings changed?
 		const changed = {
 			sample: !before || before.sample !== settings.sample,
 			ignored: !before || before.ignored.join(',') !== settings.ignored.join(','),
 			focused: !before || before.focused !== settings.focused,
 		} as const;
 
+		// Save the new settings.
 		State.flameGraph = settings;
 
+		// If the sample type changed, recalculate line data and the total cost
+		// and update the sample type selector.
 		if (changed.sample) {
 			lineData = graph.lineData();
 			total = graph.totalCost();
 			control.sample.el.selectedIndex = settings.sample;
 		}
 
+		// If the list of ignored functions changed, rebuild the call graph.
 		if (changed.ignored) {
 			graph.rebuild();
 		}
 
+		// If anything changed, re-render the boxes
 		if (changed.sample || changed.ignored || changed.focused) {
+			// Retrieve the focused function
 			const func = typeof settings.focused === 'number' ? graph.function(settings.focused) : undefined;
+
 			if (func) {
+				// A function is focused.
+				//
+				// Clear the center label.
 				label.center.el.innerHTML = '&nbsp;';
+
+				// Walk the call graph down from the function and calculate its
+				// total cost.
 				const down = [...graph.down(func)];
 				const cost = down[0].calls.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
+
 				boxes = [
+					// Walk the call graph up from the function.
 					...graph.up(func),
+
+					// Add a label for the function's metrics.
 					{
 						label: amountFor(profile.SampleType[settings.sample], cost, total),
 						x1: 0,
@@ -85,21 +168,32 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 						id: -1,
 						alignLabel: 'center',
 					} as BoxPlus,
+
+					// Include the walk down.
 					...down,
 				];
 			} else {
+				// The root is focused.
+				//
+				// Set the center label to the total.
 				label.center.el.innerText = amountFor(profile.SampleType[settings.sample], total, total);
+
+				// Walk the entire call graph (down from the root).
 				boxes = [...graph.down()];
 			}
+
 			boxesEl.boxes = boxes;
 		}
 	};
 
+	// Listen for events from VSCode
+	//
 	// TODO: Dispose listener if the element is removed from the DOM
 	addMessageListener((msg) => {
 		if (!('command' in msg)) return;
 		switch (msg.command) {
 			case 'undo': {
+				// [Undo] Restore the previous settings and fire didChange
 				const { before, after } = msg.action;
 				Object.assign(settings, before);
 				didChange(after);
@@ -108,6 +202,8 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			}
 
 			case 'redo': {
+				// [Redo] Restore the previously undone settings change and fire
+				// didChange
 				const { before, after } = msg.action;
 				Object.assign(settings, after);
 				didChange(before);
@@ -116,6 +212,8 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			}
 
 			case 'ignore-func': {
+				// Mark the given function as ignored (and rebuild the flame
+				// graph)
 				const func = graph.function(msg.func.id);
 				if (!func) return;
 				applyChange(`Ignore ${labelFor(func)}`, { ignored: [...settings.ignored, func.ID] });
@@ -125,6 +223,7 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	});
 
 	const control = {
+		// A <select> for changing the sample type
 		sample: (
 			<select onchange={() => applyChange('Change sample', { sample: control.sample.el.selectedIndex })}>
 				{profile.SampleType.map((x, j) => (
@@ -153,13 +252,19 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	) as Boxes<BoxPlus>;
 	const boxesDiv = (<div>{boxesEl}</div>) as JSX.HTMLRenderable<HTMLDivElement>;
 
+	/**
+	 * Handle hovering over a box.
+	 */
 	const hover = (box?: BoxPlus) => {
+		// Update the left label with the cost of the hovered box, or clear it.
 		if (box?.calls) {
 			const cost = box.calls.reduce((sum, x) => sum + x.sample.Value[settings.sample], 0) ?? 0;
 			label.right.el.innerText = amountFor(profile.SampleType[settings.sample], cost, total);
 		} else {
 			label.right.el.innerHTML = '&nbsp;';
 		}
+
+		// Update the VSCode context and inform the extension of the hovered box.
 		if (box?.func) {
 			boxesDiv.el.dataset.vscodeContext = JSON.stringify({
 				hoveredFunction: true,
@@ -181,6 +286,9 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 		}
 	};
 
+	// Pick a default sample type. If the protocol specifies a default sample
+	// type use that. If a sample type named "cpu" is present, use that.
+	// Otherwise use the first sample type.
 	if (settings.sample < 0) {
 		const s =
 			profile.SampleType.find((x) => x.Type === profile.DefaultSampleType) ||
@@ -188,6 +296,8 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 			profile.SampleType[0];
 		settings.sample = profile.SampleType.indexOf(s);
 	}
+
+	// Build the flame graph
 	didChange();
 
 	return (
@@ -202,6 +312,9 @@ export function FlameGraph({ profile }: { profile: Profile }) {
 	);
 }
 
+/**
+ * Constructs a call graph from the sample set.
+ */
 class CallGraph {
 	readonly #profile: Profile;
 	readonly #settings: FlameGraphSettings;
@@ -389,8 +502,8 @@ function powerOf(typ: ValueType, cost: number) {
 	if (!(typ.Unit in Units)) throw new Error(`Unsupported unit ${typ.Unit}`);
 	let value = cost;
 	let power = 0;
-	const { powers, divisor, threshold, precision } = Units[typ.Unit];
-	while (value > threshold && power < powers.length) power++, (value /= divisor);
+	const { powers, divisor, precision } = Units[typ.Unit];
+	while (precision && value > 10 ** precision && power < powers.length) power++, (value /= divisor);
 	return { value: value.toPrecision(precision), unit: powers[power] };
 }
 

@@ -232,21 +232,64 @@ export class Boxes<B extends Box = Box> {
 }
 
 class Renderer<B extends Box> {
+	/**
+	 * The 2D rendering context.
+	 */
 	readonly ctx: CanvasRenderingContext2D;
+
+	/**
+	 * The 3D (WebGL) rendering context.
+	 */
 	readonly gl: WebGL2RenderingContext;
+
+	/**
+	 * The box shader program.
+	 */
 	readonly program: WebGLProgram;
+
 	readonly buffer: {
+		/**
+		 * The vertex buffer.
+		 */
 		readonly vertex: WebGLBuffer;
+
+		/**
+		 * The index buffer. Indexes into the vertex buffer to describe
+		 * triangle.
+		 */
 		readonly index: WebGLBuffer;
 	};
+
 	readonly location: {
+		/**
+		 * The boxes attribute;
+		 */
 		readonly boxes: number;
+
+		/**
+		 * The projection matrix.
+		 */
 		readonly projection: WebGLUniformLocation;
+
+		/**
+		 * The ID of the hovered box.
+		 */
 		readonly hovered: WebGLUniformLocation;
+
+		/**
+		 * The base color for boxe.
+		 */
 		readonly boxColor: WebGLUniformLocation;
 	};
 
+	/**
+	 * The color of box labels.
+	 */
 	readonly textColor: Color;
+
+	/**
+	 * The color for metadata (used to display the focused box's metrics).
+	 */
 	readonly textColor2: Color;
 
 	constructor({
