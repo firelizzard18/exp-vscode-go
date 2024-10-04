@@ -2,13 +2,13 @@
 // Original work copyright (c) Microsoft Corporation.
 
 export function useProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string) {
-	const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
-	const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-
 	const program = gl.createProgram();
 	if (!program) {
 		throw new Error('Failed creating program');
 	}
+
+	const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+	const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
 
 	gl.attachShader(program, vertexShader);
 	gl.attachShader(program, fragmentShader);
