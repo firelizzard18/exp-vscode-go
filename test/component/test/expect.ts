@@ -62,16 +62,16 @@ const toResolve: MatcherFunction<[ExpectedTestItem[]]> = async function (src, wa
 								kind: item.kind,
 								name: item.name!,
 								uri: `${item.uri}`,
-								children: await convert(children)
+								children: await convert(children),
 							};
 						default:
 							return {
 								kind: item.kind,
 								uri: `${item.uri}`,
-								children: await convert(children)
+								children: await convert(children),
 							};
 					}
-				})
+				}),
 		);
 	};
 
@@ -81,14 +81,14 @@ const toResolve: MatcherFunction<[ExpectedTestItem[]]> = async function (src, wa
 	if (this.equals(got, want)) {
 		return {
 			message: () => `Want: ${wants}\nGot: ${gots}`,
-			pass: true
+			pass: true,
 		};
 	}
 
 	const diff = this.utils.diff(want, got, { omitAnnotationLines: true });
 	return {
 		message: () => `Want: ${wants}\nGot: ${gots}\n\n${diff}`,
-		pass: false
+		pass: false,
 	};
 };
 

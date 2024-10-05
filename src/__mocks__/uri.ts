@@ -50,7 +50,7 @@ export class Uri implements vscode.Uri {
 			authority: change.authority ?? this.authority,
 			path: change.path ?? this.path,
 			query: change.query ?? this.query,
-			fragment: change.fragment ?? this.fragment
+			fragment: change.fragment ?? this.fragment,
 		});
 	}
 
@@ -73,7 +73,7 @@ export class Uri implements vscode.Uri {
 			authority: url.hostname,
 			path: url.pathname,
 			query: url.search.replace(/^\?/, ''),
-			fragment: url.hash.replace(/^#/, '')
+			fragment: url.hash.replace(/^#/, ''),
 		});
 	}
 
@@ -83,7 +83,7 @@ export class Uri implements vscode.Uri {
 			authority: '',
 			path: filePath.split('?')[0] || '',
 			query: filePath.split('?')[1] || '',
-			fragment: ''
+			fragment: '',
 		});
 	}
 

@@ -1,0 +1,89 @@
+/* ********** Application-specific styling ********** */
+.loading {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: x-large;
+}
+
+.flame-graph {
+	display: flex;
+	flex-flow: column;
+}
+
+.flame-graph .header {
+	display: flex;
+	flex-flow: row;
+	font-family: monospace;
+	font-size: 12px;
+}
+
+.flame-graph .header span {
+	flex: 1;
+}
+
+.flame-graph .header .center,
+.flame-graph .header .right {
+	display: flex;
+	align-items: center;
+}
+
+.flame-graph .header .center {
+	font-weight: bold;
+	text-align: center;
+}
+
+.flame-graph .header .right {
+	text-align: right;
+}
+
+.boxes {
+	flex: 1;
+	position: relative;
+}
+
+.boxes .spacer {
+	display: block;
+}
+
+.boxes canvas {
+	position: absolute;
+	top: 0;
+	left: 0;
+    display: block; /* https://stackoverflow.com/a/36975280 */
+	pointer-events: none;
+}
+
+/* ********** General styling ********** */
+
+body {
+	margin: 0;
+	padding: 0;
+}
+
+select {
+    border-color: var(--vscode-dropdown-border);
+    border: none;
+    cursor: pointer;
+    line-height: inherit;
+    margin-top: 0;
+    min-height: 20px;
+    min-width: 90px;
+}
+
+select:focus {
+	opacity: 1;
+    outline-color: var(--vscode-focusBorder);
+    outline-offset: -1px;
+    outline-style: solid;
+    outline-width: 1px;
+}
+
+select, option {
+    background-color: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+	padding: 0 22px 0 6px;
+}

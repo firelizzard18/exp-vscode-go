@@ -124,7 +124,7 @@ export class TestConfig {
 			{},
 			process.env,
 			cfg.get<Record<string, string>>('toolsEnvVars'),
-			cfg.get<Record<string, string>>('testEnvVars')
+			cfg.get<Record<string, string>>('testEnvVars'),
 		) as Record<string, string>;
 
 		// Resolve ${...} expressions

@@ -1,8 +1,7 @@
 import vscode from 'vscode';
-import { registerTestController } from './test/register';
 import { cleanupTempDir } from './utils/util';
 import { GoExtensionAPI } from './vscode-go';
-import { UriHandler } from './urlHandler';
+import { registerTestingFeatures } from './test/register';
 
 export async function activate(ctx: vscode.ExtensionContext) {
 	// The Go extension _must_ be activated first since we depend on gopls
@@ -12,15 +11,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
 	}
 
 	const go = await goExt.activate();
-	await registerTestController(ctx, go);
-
-	ctx.subscriptions.push(vscode.window.registerUriHandler(new UriHandler()));
+	await registerTestingFeatures(ctx, go);
 }
 
 export function deactivate() {
 	return Promise.all([
 		// cancelRunningTests(),
 		// killRunningPprof(),
-		Promise.resolve(cleanupTempDir())
+		Promise.resolve(cleanupTempDir()),
 	]);
 }

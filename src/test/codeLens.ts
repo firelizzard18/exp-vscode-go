@@ -92,7 +92,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		lens.command = {
 			title: `${lens.kind} ${lens.item.kind}`,
 			command: `goExp.test.${lens.kind}`,
-			arguments: [await this.#manager.resolveTestItem(lens.item)]
+			arguments: [await this.#manager.resolveTestItem(lens.item)],
 		};
 		if (!(lens.item instanceof TestCase)) {
 			lens.command.title += ' files';

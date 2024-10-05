@@ -37,7 +37,7 @@ export class TestRunRequest {
 		original: vscode.TestRunRequest,
 		packages: Set<Package>,
 		include: Map<Package, TestCase[]>,
-		exclude: Map<Package, TestCase[]>
+		exclude: Map<Package, TestCase[]>,
 	) {
 		this.manager = manager;
 		this.source = original;
@@ -64,7 +64,7 @@ export class TestRunRequest {
 				for (const pkg of await x.getPackages()) {
 					packages.add(pkg);
 				}
-			})
+			}),
 		);
 		exclude.forEach((x) => packages.delete(x as any));
 
@@ -162,9 +162,9 @@ export class TestRunRequest {
 					x.map(async (y) => {
 						const item = await this.manager.resolveTestItem(y, true);
 						testItems.push(item);
-					})
-				)
-			)
+					}),
+				),
+			),
 		);
 
 		return new TestRunRequest(
@@ -172,11 +172,11 @@ export class TestRunRequest {
 			{
 				include: testItems,
 				exclude: [],
-				profile: this.source.profile
+				profile: this.source.profile,
 			},
 			packages,
 			include,
-			new Map()
+			new Map(),
 		);
 	}
 
@@ -197,8 +197,8 @@ export class TestRunRequest {
 	async #resolveTestItems<T extends GoTestItem>(goItems: T[]) {
 		return new Map(
 			await Promise.all(
-				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, true)])
-			)
+				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, true)]),
+			),
 		);
 	}
 }
@@ -217,7 +217,7 @@ export class PackageTestRun {
 		goItem: Package,
 		testItem: TestItem,
 		include: Map<TestCase, TestItem>,
-		exclude: Map<TestCase, TestItem>
+		exclude: Map<TestCase, TestItem>,
 	) {
 		this.goItem = goItem;
 		this.testItem = testItem;
@@ -322,7 +322,7 @@ export class PackageTestRun {
 						this.testItem,
 						elapsed,
 						this.output.get(this.testItem.id) || [],
-						this.stderr
+						this.stderr,
 					);
 				} else if (item) {
 					const messages = parseTestFailure(test, this.output.get(item.id) || []);
@@ -394,7 +394,7 @@ function processPackageFailure(
 	pkgItem: TestItem,
 	elapsed: number | undefined,
 	stdout: string[],
-	stderr: string[]
+	stderr: string[],
 ) {
 	const buildFailed = stdout.some((x) => /\[build failed\]\s*$/.test(x));
 	if (!buildFailed) {
@@ -495,6 +495,6 @@ function parseOutputLocation(line: string, dir: string): { message: string; loca
 
 	return {
 		message: m.groups.message,
-		location: new Location(file, new Position(ln, col))
+		location: new Location(file, new Position(ln, col)),
 	};
 }

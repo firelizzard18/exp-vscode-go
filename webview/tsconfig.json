@@ -1,18 +1,14 @@
 {
 	"compilerOptions": {
 		"module": "Node16", // VSCode 1.75 -> Electron 19.1.9 -> NodeJS 16.14.2 (https://github.com/ewanharris/vscode-versions)
-		"outDir": "out",
-		"sourceMap": true,
 		"target": "ES2022", // NodeJS 16.14.2 -> ES2022 (https://node.green/)
 		"lib": [
-			"ES2022"
+			"ES2022",
+			"dom"
 		],
 		"strict": true,
-		"esModuleInterop": true,
-		"resolveJsonModule": true,
-	},
-	"exclude": [
-		"node_modules",
-		"third_party",
-	]
+		"noEmit": true,
+		"jsx": "react",               // Allow React-style JSX
+		"jsxFactory": "createElement" // But use our custom factory
+	}
 }

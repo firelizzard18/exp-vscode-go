@@ -31,7 +31,7 @@ declare module 'vscode' {
 			runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
 			isDefault?: boolean,
 			tag?: TestTag,
-			supportsContinuousRun?: boolean
+			supportsContinuousRun?: boolean,
 		): TestRunProfile;
 	}
 
@@ -64,7 +64,7 @@ declare module 'vscode' {
 		loadDetailedCoverage?: (
 			testRun: TestRun,
 			fileCoverage: FileCoverage,
-			token: CancellationToken
+			token: CancellationToken,
 		) => Thenable<FileCoverageDetail[]>;
 	}
 
@@ -156,7 +156,7 @@ declare module 'vscode' {
 			uri: Uri,
 			statementCoverage: TestCoverageCount,
 			branchCoverage?: TestCoverageCount,
-			declarationCoverage?: TestCoverageCount
+			declarationCoverage?: TestCoverageCount,
 		);
 	}
 

@@ -7,17 +7,7 @@
 
 import cp from 'child_process';
 import { LineBuffer } from '../utils/lineBuffer';
-import {
-	CancellationToken,
-	debug,
-	DebugConfiguration,
-	DebugSession,
-	Disposable,
-	Event,
-	TestRun,
-	Uri,
-	window
-} from 'vscode';
+import { CancellationToken, debug, DebugConfiguration, DebugSession, Disposable, Event, TestRun, Uri } from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
 import { Context } from './testing';
 
@@ -64,7 +54,7 @@ export function spawnProcess(context: Context, scope: Uri, flags: Flags, options
 		flags.json = true;
 		const tp = cp.spawn(binPath, ['test', ...flags2args(flags)], {
 			...rest,
-			stdio: 'pipe'
+			stdio: 'pipe',
 		});
 		cancel.onCancellationRequested(() => {
 			killProcessTree(tp);
@@ -100,9 +90,9 @@ debug?.registerDebugAdapterTrackerFactory('go', {
 				} else {
 					opts.stderr(msg.body.output);
 				}
-			}
+			},
 		};
-	}
+	},
 });
 
 /**
@@ -124,7 +114,7 @@ export async function debugProcess(
 	ctx: Context,
 	scope: Uri,
 	flags: Flags,
-	options: SpawnOptions
+	options: SpawnOptions,
 ): Promise<ProcessResult | void> {
 	const { run, cancel, cwd, env, stdout, stderr } = options;
 	if (cancel.isCancellationRequested) {
@@ -150,7 +140,7 @@ export async function debugProcess(
 			}
 			resolve(s);
 			cancel.onCancellationRequested(() => debug.stopDebugging(s));
-		})
+		}),
 	);
 
 	// [Event] Debug session terminated
@@ -160,7 +150,7 @@ export async function debugProcess(
 				return;
 			}
 			resolve();
-		})
+		}),
 	);
 
 	// Run go test2json to parse the output
@@ -176,7 +166,7 @@ export async function debugProcess(
 	// Capture output
 	debugSessionOutput.set(id, {
 		stderr,
-		stdout: (line) => proc.stdin.write(line)
+		stdout: (line) => proc.stdin.write(line),
 	});
 	subs.push({ dispose: () => debugSessionOutput.delete(id) });
 
@@ -201,7 +191,7 @@ export async function debugProcess(
 		program: cwd,
 		env,
 		buildFlags,
-		args: ['-test.v', ...flagArgs]
+		args: ['-test.v', ...flagArgs],
 	};
 
 	try {

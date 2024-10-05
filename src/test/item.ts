@@ -111,8 +111,8 @@ export class RootSet {
 			new TestConfig(this.#context.workspace, uri),
 			await this.#context.commands.packages({
 				Files: [uri.toString()],
-				Mode: 1
-			})
+				Mode: 1,
+			}),
 		);
 
 		// An alternative build system may allow a file to be part of multiple
@@ -160,7 +160,7 @@ export class RootSet {
 				} else {
 					this.#roots.set(`${ws.uri}`, new ItemSet(roots));
 				}
-			})
+			}),
 		);
 
 		// Return a flat list of roots. Do not separate by workspace folder.
@@ -181,8 +181,8 @@ export class RootSet {
 			config,
 			await this.#context.commands.modules({
 				Dir: ws.uri.toString(),
-				MaxDepth: -1
-			})
+				MaxDepth: -1,
+			}),
 		);
 
 		// If the workspace is not a module, make an item for it
@@ -358,12 +358,12 @@ export abstract class RootItem implements GoTestItem {
 					await this.#context.commands.packages({
 						Files: [this.dir.toString()],
 						Mode: 1,
-						Recursive: true
-					})
+						Recursive: true,
+					}),
 				),
 				(src) => src.Path,
 				(src) => new Package(this.config, this, src),
-				(src, pkg) => pkg.update(src, {})
+				(src, pkg) => pkg.update(src, {}),
 			);
 
 			this.#rebuildPackageRelations();
@@ -398,7 +398,7 @@ export abstract class RootItem implements GoTestItem {
 				const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
 				ancestors.sort((a, b) => a.path.length - b.path.length);
 				return [pkg, ancestors[0]];
-			})
+			}),
 		);
 	}
 }
@@ -503,7 +503,7 @@ export class Package implements GoTestItem {
 			results.push({
 				Path: pkgPath,
 				ModulePath: pkgs[0].ModulePath,
-				TestFiles: files
+				TestFiles: files,
 			});
 		}
 		return results;
@@ -538,7 +538,7 @@ export class Package implements GoTestItem {
 			src.TestFiles!.filter((x) => x.Tests.length),
 			(src) => src.URI,
 			(src) => new TestFile(this.#config, this, src),
-			(src, file) => file.update(src, ranges[`${file.uri}`] || [])
+			(src, file) => file.update(src, ranges[`${file.uri}`] || []),
 		);
 		if (!changes.length) {
 			return [];
@@ -547,7 +547,7 @@ export class Package implements GoTestItem {
 		// Recalculate test-subtest relations
 		const allTests = this.getTests();
 		this.testRelations.replace(
-			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)])
+			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)]),
 		);
 		return changes;
 	}
@@ -668,7 +668,7 @@ export class TestFile implements GoTestItem {
 			(src) => src.Name,
 			(src) => new StaticTestCase(this.#config, this, src),
 			(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges) : []),
-			(test) => test instanceof DynamicTestCase
+			(test) => test instanceof DynamicTestCase,
 		);
 	}
 
@@ -1020,7 +1020,7 @@ export class ItemSet<T extends { key: string }> {
 		id: (_: S) => string,
 		make: (_: S) => T,
 		update: (_1: S, _2: T) => Iterable<ItemEvent<R>>,
-		keep: (_: T) => boolean = () => false
+		keep: (_: T) => boolean = () => false,
 	): ItemEvent<T | R>[] {
 		// Delete items that are no longer present
 		const changed: ItemEvent<T | R>[] = [];

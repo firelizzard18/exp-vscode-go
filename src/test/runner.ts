@@ -41,7 +41,7 @@ export class RunnerSettings {
 				this.profile.forEach((x) => (x.picked = x.enabled));
 				const r = await args.showQuickPick(this.profile, {
 					title: 'Profile',
-					canPickMany: true
+					canPickMany: true,
 				});
 				if (!r) return;
 				this.profile.forEach((x) => (x.enabled = r.includes(x)));
@@ -52,7 +52,7 @@ export class RunnerSettings {
 
 	async #update() {
 		await this.state.update(`runnerSettings[${this.id}]`, {
-			profile: this.profile.filter((x) => x.enabled).map((x) => x.id)
+			profile: this.profile.filter((x) => x.enabled).map((x) => x.id),
 		} satisfies StoredSettings);
 	}
 }
@@ -73,7 +73,7 @@ export class TestRunner {
 		config: Required<RunConfig>,
 		createRun: (_: TestRunRequest) => vscode.TestRun,
 		request: TestRunRequest,
-		token: CancellationToken
+		token: CancellationToken,
 	) {
 		this.#context = context;
 		this.#resolver = provider;
@@ -122,8 +122,8 @@ export class TestRunner {
 				if (invalid) {
 					pkg.forEach((item) =>
 						run.errored(item, {
-							message: 'Debugging multiple test packages is not supported'
-						})
+							message: 'Debugging multiple test packages is not supported',
+						}),
 					);
 					continue;
 				}
@@ -219,7 +219,7 @@ export class TestRunner {
 		pkg.append(
 			`$ cd ${pkg.goItem.uri.fsPath}\n$ go test ${flags2args(niceFlags).join(' ')}\n\n`,
 			undefined,
-			pkg.testItem
+			pkg.testItem,
 		);
 		const r = await this.#spawn(this.#context, pkg.goItem.uri, flags, {
 			run: run,
@@ -235,18 +235,18 @@ export class TestRunner {
 				if (!s) return;
 				this.#context.output.debug(`stderr> ${s}`);
 				pkg.onStderr(s);
-			}
+			},
 		}).catch((err) => {
 			run.errored(pkg.testItem, {
-				message: `${err}`
+				message: `${err}`,
 			});
 		});
 		if (r && r.code !== 0 && r.code !== 1) {
 			run.errored(pkg.testItem, {
 				message: `\`go test\` exited with ${[
 					...(r.code ? [`code ${r.code}`] : []),
-					...(r.signal ? [`signal ${r.signal}`] : [])
-				].join(', ')}`
+					...(r.signal ? [`signal ${r.signal}`] : []),
+				].join(', ')}`,
 			});
 		}
 	}
@@ -304,7 +304,7 @@ function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = 
 			x.name
 				.split('/')
 				.map((part) => `^${escapeRegExp(part)}$`)
-				.join('/')
+				.join('/'),
 		)
 		.join('|');
 }

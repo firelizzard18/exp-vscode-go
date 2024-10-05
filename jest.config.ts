@@ -6,6 +6,11 @@ export default {
 	modulePathIgnorePatterns: ['.vscode-test', '<rootDir>/out/.*__mocks__'],
 
 	transform: {
-		'^.+\\.tsx?$': 'ts-jest'
-	}
+		'^.+\\.tsx?$': [
+			'ts-jest',
+			{
+				tsconfig: 'src/tsconfig.json',
+			},
+		],
+	},
 } satisfies Config;

@@ -33,14 +33,26 @@ export class TestManager {
 		return !!this.#ctrl;
 	}
 
-	setup(
+	async setup(
 		args: Pick<typeof vscode.languages, 'registerCodeLensProvider'> &
-			Pick<typeof vscode.window, 'showQuickPick'> & {
+			Pick<typeof vscode.window, 'showQuickPick' | 'showWarningMessage'> & {
 				createTestController(id: string, label: string): TestController;
-			}
+			},
 	) {
+		// Verify that gopls is new enough to support the packages command
+		try {
+			await this.context.commands.packages({ Files: [] });
+		} catch (error) {
+			if (!`${error}`.match(/^Error: command '.*' not found$/)) {
+				throw error;
+			}
+
+			await args.showWarningMessage('gopls is not installed or does not support test discovery');
+			return;
+		}
+
 		this.#disposable.push(
-			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens)
+			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens),
 		);
 
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
@@ -62,14 +74,14 @@ export class TestManager {
 			(rq, token) => this.#executeTestRun(this.#run, rq, token),
 			true,
 			{ id: 'canRun' },
-			true
+			true,
 		);
 		this.#debug.profile = ctrl.createRunProfile(
 			'Debug',
 			TestRunProfileKind.Debug,
 			(rq, token) => this.#executeTestRun(this.#debug, rq, token),
 			true,
-			{ id: 'canDebug' }
+			{ id: 'canDebug' },
 		);
 		this.#disposable.push(this.#debug.profile, this.#run.profile);
 
@@ -119,15 +131,15 @@ export class TestManager {
 			{ profile, ...config },
 			(rq) => this.#ctrl!.createTestRun(rq.source),
 			request,
-			token
+			token,
 		);
 
 		if (rq.continuous) {
 			const s1 = this.#resolver.onDidInvalidateTestResults(
-				async (items) => items && (await runner.queueForContinuousRun(items))
+				async (items) => items && (await runner.queueForContinuousRun(items)),
 			);
 			const s2 = this.#didSave.event((e) =>
-				doSafe(this.context, 'run continuous', () => runner.runContinuous(e))
+				doSafe(this.context, 'run continuous', () => runner.runContinuous(e)),
 			);
 			token.onCancellationRequested(() => (s1?.dispose(), s2.dispose()));
 		} else {

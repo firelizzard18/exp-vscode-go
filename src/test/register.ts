@@ -5,10 +5,10 @@ import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
 import { languages } from 'vscode';
-import { ProfileDocument } from './profile';
 import { Browser } from '../browser';
+import { registerProfileEditor } from './profile';
 
-export async function registerTestController(ctx: ExtensionContext, go: GoExtensionAPI) {
+export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
 		workspace,
 		go,
@@ -20,26 +20,32 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 		output: window.createOutputChannel('Go Tests (experimental)', { log: true }),
 		commands: {
 			modules: (args) => commands.executeCommand('gopls.modules', args),
-			packages: (args) => commands.executeCommand('gopls.packages', args)
-		}
+			packages: (args) => commands.executeCommand('gopls.packages', args),
+		},
 	};
 
+	await registerTestController(ctx, testCtx);
+	await registerProfileEditor(ctx, testCtx);
+}
+
+async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
 		ctx.subscriptions.push(event((e) => doSafe(testCtx, msg, () => fn(e))));
 	};
 	const command = (name: string, fn: (...args: any[]) => any) => {
 		ctx.subscriptions.push(
-			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args)))
+			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args))),
 		);
 	};
 
 	// Initialize the controller
 	const manager = new TestManager(testCtx);
-	const setup = () => {
-		manager.setup({
+	const setup = async () => {
+		await manager.setup({
 			createTestController: tests.createTestController,
 			registerCodeLensProvider: languages.registerCodeLensProvider,
-			showQuickPick: window.showQuickPick
+			showQuickPick: window.showQuickPick,
+			showWarningMessage: window.showWarningMessage,
 		});
 		window.visibleTextEditors.forEach((x) => manager.reloadUri(x.document.uri));
 	};
@@ -51,9 +57,6 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	// [Command] Run Test, Debug Test
 	command('goExp.test.run', (item: TestItem) => manager.enabled && manager.runTest(item));
 	command('goExp.test.debug', (item: TestItem) => manager.enabled && manager.debugTest(item));
-
-	// [Command] Open profile
-	command('goExp.openProfile', async (path: string) => await ProfileDocument.open(ctx, go, path));
 
 	// [Command] Browser navigation
 	command('goExp.browser.back', () => Browser.active?.back());
@@ -68,7 +71,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 				return;
 			}
 			if (enabled) {
-				setup();
+				await setup();
 			} else {
 				manager.dispose();
 			}
@@ -106,7 +109,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 		manager.reloadUri(
 			e.document.uri,
 			e.contentChanges.map((x) => x.range),
-			true
+			true,
 		);
 	});
 
@@ -117,7 +120,7 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 	event(
 		workspace.onDidChangeWorkspaceFolders,
 		'changed workspace',
-		async () => manager.enabled && manager.reloadView()
+		async () => manager.enabled && manager.reloadView(),
 	);
 
 	// [Event] File created/deleted
@@ -128,6 +131,6 @@ export async function registerTestController(ctx: ExtensionContext, go: GoExtens
 
 	// Setup the controller (if enabled)
 	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
-		setup();
+		await setup();
 	}
 }
