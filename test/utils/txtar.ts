@@ -158,7 +158,7 @@ function removeIndentation(s: string) {
 	let i = 0;
 	for (; ; i++) {
 		const s = checkLines.map((l) => l.substring(i, i + 1));
-		if (s.some((s) => !/^\s*$/.test(s)) && new Set(s).size !== 1) {
+		if (s.some((s) => !/^\s*$/.test(s)) && (s.length < 2 || new Set(s).size !== 1)) {
 			break;
 		}
 	}

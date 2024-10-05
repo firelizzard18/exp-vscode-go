@@ -7,7 +7,7 @@ import { Uri } from 'vscode';
 import { Workspace } from '../../utils/txtar';
 import { Module, Package, TestCase } from '../../../src/test/item';
 
-describe('Go test controller', () => {
+describe('Test resolver', () => {
 	// NOTE: These tests assume ~/go/bin/gopls exists and has test support
 
 	describe('with no module', () => {
@@ -29,7 +29,7 @@ describe('Go test controller', () => {
 		);
 
 		it('resolves tests', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await expect(host).toResolve([
 				{
@@ -65,7 +65,7 @@ describe('Go test controller', () => {
 		`);
 
 		it('resolves all tests', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await expect(host).toResolve([
 				{
@@ -84,7 +84,7 @@ describe('Go test controller', () => {
 		});
 
 		it('resolves files with showFiles', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ showFiles: true }),
@@ -134,7 +134,7 @@ describe('Go test controller', () => {
 		});
 
 		it('resolves on-demand without discovery', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ discovery: 'off' }),
@@ -193,7 +193,7 @@ describe('Go test controller', () => {
 		});
 
 		it('does not recreate items when reloading', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await host.manager.reloadView();
 			const bMod = isa(Module, (await host.manager.rootGoTestItems)[0]);
@@ -211,7 +211,7 @@ describe('Go test controller', () => {
 		});
 
 		it('shows dynamic subtests', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			const items = await (await host.manager.rootGoTestItems)[0]?.getChildren();
 			const tc = items.find((x) => x.label === 'TestFoo') as TestCase;
@@ -241,7 +241,7 @@ describe('Go test controller', () => {
 		});
 
 		it('resets dynamic subtests between runs', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			const items = await (await host.manager.rootGoTestItems)[0]?.getChildren();
 			const tc = items.find((x) => x.label === 'TestFoo') as TestCase;
@@ -293,7 +293,7 @@ describe('Go test controller', () => {
 		});
 
 		it('omits excluded files', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ exclude: { 'foo_test.go': true } }),
@@ -332,7 +332,7 @@ describe('Go test controller', () => {
 		});
 
 		it('omits excluded packages', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ exclude: { 'bar/**': true } }),
@@ -365,7 +365,7 @@ describe('Go test controller', () => {
 		});
 
 		it('ignores disabled exclusions', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ exclude: { 'foo_test.go': false } }),
@@ -415,7 +415,7 @@ describe('Go test controller', () => {
 		`);
 
 		it('resolves tests in nested packages with nestPackages', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ nestPackages: true }),
@@ -499,7 +499,7 @@ describe('Go test controller', () => {
 		`);
 
 		it('does not cross module boundaries', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await expect(host).toResolve([
 				{
@@ -511,7 +511,7 @@ describe('Go test controller', () => {
 		});
 
 		it('resolves tests when a file in the module is opened', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await host.manager.reloadUri(Uri.parse(`${ws.uri}/bar/bar.go`));
 			await expect(host).toResolve([
@@ -529,7 +529,7 @@ describe('Go test controller', () => {
 		});
 
 		it('omits excluded modules', async () => {
-			const host = new TestHost(
+			const host = await TestHost.setup(
 				ws.path,
 				withWorkspace('foo', `${ws.uri}`),
 				withConfiguration({ exclude: { 'bar/**': true } }),
@@ -581,7 +581,7 @@ describe('Go test controller', () => {
 		`);
 
 		it('resolves all test funcs', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await expect(host).toResolve([
 				{
@@ -617,7 +617,7 @@ describe('Go test controller', () => {
 		`);
 
 		it('nests subtests', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await expect(host).toResolve([
 				{
@@ -666,7 +666,7 @@ describe('Go test controller', () => {
 			`);
 
 		it('detects new tests', async () => {
-			const host = new TestHost(ws.path, withWorkspace('foo', `${ws.uri}`));
+			const host = await TestHost.setup(ws.path, withWorkspace('foo', `${ws.uri}`));
 
 			await expect(host).toResolve([
 				{

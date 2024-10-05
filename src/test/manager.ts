@@ -33,12 +33,24 @@ export class TestManager {
 		return !!this.#ctrl;
 	}
 
-	setup(
+	async setup(
 		args: Pick<typeof vscode.languages, 'registerCodeLensProvider'> &
-			Pick<typeof vscode.window, 'showQuickPick'> & {
+			Pick<typeof vscode.window, 'showQuickPick' | 'showWarningMessage'> & {
 				createTestController(id: string, label: string): TestController;
 			},
 	) {
+		// Verify that gopls is new enough to support the packages command
+		try {
+			await this.context.commands.packages({ Files: [] });
+		} catch (error) {
+			if (!`${error}`.match(/^Error: command '.*' not found$/)) {
+				throw error;
+			}
+
+			await args.showWarningMessage('gopls is not installed or does not support test discovery');
+			return;
+		}
+
 		this.#disposable.push(
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens),
 		);

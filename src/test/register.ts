@@ -40,11 +40,12 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// Initialize the controller
 	const manager = new TestManager(testCtx);
-	const setup = () => {
-		manager.setup({
+	const setup = async () => {
+		await manager.setup({
 			createTestController: tests.createTestController,
 			registerCodeLensProvider: languages.registerCodeLensProvider,
 			showQuickPick: window.showQuickPick,
+			showWarningMessage: window.showWarningMessage,
 		});
 		window.visibleTextEditors.forEach((x) => manager.reloadUri(x.document.uri));
 	};
@@ -70,7 +71,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 				return;
 			}
 			if (enabled) {
-				setup();
+				await setup();
 			} else {
 				manager.dispose();
 			}
@@ -130,6 +131,6 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// Setup the controller (if enabled)
 	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
-		setup();
+		await setup();
 	}
 }

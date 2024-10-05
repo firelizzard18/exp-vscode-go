@@ -9,7 +9,7 @@ export default {
 		'^.+\\.tsx?$': [
 			'ts-jest',
 			{
-				tsConfig: 'src/tsconfig.json',
+				tsconfig: 'src/tsconfig.json',
 			},
 		],
 	},

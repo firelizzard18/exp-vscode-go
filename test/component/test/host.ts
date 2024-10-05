@@ -28,6 +28,8 @@ import pkg from '../../../package.json';
 
 const config = pkg.contributes.configuration.properties;
 
+export type SetupArgs = Parameters<TestManager['setup']>[0];
+
 interface Configuration {
 	enable: boolean;
 	exclude: Record<string, boolean>;
@@ -54,18 +56,34 @@ export class TestHost implements Context {
 	readonly controller = new MockTestController();
 	readonly manager = new TestManager(this);
 
-	constructor(dir: string, ...config: HostConfig[]) {
-		this.dir = dir;
-		config.forEach((x) => x(this));
-		this.manager.setup({
-			createTestController: () => this.controller,
+	static async setup(dir: string, ...config: HostConfig[]) {
+		const inst = new this(dir);
+		const args = {
+			createTestController: () => inst.controller,
 			registerCodeLensProvider: () => ({ dispose: () => {} }),
 			showQuickPick: () => Promise.resolve(undefined),
-		});
+			showWarningMessage: (s: string) => Promise.reject(new Error(s)),
+		};
+
+		config.forEach((x) => x(inst, args));
+		await inst.manager.setup(args);
+		return inst;
+	}
+
+	constructor(dir: string) {
+		this.dir = dir;
 	}
 }
 
-export type HostConfig = (host: TestHost) => void;
+export type HostConfig = (host: TestHost, args: SetupArgs) => void;
+
+export function withSetupArgs(values: Partial<SetupArgs>): HostConfig {
+	return (_, args) => Object.assign(args, values);
+}
+
+export function withCommands(commands: Partial<Commands>): HostConfig {
+	return (host) => Object.assign(host.commands, commands);
+}
 
 export function withWorkspace(name: string, uri: string): HostConfig {
 	return (host) =>
@@ -208,6 +226,8 @@ class MockMemento implements Memento {
 
 export class MockTestController implements TestController {
 	readonly items: TestItemCollection = new MapTestItemCollection();
+
+	invalidateTestResults(items?: TestItem | readonly TestItem[]): void {}
 
 	createTestItem(id: string, label: string, uri?: Uri): TestItem {
 		return new MockTestItem(this, id, label, uri);

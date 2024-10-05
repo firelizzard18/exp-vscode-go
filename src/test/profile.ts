@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
+import { ChildProcess, execFile, spawn } from 'node:child_process';
 import {
 	Uri,
 	window,
 	type ExtensionContext,
 	type TestRun,
-	type CustomReadonlyEditorProvider,
 	type CancellationToken,
 	type CustomDocumentOpenContext,
 	type WebviewPanel,
@@ -15,18 +16,13 @@ import {
 	workspace,
 	Range,
 	TextEditorDecorationType,
-	DecorationOptions,
-	DecorationInstanceRenderOptions,
 	CustomEditorProvider,
 	CustomDocumentBackup,
 	CustomDocumentBackupContext,
-	CustomDocumentContentChangeEvent,
 	CustomDocumentEditEvent,
-	Event,
 	EventEmitter,
 } from 'vscode';
 import type { GoTestItem } from './item';
-import { ChildProcess, spawn } from 'node:child_process';
 import { getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
@@ -435,6 +431,13 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 		const { binPath } = this.#go.settings.getExecutionCommand('vscgo') || {};
 		if (!binPath) {
 			throw new Error('Cannot locate vscgo');
+		}
+
+		// Check the version
+		const { stdout: s } = await promisify(execFile)(binPath, ['version']);
+		const version = s.split('\n')[0]?.split(':')[1]?.trim();
+		if (version !== '(devel)') {
+			throw new Error(`This feature is not available with vscgo ${version}`);
 		}
 
 		const proc = spawn(binPath, ['serve-pprof', ':', uri.fsPath]);
