@@ -7,7 +7,6 @@ import {
 	Uri,
 	window,
 	type ExtensionContext,
-	type TestRun,
 	type CancellationToken,
 	type CustomDocumentOpenContext,
 	type WebviewPanel,
@@ -23,7 +22,6 @@ import {
 	EventEmitter,
 } from 'vscode';
 import type { GoTestItem } from './item';
-import { getTempDirPath } from '../utils/util';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
 import { Context, doSafe } from './testing';
@@ -97,7 +95,7 @@ export class ProfileContainer implements GoTestItem {
 			this.profiles.set(time.getTime(), set);
 		}
 
-		const profile = await CapturedProfile.new(set, dir, type, time);
+		const profile = await CapturedProfile.new(set, dir, type);
 		set.profiles.add(profile);
 		return profile;
 	}
@@ -146,48 +144,20 @@ export class ProfileSet implements GoTestItem {
  * Represents a captured profile.
  */
 export class CapturedProfile implements GoTestItem {
-	/**
-	 * Returns the storage directory for the captured profile. If the test run
-	 * is persisted and supports onDidDispose, it returns the extensions's
-	 * storage URI. Otherwise, it returns an OS temp directory path.
-	 *
-	 * @param context - The context object.
-	 * @param run - The test run object.
-	 * @returns The storage directory URI.
-	 */
-	static storageDir(context: Context, run: TestRun): Uri {
-		// Profiles can be deleted when the run is disposed, but there's no way
-		// to re-associated profiles with a past run when VSCode is closed and
-		// reopened. So we always use the temp directory for now.
-		// https://github.com/microsoft/vscode/issues/227924
-
-		// if (run.isPersisted && run.onDidDispose && context.storageUri) {
-		// 	return context.storageUri;
-		// }
-
-		return Uri.file(getTempDirPath());
-	}
-
 	readonly kind = 'profile';
 	readonly type: ProfileType;
 	readonly uri: Uri;
-	readonly file: Uri;
 	readonly parent: ProfileSet;
 	readonly hasChildren = false;
 
-	static async new(parent: ProfileSet, dir: Uri, type: ProfileType, time: Date) {
-		// This is a simple way to make an ID from the package URI
-		const hash = createHash('sha256').update(`${parent.parent.parent.uri}`).digest('hex').substring(0, 16);
-		const file = Uri.joinPath(dir, `${hash}-${type.id}-${time.getTime()}.pprof`);
-		// const uri = await UriHandler.asUri('openProfile', { path: file.fsPath });
-		const uri = file;
-		return new this(parent, type, file, uri);
+	static async new(parent: ProfileSet, dir: Uri, type: ProfileType) {
+		const file = Uri.joinPath(dir, `${type.id}.pprof`);
+		return new this(parent, type, file);
 	}
 
-	private constructor(parent: ProfileSet, type: ProfileType, file: Uri, uri: Uri) {
+	private constructor(parent: ProfileSet, type: ProfileType, uri: Uri) {
 		this.type = type;
 		this.parent = parent;
-		this.file = file;
 		this.uri = uri;
 	}
 

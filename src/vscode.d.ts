@@ -6,35 +6,6 @@ declare module 'vscode' {
 		testRun?: TestRun;
 	}
 
-	export interface TestController {
-		/**
-		 * Marks an item's results as being outdated. This is commonly called when
-		 * code or configuration changes and previous results should no longer
-		 * be considered relevant. The same logic used to mark results as outdated
-		 * may be used to drive {@link TestRunRequest.continuous continuous test runs}.
-		 *
-		 * If an item is passed to this method, test results for the item and all of
-		 * its children will be marked as outdated. If no item is passed, then all
-		 * test owned by the TestController will be marked as outdated.
-		 *
-		 * Any test runs started before the moment this method is called, including
-		 * runs which may still be ongoing, will be marked as outdated and deprioritized
-		 * in the editor's UI.
-		 *
-		 * @param item Item to mark as outdated. If undefined, all the controller's items are marked outdated.
-		 */
-		invalidateTestResults?(items?: TestItem | readonly TestItem[]): void;
-
-		createRunProfile(
-			label: string,
-			kind: TestRunProfileKind,
-			runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
-			isDefault?: boolean,
-			tag?: TestTag,
-			supportsContinuousRun?: boolean,
-		): TestRunProfile;
-	}
-
 	export interface TestRunProfile {
 		/**
 		 * Additional notes for {@link runHandler}:
@@ -44,6 +15,12 @@ declare module 'vscode' {
 		 * source code and create new test runs by calling {@link TestController.createTestRun},
 		 * until the cancellation is requested on the `token`.
 		 */
+
+		/**
+		 * Fired when a user has changed whether this is a default profile. The
+		 * event contains the new value of {@link isDefault}
+		 */
+		onDidChangeDefault?: Event<boolean>;
 
 		/**
 		 * Whether this profile supports continuous running of requests. If so,
@@ -66,6 +43,35 @@ declare module 'vscode' {
 			fileCoverage: FileCoverage,
 			token: CancellationToken,
 		) => Thenable<FileCoverageDetail[]>;
+	}
+
+	export interface TestController {
+		createRunProfile(
+			label: string,
+			kind: TestRunProfileKind,
+			runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
+			isDefault?: boolean,
+			tag?: TestTag,
+			supportsContinuousRun?: boolean,
+		): TestRunProfile;
+
+		/**
+		 * Marks an item's results as being outdated. This is commonly called when
+		 * code or configuration changes and previous results should no longer
+		 * be considered relevant. The same logic used to mark results as outdated
+		 * may be used to drive {@link TestRunRequest.continuous continuous test runs}.
+		 *
+		 * If an item is passed to this method, test results for the item and all of
+		 * its children will be marked as outdated. If no item is passed, then all
+		 * test owned by the TestController will be marked as outdated.
+		 *
+		 * Any test runs started before the moment this method is called, including
+		 * runs which may still be ongoing, will be marked as outdated and deprioritized
+		 * in the editor's UI.
+		 *
+		 * @param item Item to mark as outdated. If undefined, all the controller's items are marked outdated.
+		 */
+		invalidateTestResults?(items?: TestItem | readonly TestItem[]): void;
 	}
 
 	export interface TestRunRequest {

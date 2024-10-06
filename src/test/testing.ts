@@ -32,7 +32,7 @@ export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
 	readonly debug: Spawner;
 }
 
-export type FileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory'>;
+export type FileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory' | 'readFile'>;
 
 // The subset of vscode.workspace that is used by the test explorer.
 export type Workspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {

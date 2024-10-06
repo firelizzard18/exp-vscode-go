@@ -1,15 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TestRunProfileKind, Uri, Range, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
-import type { CancellationToken, Disposable, TestItem } from 'vscode';
+import { TestRunProfileKind, Uri, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
+import type { CancellationToken, Disposable, TestItem, TestTag } from 'vscode';
 import type vscode from 'vscode';
 import { Context, doSafe, Tail, TestController } from './testing';
 import { TestResolver } from './resolver';
-import { GoTestItem, Package } from './item';
-import { RunConfig, RunnerSettings, TestRunner } from './runner';
+import { GoTestItem } from './item';
+import { TestRunner } from './runner';
 import { TestRunRequest } from './run';
 import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
+import { RunConfig } from './config';
 
 export class TestManager {
 	readonly #didSave = new EventEmitter<(_: Uri) => void>();
@@ -20,14 +21,16 @@ export class TestManager {
 	constructor(context: Context) {
 		this.context = context;
 		this.#codeLens = new CodeLensProvider(context, this);
-		this.#run = { settings: new RunnerSettings('run', this.context.state) };
-		this.#debug = { settings: new RunnerSettings('debug', this.context.state) };
+		this.#run = new RunConfig(context, 'Run', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
+		this.#debug = new RunConfig(context, 'Debug', TestRunProfileKind.Debug, true, { id: 'canDebug' });
+		this.#coverage = new RunConfig(context, 'Coverage', TestRunProfileKind.Coverage, true, { id: 'canRun' });
 	}
 
 	#ctrl?: TestController;
 	#resolver?: TestResolver;
 	readonly #run: RunConfig;
 	readonly #debug: RunConfig;
+	readonly #coverage: RunConfig;
 
 	get enabled() {
 		return !!this.#ctrl;
@@ -67,28 +70,19 @@ export class TestManager {
 		ctrl.resolveHandler = (item) =>
 			doSafe(this.context, 'resolve test', () => (item ? resolver.reloadViewItem(item) : resolver.reloadView()));
 
-		// Normal and debug test runners
-		this.#run.profile = ctrl.createRunProfile(
-			'Run',
-			TestRunProfileKind.Run,
-			(rq, token) => this.#executeTestRun(this.#run, rq, token),
-			true,
-			{ id: 'canRun' },
-			true,
-		);
-		this.#debug.profile = ctrl.createRunProfile(
-			'Debug',
-			TestRunProfileKind.Debug,
-			(rq, token) => this.#executeTestRun(this.#debug, rq, token),
-			true,
-			{ id: 'canDebug' },
-		);
-		this.#disposable.push(this.#debug.profile, this.#run.profile);
+		// Set up run profiles
+		const createRunProfile = (config: RunConfig) => {
+			const run = (rq: VSCTestRunRequest, token: CancellationToken) => this.#executeTestRun(config, rq, token);
+			const profile = config.createRunProfile(args, ctrl, run);
+			this.#disposable.push(profile);
+		};
 
-		this.#run.profile.configureHandler = () =>
-			doSafe(this.context, 'configure profile', () => this.#run.settings.configure(args));
-		this.#debug.profile.configureHandler = () =>
-			doSafe(this.context, 'configure profile', () => this.#debug.settings.configure(args));
+		createRunProfile(this.#run);
+		createRunProfile(this.#debug);
+
+		if (this.context.testing || isCoverageSupported(ctrl)) {
+			createRunProfile(this.#coverage);
+		}
 	}
 
 	dispose() {
@@ -96,8 +90,6 @@ export class TestManager {
 		this.#disposable.splice(0, this.#disposable.length);
 		this.#ctrl = undefined;
 		this.#resolver = undefined;
-		this.#run.profile = undefined;
-		this.#debug.profile = undefined;
 	}
 
 	runTest(item: TestItem) {
@@ -109,8 +101,8 @@ export class TestManager {
 		this.#executeTestRun(this.#debug, new VSCTestRunRequest([item]));
 	}
 
-	async #executeTestRun({ profile, ...config }: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
-		if (!profile || !this.#resolver) {
+	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
+		if (!this.#resolver) {
 			return;
 		}
 
@@ -128,7 +120,7 @@ export class TestManager {
 		const runner = new TestRunner(
 			this.context,
 			this.#resolver,
-			{ profile, ...config },
+			config,
 			(rq) => this.#ctrl!.createTestRun(rq.source),
 			request,
 			token,
@@ -212,4 +204,10 @@ export class TestManager {
 	get rootGoTestItems() {
 		return (async () => (await this.#resolver?.goRoots) || [])();
 	}
+}
+
+function isCoverageSupported(ctrl: TestController) {
+	const testRun = ctrl.createTestRun({ include: [], exclude: [], profile: undefined });
+	testRun.end();
+	return 'addCoverage' in testRun;
 }

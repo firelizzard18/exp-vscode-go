@@ -50,8 +50,8 @@ export class TestHost implements Context {
 	readonly state = new MockMemento();
 	readonly storageUri: undefined;
 
-	spawn: Spawner = () => Promise.resolve();
-	debug: Spawner = () => Promise.resolve();
+	spawn: Spawner = () => Promise.resolve({ code: 0, signal: null });
+	debug: Spawner = () => Promise.resolve({ code: 0, signal: null });
 
 	readonly controller = new MockTestController();
 	readonly manager = new TestManager(this);
@@ -172,6 +172,10 @@ class MockFileSystem implements FileSystem {
 
 	async createDirectory(uri: Uri): Promise<void> {
 		await fs.mkdir(uri.fsPath, { recursive: true });
+	}
+
+	async readFile(uri: Uri): Promise<Uint8Array> {
+		return await fs.readFile(uri.fsPath);
 	}
 }
 

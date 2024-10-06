@@ -1,9 +1,21 @@
-import { Workspace } from './testing';
-import { ConfigurationScope, Uri } from 'vscode';
+import { Context, doSafe, TestController, Workspace } from './testing';
+import {
+	CancellationToken,
+	ConfigurationScope,
+	FileCoverage,
+	FileCoverageDetail,
+	QuickPickOptions,
+	TestRunProfileKind,
+	TestRunRequest,
+	TestTag,
+	Uri,
+	type window,
+} from 'vscode';
 import { Minimatch } from 'minimatch';
 import deepEqual from 'deep-equal';
 import { resolvePath, substituteEnv } from '../utils/util';
 import { Flags } from './utils';
+import { makeProfileTypeSet } from './profile';
 
 /**
  * Wrapper for accessing test explorer configuration.
@@ -134,4 +146,140 @@ export class TestConfig {
 
 		return env;
 	};
+}
+
+type ConfigureArgs = Pick<typeof window, 'showQuickPick'>;
+
+type CoverageScope = 'module' | 'package';
+
+interface StoredSettings {
+	profile: string[];
+	coverageScope: CoverageScope;
+}
+
+export class RunConfig {
+	static readonly #memento = 'runnerSettings';
+
+	readonly settings = {
+		profile: makeProfileTypeSet(),
+		coverageScope: 'module',
+	} as {
+		readonly profile: ReturnType<typeof makeProfileTypeSet>;
+		coverageScope: CoverageScope;
+	};
+
+	readonly #context: Context;
+	readonly #label: string;
+	readonly kind: TestRunProfileKind;
+	readonly #isDefault?: boolean;
+	readonly #tag?: TestTag;
+	readonly #supportsContinuousRun?: boolean;
+	readonly coverage = new WeakMap<FileCoverage, FileCoverageDetail[]>();
+
+	constructor(
+		context: Context,
+		label: string,
+		kind: TestRunProfileKind,
+		isDefault?: boolean,
+		tag?: TestTag,
+		supportsContinuousRun?: boolean,
+	) {
+		this.#context = context;
+		this.#label = label;
+		this.kind = kind;
+		this.#isDefault = isDefault;
+		this.#tag = tag;
+		this.#supportsContinuousRun = supportsContinuousRun;
+
+		const stored = context.state.get<StoredSettings>(`${RunConfig.#memento}[${label}]`);
+		if (stored) {
+			this.settings.profile.forEach((x) => (x.enabled = (stored.profile ?? []).includes(x.id)));
+			this.settings.coverageScope = stored.coverageScope;
+		}
+	}
+
+	async #update() {
+		await this.#context.state.update(`${RunConfig.#memento}[${this.#label}]`, {
+			profile: this.settings.profile.filter((x) => x.enabled).map((x) => x.id),
+			coverageScope: this.settings.coverageScope,
+		} satisfies StoredSettings);
+	}
+
+	async configure(args: ConfigureArgs) {
+		const options: QuickPickOptions = { title: 'Go tests' };
+		if (this.kind === TestRunProfileKind.Coverage) {
+			await configureMenu(args, options, {
+				Coverage: () => this.#configureCoverage(args),
+			});
+		} else {
+			await configureMenu(args, options, {
+				Profiling: () => this.#configureProfiling(args),
+			});
+		}
+	}
+
+	async #configureProfiling(args: ConfigureArgs) {
+		this.settings.profile.forEach((x) => (x.picked = x.enabled));
+		const r = await args.showQuickPick(this.settings.profile, {
+			title: 'Profile',
+			canPickMany: true,
+		});
+		if (!r) return;
+
+		this.settings.profile.forEach((x) => (x.enabled = r.includes(x)));
+		await this.#update();
+	}
+
+	async #configureCoverage(args: ConfigureArgs) {
+		await configureMenu(
+			args,
+			{ title: 'Coverage' },
+			{
+				Scope: () =>
+					configureMenu(
+						args,
+						{ title: 'Coverage scope' },
+						{
+							Module: () => ((this.settings.coverageScope = 'module'), this.#update()),
+							Package: () => ((this.settings.coverageScope = 'package'), this.#update()),
+						},
+					),
+			},
+		);
+	}
+
+	createRunProfile(
+		args: ConfigureArgs,
+		ctrl: TestController,
+		runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
+	) {
+		const profile = ctrl.createRunProfile(
+			this.#label,
+			this.kind,
+			runHandler,
+			this.#isDefault,
+			this.#tag,
+			this.#supportsContinuousRun,
+		);
+
+		profile.loadDetailedCoverage = (_, summary) => Promise.resolve(this.coverage.get(summary) || []);
+
+		if (this.kind !== TestRunProfileKind.Debug) {
+			profile.configureHandler = () => doSafe(this.#context, 'configure profile', () => this.configure(args));
+		}
+
+		return profile;
+	}
+}
+
+async function configureMenu(
+	args: ConfigureArgs,
+	options: QuickPickOptions,
+	choices: Record<string, () => void | Promise<void>>,
+) {
+	for (;;) {
+		const r = await args.showQuickPick(Object.keys(choices), options);
+		if (!r || !(r in choices)) return;
+		await choices[r]();
+	}
 }

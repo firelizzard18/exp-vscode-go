@@ -27,7 +27,7 @@ interface ProcessResult {
 export type Flags = { [key: string]: string | boolean };
 
 export interface Spawner {
-	(ctx: Context, scope: Uri, flags: Flags, options: SpawnOptions): Promise<ProcessResult | void>;
+	(ctx: Context, scope: Uri, flags: Flags, options: SpawnOptions): Promise<ProcessResult>;
 }
 
 export function spawnProcess(context: Context, scope: Uri, flags: Flags, options: SpawnOptions) {
