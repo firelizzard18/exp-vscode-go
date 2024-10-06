@@ -143,6 +143,10 @@ export class TestRunner {
 		// Capture coverage
 		let coveragePath: Uri | undefined;
 		if (this.#config.kind === TestRunProfileKind.Coverage) {
+			// Consider forking https://github.com/rillig/gobco for branch
+			// coverage. The original version (https://github.com/junhwi/gobco)
+			// could be used with `go test -toolexec`, so maybe we could make
+			// the new version do that to.
 			const dir = await makeCaptureDir(this.#context, run, profileParent.uri, time);
 			coveragePath = Uri.joinPath(dir, 'coverage.log');
 			flags.coverprofile = coveragePath.fsPath;
