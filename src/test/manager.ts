@@ -12,11 +12,17 @@ import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
 import { RunConfig } from './config';
 
+/**
+ * Entry point for the test explorer implementation.
+ */
 export class TestManager {
 	readonly #didSave = new EventEmitter<(_: Uri) => void>();
 	readonly context: Context;
 	readonly #codeLens: CodeLensProvider;
 	readonly #disposable: Disposable[] = [];
+	readonly #run: RunConfig;
+	readonly #debug: RunConfig;
+	readonly #coverage: RunConfig;
 
 	constructor(context: Context) {
 		this.context = context;
@@ -28,14 +34,18 @@ export class TestManager {
 
 	#ctrl?: TestController;
 	#resolver?: TestResolver;
-	readonly #run: RunConfig;
-	readonly #debug: RunConfig;
-	readonly #coverage: RunConfig;
 
+	/**
+	 * Whether the test explorer is enabled.
+	 */
 	get enabled() {
 		return !!this.#ctrl;
 	}
 
+	/**
+	 * Sets up the test explorer. Can be called multiple times as long as calls
+	 * to {@link setup} are alternated with calls to {@link dispose}.
+	 */
 	async setup(
 		args: Pick<typeof vscode.languages, 'registerCodeLensProvider'> &
 			Pick<typeof vscode.window, 'showQuickPick' | 'showWarningMessage'> & {
@@ -54,21 +64,25 @@ export class TestManager {
 			return;
 		}
 
+		// Register the legacy code lens provider
 		this.#disposable.push(
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens),
 		);
 
+		// Set up the test controller and resolver
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
 		const resolver = new TestResolver(this.context, ctrl);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#disposable.push(ctrl);
 
-		resolver.onDidChangeTestItem(() => this.#codeLens.reload());
-
-		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.reloadView());
+		// Set up resolve/refresh handlers
 		ctrl.resolveHandler = (item) =>
 			doSafe(this.context, 'resolve test', () => (item ? resolver.reloadViewItem(item) : resolver.reloadView()));
+		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.reloadView());
+
+		// Reload code lenses whenever test items change
+		resolver.onDidChangeTestItem(() => this.#codeLens.reload());
 
 		// Set up run profiles
 		const createRunProfile = (config: RunConfig) => {
@@ -85,6 +99,9 @@ export class TestManager {
 		}
 	}
 
+	/**
+	 * The inverse of {@link setup}. Tears down the test explorer.
+	 */
 	dispose() {
 		this.#disposable.forEach((x) => x.dispose());
 		this.#disposable.splice(0, this.#disposable.length);
@@ -92,31 +109,47 @@ export class TestManager {
 		this.#resolver = undefined;
 	}
 
+	/**
+	 * Run a test.
+	 */
 	runTest(item: TestItem) {
 		this.#executeTestRun(this.#run, new VSCTestRunRequest([item]));
 	}
 
+	/**
+	 * Debug a test.
+	 */
 	debugTest(item: TestItem) {
 		if (!this.#debug) return;
 		this.#executeTestRun(this.#debug, new VSCTestRunRequest([item]));
 	}
 
+	/**
+	 * Execute a test run.
+	 * @param config - The config for the run.
+	 * @param rq - The test run request.
+	 * @param token - A token for canceling the run.
+	 */
 	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
 		if (!this.#resolver) {
 			return;
 		}
 
 		if (!token && rq.continuous) {
-			throw new Error('Continuous test runs require a CancellationToken');
+			throw new Error('Continuous test runs require a cancellation token');
 		}
 
+		// Create a new cancelation token if one is not provided.
 		let cancel: CancellationTokenSource | undefined;
 		if (!token) {
 			cancel = new CancellationTokenSource();
 			token = cancel.token;
 		}
 
+		// Resolve VSCode test items to Go test items.
 		const request = await TestRunRequest.from(this, rq);
+
+		// Set up the runner.
 		const runner = new TestRunner(
 			this.context,
 			this.#resolver,
@@ -126,33 +159,51 @@ export class TestManager {
 			token,
 		);
 
-		if (rq.continuous) {
-			const s1 = this.#resolver.onDidInvalidateTestResults(
-				async (items) => items && (await runner.queueForContinuousRun(items)),
-			);
-			const s2 = this.#didSave.event((e) =>
-				doSafe(this.context, 'run continuous', () => runner.runContinuous(e)),
-			);
-			token.onCancellationRequested(() => (s1?.dispose(), s2.dispose()));
-		} else {
+		if (!rq.continuous) {
+			// Execute
 			await runner.run();
+
+			// Cancel the token if it's ours
+			cancel?.cancel();
+			return;
 		}
 
-		cancel?.cancel();
+		// When a test's result is invalidated, queue it for running.
+		const s1 = this.#resolver.onDidInvalidateTestResults(
+			async (items) => items && (await runner.queueForContinuousRun(items)),
+		);
+
+		// When a file is saved, run the queued tests in that file.
+		const s2 = this.#didSave.event((e) => doSafe(this.context, 'run continuous', () => runner.runContinuous(e)));
+
+		// Cleanup when the run is canceled
+		token.onCancellationRequested(() => (s1?.dispose(), s2.dispose()));
 	}
 
+	/**
+	 * Calls {@link TestResolver.reloadView}.
+	 */
 	async reloadView(...args: Parameters<TestResolver['reloadView']>) {
 		await this.#resolver?.reloadView(...args);
 	}
 
+	/**
+	 * Calls {@link TestResolver.reloadViewItem}.
+	 */
 	async reloadViewItem(...args: Parameters<TestResolver['reloadViewItem']>) {
 		await this.#resolver?.reloadViewItem(...args);
 	}
 
+	/**
+	 * Calls {@link TestResolver.reloadGoItem}.
+	 */
 	async reloadGoItem(...args: Parameters<TestResolver['reloadGoItem']>) {
 		await this.#resolver?.reloadGoItem(...args);
 	}
 
+	/**
+	 * Calls {@link TestResolver.reloadUri}.
+	 */
 	async reloadUri(...args: Tail<Parameters<TestResolver['reloadUri']>>) {
 		// TODO(ethan.reesor): Can gopls emit an event when tests/etc change?
 
@@ -180,6 +231,9 @@ export class TestManager {
 		await this.#resolver?.reloadUri(ws, ...args);
 	}
 
+	/**
+	 * Notify listeners that a file was saved.
+	 */
 	didSave(uri: Uri) {
 		this.#didSave.fire(uri);
 	}
