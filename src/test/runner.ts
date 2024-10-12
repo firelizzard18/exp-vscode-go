@@ -211,11 +211,19 @@ export class TestRunner {
 				pkg.onStderr(s);
 			},
 		}).catch((error) => ({ error }));
+
+		if (!r) {
+			// The run was aborted for some reason.
+			return;
+		}
+
 		if ('error' in r) {
 			run.errored(pkg.testItem, {
 				message: `${r.error}`,
 			});
+			return;
 		}
+
 		if ('code' in r && r.code !== 0 && r.code !== 1) {
 			run.errored(pkg.testItem, {
 				message: `\`go test\` exited with ${[
@@ -223,7 +231,9 @@ export class TestRunner {
 					...(r.signal ? [`signal ${r.signal}`] : []),
 				].join(', ')}`,
 			});
+			return;
 		}
+
 		if (coveragePath && run.addCoverage && 'code' in r && r.code === 0) {
 			const coverage = await parseCoverage(this.#context, pkg.goItem.parent, coveragePath);
 			for (const [file, statements] of coverage) {
