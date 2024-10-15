@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /*---------------------------------------------------------
  * Copyright 2021 The Go Authors. All rights reserved.
  * Licensed under the MIT License. See LICENSE in the project root for license information.
@@ -6,6 +7,7 @@
 import type { Uri } from 'vscode';
 import type semver = require('semver');
 import type moment = require('moment');
+import type { DebugProtocol } from 'vscode-debugprotocol';
 
 export interface Tool {
 	name: string;
@@ -63,4 +65,87 @@ export interface GoExtensionAPI {
 		 */
 		getExecutionCommand(toolName: string, resource?: Uri): CommandInvocation | undefined;
 	};
+}
+
+export interface GoLaunchRequest extends DebugProtocol.LaunchRequestArguments {
+	request: 'launch';
+	[key: string]: any;
+	program: string;
+	stopOnEntry?: boolean;
+	dlvFlags?: string[];
+	args?: string[];
+	showLog?: boolean;
+	logOutput?: string;
+	cwd?: string;
+	env?: { [key: string]: string | undefined };
+	mode?: 'auto' | 'debug' | 'remote' | 'test' | 'exec';
+	remotePath?: string;
+	port?: number;
+	host?: string;
+	buildFlags?: string;
+	init?: string;
+	// trace, info, warn are to match goLogging.
+	// In practice, this adapter handles only verbose, log, and error
+	//  verbose === trace,
+	//  log === info === warn,
+	//  error
+	trace?: 'verbose' | 'trace' | 'info' | 'log' | 'warn' | 'error';
+	backend?: string;
+	output?: string;
+	substitutePath?: { from: string; to: string }[];
+	/** Delve LoadConfig parameters */
+	dlvLoadConfig?: LoadConfig;
+	dlvToolPath?: string;
+	/** Delve Version */
+	apiVersion?: number;
+	/** Delve maximum stack trace depth */
+	stackTraceDepth?: number;
+
+	showGlobalVariables?: boolean;
+	packagePathToGoModPathMap?: { [key: string]: string };
+
+	/** Optional path to .env file. */
+	// TODO: deprecate .env file processing from DA.
+	// We expect the extension processes .env files
+	// and send the information to DA using the 'env' property.
+	envFile?: string | string[];
+}
+
+export interface GoAttachRequest extends DebugProtocol.AttachRequestArguments {
+	request: 'attach';
+	processId?: number;
+	stopOnEntry?: boolean;
+	dlvFlags?: string[];
+	showLog?: boolean;
+	logOutput?: string;
+	cwd?: string;
+	mode?: 'local' | 'remote';
+	remotePath?: string;
+	port?: number;
+	host?: string;
+	trace?: 'verbose' | 'trace' | 'info' | 'log' | 'warn' | 'error';
+	backend?: string;
+	substitutePath?: { from: string; to: string }[];
+	/** Delve LoadConfig parameters */
+	dlvLoadConfig?: LoadConfig;
+	dlvToolPath: string;
+	/** Delve Version */
+	apiVersion: number;
+	/** Delve maximum stack trace depth */
+	stackTraceDepth: number;
+
+	showGlobalVariables?: boolean;
+}
+
+interface LoadConfig {
+	// FollowPointers requests pointers to be automatically dereferenced.
+	followPointers: boolean;
+	// MaxVariableRecurse is how far to recurse when evaluating nested types.
+	maxVariableRecurse: number;
+	// MaxStringLen is the maximum number of bytes read from a string
+	maxStringLen: number;
+	// MaxArrayValues is the maximum number of elements read from an array, a slice or a map.
+	maxArrayValues: number;
+	// MaxStructFields is the maximum number of fields read from a struct, -1 will read all fields.
+	maxStructFields: number;
 }

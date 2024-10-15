@@ -200,6 +200,7 @@ export class TestRunner {
 			cwd: pkg.goItem.uri.fsPath,
 			env: cfg.testEnvVars(),
 			cancel: this.#token,
+			debug: this.#config.options,
 			stdout: (s: string | null) => {
 				if (!s) return;
 				this.#context.output.debug(`stdout> ${s}`);

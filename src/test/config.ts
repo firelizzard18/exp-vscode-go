@@ -16,6 +16,7 @@ import deepEqual from 'deep-equal';
 import { resolvePath, substituteEnv } from '../utils/util';
 import { Flags } from './utils';
 import { makeProfileTypeSet } from './profile';
+import { GoLaunchRequest } from '../vscode-go';
 
 /**
  * Wrapper for accessing test explorer configuration.
@@ -175,6 +176,7 @@ export class RunConfig {
 	readonly #tag?: TestTag;
 	readonly #supportsContinuousRun?: boolean;
 	readonly coverage = new WeakMap<FileCoverage, FileCoverageDetail[]>();
+	readonly options: Partial<GoLaunchRequest> = {};
 
 	constructor(
 		context: Context,

@@ -22,6 +22,7 @@ export class TestManager {
 	readonly #disposable: Disposable[] = [];
 	readonly #run: RunConfig;
 	readonly #debug: RunConfig;
+	readonly #rrDebug: RunConfig;
 	readonly #coverage: RunConfig;
 
 	constructor(context: Context) {
@@ -30,6 +31,9 @@ export class TestManager {
 		this.#run = new RunConfig(context, 'Run', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
 		this.#debug = new RunConfig(context, 'Debug', TestRunProfileKind.Debug, true, { id: 'canDebug' });
 		this.#coverage = new RunConfig(context, 'Coverage', TestRunProfileKind.Coverage, true, { id: 'canRun' });
+
+		this.#rrDebug = new RunConfig(context, 'Debug with RR', TestRunProfileKind.Debug, false, { id: 'canDebug' });
+		this.#rrDebug.options.backend = 'rr';
 	}
 
 	#ctrl?: TestController;
@@ -93,6 +97,11 @@ export class TestManager {
 
 		createRunProfile(this.#run);
 		createRunProfile(this.#debug);
+
+		if (process.platform === 'linux') {
+			// RR is only supported on Linux
+			createRunProfile(this.#rrDebug);
+		}
 
 		if (this.context.testing || isCoverageSupported(ctrl)) {
 			createRunProfile(this.#coverage);

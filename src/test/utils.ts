@@ -10,6 +10,7 @@ import { LineBuffer } from '../utils/lineBuffer';
 import { CancellationToken, debug, DebugConfiguration, DebugSession, Disposable, Event, TestRun, Uri } from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
 import { Context } from './testing';
+import { GoLaunchRequest } from '../vscode-go';
 
 export interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	run: TestRun;
@@ -17,6 +18,7 @@ export interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	cancel: CancellationToken;
 	stdout: (line: string) => void;
 	stderr: (line: string) => void;
+	debug?: Partial<GoLaunchRequest>;
 }
 
 interface ProcessResult {
@@ -183,6 +185,7 @@ export async function debugProcess(
 
 	const ws = ctx.workspace.getWorkspaceFolder(Uri.file(cwd));
 	const config: DebugConfiguration = {
+		...(options.debug || {}),
 		sessionID: id,
 		name: 'Debug test',
 		type: 'go',
@@ -190,9 +193,9 @@ export async function debugProcess(
 		mode: 'test',
 		program: cwd,
 		env,
-		buildFlags,
+		buildFlags: buildFlags.join(' '),
 		args: ['-test.v', ...flagArgs],
-	};
+	} satisfies GoLaunchRequest;
 
 	try {
 		if (!(await debug.startDebugging(ws, config, { testRun: run }))) {
