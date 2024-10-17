@@ -60,10 +60,12 @@ export class Browser {
 		this.panel.webview.options = { enableScripts: true };
 		this.panel.webview.onDidReceiveMessage(async (e) => {
 			switch (e.command) {
-				case 'navigate': {
+				case 'navigate':
 					this.navigate(e.url); // Don't await
 					break;
-				}
+				case 'fetch':
+					axios.get(this.#parseUrl(e.url).toString(true));
+					break;
 			}
 		});
 	}

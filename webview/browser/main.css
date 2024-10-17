@@ -7,3 +7,9 @@ pre {
 a, a:link, a:visited, a code {
 	color: var(--vscode-textLink-foreground);
 }
+
+/* Styling tweaks for gopls.doc */
+
+#gopls header {
+	display: none;
+}
