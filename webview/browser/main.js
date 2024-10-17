@@ -24,17 +24,6 @@ function didLoad(fragment) {
 		jumpTo(fragment);
 	}
 
-	// document.querySelectorAll(`a[href^="${pageStr}#"]`).forEach((el) => {
-	// 	const s = el.getAttribute('href');
-	// 	el.setAttribute('href', s.replace(`${pageStr}`, ''));
-	// });
-
-	// document.querySelectorAll('a[href^="#"]').forEach((el) => {
-	// 	el.addEventListener('click', (event) => {
-	// 		goTo(`${pageStr}` + el.getAttribute('href'));
-	// 	});
-	// });
-
 	document.querySelectorAll('a[data-href]').forEach((el) => {
 		el.setAttribute('href', el.dataset.href);
 

@@ -34,7 +34,7 @@ export class Browser {
 			})) as string,
 		);
 
-		const browser = new Browser(ext, 'goExp.renderDocs', url.with({ path: '/' }), 'Go Docs', ViewColumn.Active, {
+		const browser = new Browser(ext, 'gopls', url.with({ path: '/' }), 'Go Docs', ViewColumn.Active, {
 			enableScripts: true,
 			retainContextWhenHidden: true,
 			enableFindWidget: true,
