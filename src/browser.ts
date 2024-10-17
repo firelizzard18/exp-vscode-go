@@ -1,4 +1,5 @@
-import { env, ExtensionContext, Uri, WebviewPanel, window } from 'vscode';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { commands, env, ExtensionContext, Uri, ViewColumn, WebviewPanel, window } from 'vscode';
 import axios from 'axios';
 import { HTMLElement, parse } from 'node-html-parser';
 import { Tail } from './test/testing';
@@ -16,6 +17,31 @@ export class Browser {
 	readonly #id: string;
 	readonly #base: Uri;
 	readonly panel: WebviewPanel;
+
+	static async renderDocs(ext: ExtensionContext) {
+		const ed = window.activeTextEditor;
+		if (!ed) return;
+
+		const url = Uri.parse(
+			(await commands.executeCommand('gopls.doc', {
+				location: {
+					uri: `${ed.document.uri}`,
+					range: {
+						start: ed.selection.active,
+						end: ed.selection.active,
+					},
+				},
+			})) as string,
+		);
+
+		const browser = new Browser(ext, 'goExp.renderDocs', url.with({ path: '/' }), 'Go Docs', ViewColumn.Active, {
+			enableScripts: true,
+			retainContextWhenHidden: true,
+			enableFindWidget: true,
+		});
+
+		await browser.navigate(url);
+	}
 
 	constructor(
 		extension: ExtensionContext,
@@ -35,7 +61,7 @@ export class Browser {
 		this.panel.webview.onDidReceiveMessage(async (e) => {
 			switch (e.command) {
 				case 'navigate': {
-					this.navigate(e.url);
+					this.navigate(e.url); // Don't await
 					break;
 				}
 			}
@@ -51,16 +77,19 @@ export class Browser {
 	readonly #unhistory: Uri[] = [];
 	#current?: Uri;
 
-	navigate(url: Uri | string) {
+	async navigate(url: Uri | string) {
 		url = this.#parseUrl(url);
-		this.#load(url)
-			.then((ok) => {
-				if (!ok) return;
-				this.#current = url;
-				this.#history.push(url);
-				this.#unhistory.splice(0, this.#unhistory.length);
-			})
-			.catch((e) => console.error('Navigation failed', e));
+
+		try {
+			const ok = await this.#load(url);
+			if (!ok) return;
+
+			this.#current = url;
+			this.#history.push(url);
+			this.#unhistory.splice(0, this.#unhistory.length);
+		} catch (error) {
+			console.error(`Navigation failed: ${url}:`, error);
+		}
 	}
 
 	back() {
@@ -109,8 +138,11 @@ export class Browser {
 			return this.#base.with({ path: url });
 		}
 		if (url.startsWith('#') || url.startsWith('?')) {
-			const { query, fragment } = Uri.parse(`foo://bar${url}`);
-			return (this.#current || this.#base).with({ query, fragment });
+			const x = Uri.parse(`foo://bar${url}`);
+			let u = this.#current || this.#base;
+			if (x.query) u = u.with({ query: x.query });
+			if (x.fragment) u = u.with({ fragment: x.fragment });
+			return u;
 		}
 
 		return Uri.parse(url);
@@ -130,12 +162,20 @@ export class Browser {
 		if (!data) return false;
 
 		// Process the response. Note, the response may not include <body>.
-		const document = parse(data);
+		const document = parse(data, {
+			blockTextElements: {
+				script: true,
+				noscript: true,
+				style: true,
+			},
+		});
 		document.querySelector('html')?.setAttribute('id', this.#id);
 
 		// Preserve links
-		document.querySelectorAll('a[href]').forEach((a) => {
-			const href = a.getAttribute('href')!;
+		document.querySelectorAll('a').forEach((a) => {
+			const href = a.getAttribute('href');
+			if (!href) return;
+
 			a.removeAttribute('href');
 			a.setAttribute('data-href', href);
 		});

@@ -126,20 +126,25 @@
     },
     "commands": [
       {
+        "command": "goExp.renderDocs",
+        "title": "Go Companion: Render Documentation",
+        "description": "Render the documentation for the current selection."
+      },
+      {
         "command": "goExp.testExplorer.refresh",
-        "title": "Go: Refresh Test",
+        "title": "Go Companion: Refresh Test",
         "description": "Refresh a test in the test explorer. Only available as a context menu option in the test explorer.",
         "category": "Test",
         "icon": "$(refresh)"
       },
       {
         "command": "goExp.test.run",
-        "title": "Go: Run Test",
+        "title": "Go Companion: Run Test",
         "category": "Test"
       },
       {
         "command": "goExp.test.debug",
-        "title": "Go: Debug Test",
+        "title": "Go Companion: Debug Test",
         "category": "Test"
       },
       {
@@ -201,6 +206,13 @@
         {
           "command": "goExp.pprof.ignore",
           "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "when": "editorTextFocus && resourceLangId == go",
+          "command": "goExp.renderDocs",
+          "group": "Go group 1"
         }
       ],
       "testing/item/context": [

@@ -1,3 +1,4 @@
+/* eslint-disable n/no-unsupported-features/node-builtins */
 /* eslint-disable prettier/prettier */
 /* eslint-disable no-unused-vars */
 /* eslint-disable no-undef */
@@ -41,6 +42,17 @@ function didLoad(fragment) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
 			goTo(el.dataset.href);
+
+			try {
+				const from = new URL(pageStr);
+				const to = new URL(el.dataset.href);
+				if (from.origin !== to.origin || from.pathname !== to.pathname) {
+					// Jump to the top when a new page is loaded
+					window.scrollTo(0, 0);
+				}
+			} catch (_) {
+				// Don't care
+			}
 		});
 	});
 }
