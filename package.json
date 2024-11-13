@@ -55,72 +55,84 @@
     "configuration": {
       "title": "Go Companion",
       "properties": {
-        "goExp.testExplorer.enable": {
+        "exp-vscode-go.testExplorer.enable": {
+          "order": 0,
           "type": "boolean",
           "default": true,
           "scope": "window",
-          "description": "Enable the Go test explorer"
+          "markdownDescription": "Enable the Go test explorer"
         },
-        "goExp.testExplorer.exclude": {
-          "type": "object",
-          "default": {},
-          "description": "Exclude directories and/or files from the test explorer. The value of `go.testExplorer.exclude` is merged with `files.exclude`. `go.testExplorer.exclude` takes precedence if an entry appears in both. If `files.exclude` contains `\"examples\": true` and `go.testExplorer.exclude` contains `\"examples\": false`, the latter will take precedence - matching entries will be excluded from the file explorer but included in the test explorer. Otherwise if either `go.testExplorer.exclude` or `files.exclude` contains an entry with a value of `true`, tests and/or packages matching that entry will be excluded from the test explorer.",
-          "scope": "resource",
-          "additionalProperties": {
-            "type": "boolean"
-          }
-        },
-        "goExp.testExplorer.discovery": {
+        "exp-vscode-go.testExplorer.discovery": {
+          "order": 1,
           "type": "string",
+          "scope": "resource",
+          "markdownDescription": "Enable automatic discovery of tests.",
           "default": "on",
           "enum": [
             "on",
             "off"
           ],
-          "scope": "resource",
-          "description": "Control automatic discovery of tests"
+          "markdownEnumDescriptions": [
+            "Enable automatic discovery of tests in open workspaces",
+            "Disable automatic discovery. No tests are shown until a file is open, and only tests within the same package will be shown. Tests within that package will continue to be shown (even if all files are closed) until the editor/extension is restarted."
+          ]
         },
-        "goExp.testExplorer.showFiles": {
+        "exp-vscode-go.testExplorer.exclude": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Exclude directories and/or files from the test explorer. This is merged with `#files.exclude#`. This setting takes precedence if an entry appears in both. If `#files.exclude#` contains `\"examples\": true` and this setting contains `\"examples\": false`, the latter will take precedence - matching entries will be excluded from the file explorer but included in the test explorer. Otherwise if either this setting or `#files.exclude#` contains an entry with a value of `true`, tests and/or packages matching that entry will be excluded from the test explorer.",
+          "scope": "resource",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "exp-vscode-go.testExplorer.showFiles": {
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "Show files"
+          "markdownDescription": "Show files\n  - `false` - tests are nested within packages:\n    - foo (package)\n      - TestFoo\n  - `true` - test are nested within files:\n    - foo (package)\n      - test_foo.go\n        - TestFoo"
         },
-        "goExp.testExplorer.nestPackages": {
+        "exp-vscode-go.testExplorer.nestPackages": {
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "Nest packages"
+          "markdownDescription": "Nest packages\n  - `false` - packages are siblings:\n    - example.com (module)\n      - foo (package)\n      - foo/bar (package)\n  - `true` - packages are nested:\n    - example.com (module)\n      - foo (package)\n        - bar (package)\n  - Directories that are not packages are ignored regardless of this setting. If\n    `foo` is not a package, foo/bar will not be nested:\n    - example.com (module)\n      - foo/bar (package)"
         },
-        "goExp.testExplorer.nestSubtests": {
+        "exp-vscode-go.testExplorer.nestSubtests": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
-          "description": "Nest subtests"
+          "markdownDescription": "Nest subtests\n  - `true` - subtests are nested:\n    - TestFoo\n      - Bar\n      - Baz\n  - `false` - all tests are siblings\n    - TestFoo\n    - TestFoo/Bar\n    - TestFoo/Bar/Baz"
         },
-        "goExp.testExplorer.codeLens": {
+        "exp-vscode-go.testExplorer.codeLens": {
           "type": "string",
+          "default": "off",
+          "scope": "resource",
+          "markdownDescription": "Show code lenses for running and debugging tests",
           "enum": [
             "on",
             "off",
             "debug",
             "run"
           ],
-          "default": "off",
-          "scope": "resource",
-          "description": "Show code lenses for running and debugging tests"
+          "markdownEnumDescriptions": [
+            "Enable code lenses for tests",
+            "Disable code lenses for tests",
+            "Enable only \"run test\" code lenses",
+            "Enable only \"debug test\" code lenses"
+          ]
         },
-        "goExp.testExplorer.dynamicSubtestLimit": {
+        "exp-vscode-go.testExplorer.dynamicSubtestLimit": {
           "type": "integer",
           "default": 50,
           "scope": "resource",
-          "description": "Limits the number of subtests that are included in the test explorer. Set to 0 to include all subtests."
+          "markdownDescription": "Limits the number of (dynamic) subtests that are included. If the number of subtests of a test reaches this limit, additional subtests will be ignored. Set this to 0 to disable the limit, though this may cause the test explorer to perform badly."
         },
-        "goExp.testExplorer.runPackageBenchmarks": {
+        "exp-vscode-go.testExplorer.runPackageBenchmarks": {
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "When the test explorer is used to run all tests within a package, include benchmarks"
+          "markdownDescription": "Always run benchmarks. By default (with this set to `false`), benchmarks are excluded from test runs unless benchmarks are explicitly selected or the run contains nothing but benchmarks."
         }
       }
     },

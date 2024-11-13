@@ -65,8 +65,8 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// [Event] Configuration change
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
-		if (e.affectsConfiguration('goExp.testExplorer.enable')) {
-			const enabled = workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable');
+		if (e.affectsConfiguration('exp-vscode-go.testExplorer.enable')) {
+			const enabled = workspace.getConfiguration('exp-vscode-go').get<boolean>('testExplorer.enable');
 			if (enabled === manager.enabled) {
 				return;
 			}
@@ -81,11 +81,11 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 		}
 		if (
 			e.affectsConfiguration('files.exclude') ||
-			e.affectsConfiguration('goExp.testExplorer.exclude') ||
-			e.affectsConfiguration('goExp.testExplorer.discovery') ||
-			e.affectsConfiguration('goExp.testExplorer.showFiles') ||
-			e.affectsConfiguration('goExp.testExplorer.nestPackages') ||
-			e.affectsConfiguration('goExp.testExplorer.nestSubtests')
+			e.affectsConfiguration('exp-vscode-go.testExplorer.exclude') ||
+			e.affectsConfiguration('exp-vscode-go.testExplorer.discovery') ||
+			e.affectsConfiguration('exp-vscode-go.testExplorer.showFiles') ||
+			e.affectsConfiguration('exp-vscode-go.testExplorer.nestPackages') ||
+			e.affectsConfiguration('exp-vscode-go.testExplorer.nestSubtests')
 		) {
 			await manager.reloadView();
 		}
@@ -130,7 +130,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	event(watcher.onDidDelete, 'deleted file', async (e) => manager.enabled && manager.reloadUri(e));
 
 	// Setup the controller (if enabled)
-	if (workspace.getConfiguration('goExp').get<boolean>('testExplorer.enable')) {
+	if (workspace.getConfiguration('exp-vscode-go').get<boolean>('testExplorer.enable')) {
 		await setup();
 	}
 }

@@ -128,13 +128,13 @@ class TestCommands implements Commands {
 class TestWorkspace implements Workspace {
 	readonly workspaceFolders: WorkspaceFolder[] = [];
 	readonly config: Configuration = {
-		enable: config['goExp.testExplorer.enable'].default,
-		exclude: config['goExp.testExplorer.exclude'].default,
-		discovery: config['goExp.testExplorer.discovery'].default as any,
-		showFiles: config['goExp.testExplorer.showFiles'].default,
-		nestPackages: config['goExp.testExplorer.nestPackages'].default,
-		nestSubtests: config['goExp.testExplorer.nestSubtests'].default,
-		runPackageBenchmarks: config['goExp.testExplorer.runPackageBenchmarks'].default,
+		enable: config['exp-vscode-go.testExplorer.enable'].default,
+		exclude: config['exp-vscode-go.testExplorer.exclude'].default,
+		discovery: config['exp-vscode-go.testExplorer.discovery'].default as any,
+		showFiles: config['exp-vscode-go.testExplorer.showFiles'].default,
+		nestPackages: config['exp-vscode-go.testExplorer.nestPackages'].default,
+		nestSubtests: config['exp-vscode-go.testExplorer.nestSubtests'].default,
+		runPackageBenchmarks: config['exp-vscode-go.testExplorer.runPackageBenchmarks'].default,
 	};
 
 	readonly fs = new MockFileSystem();
@@ -150,7 +150,7 @@ class TestWorkspace implements Workspace {
 	}
 
 	getConfiguration(section: string): ConfigValue {
-		if (section !== 'goExp') {
+		if (section !== 'exp-vscode-go') {
 			return { get: () => undefined };
 		}
 		return {

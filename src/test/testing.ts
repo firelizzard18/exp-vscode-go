@@ -36,7 +36,6 @@ export type FileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory' | 
 
 // The subset of vscode.workspace that is used by the test explorer.
 export type Workspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
-	// Only allow reading the goExp config
 	getConfiguration(section: string, scope?: vscode.ConfigurationScope | null): ConfigValue;
 
 	readonly fs: FileSystem;

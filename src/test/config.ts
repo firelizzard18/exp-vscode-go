@@ -43,7 +43,7 @@ export class TestConfig {
 	 * Get a configuration value.
 	 */
 	get<T>(name: string) {
-		return this.#workspace.getConfiguration('goExp', this.#scope).get<T>(`testExplorer.${name}`);
+		return this.#workspace.getConfiguration('exp-vscode-go', this.#scope).get<T>(`testExplorer.${name}`);
 	}
 
 	readonly enable = () => this.get<boolean>('enable');
@@ -61,10 +61,11 @@ export class TestConfig {
 	};
 
 	/**
-	 * @returns An array of compiled minimatch patterns from `goExp.testExplorer.exclude` and `files.exclude`.
+	 * @returns An array of compiled minimatch patterns from
+	 * `exp-vscode-go.testExplorer.exclude` and `files.exclude`.
 	 */
 	readonly exclude = () => {
-		// Merge files.exclude and goExp.testExplorer.exclude
+		// Merge files.exclude and exp-vscode-go.testExplorer.exclude
 		const a = this.get<Record<string, boolean>>('exclude') || {};
 		const b = this.#workspace.getConfiguration('files', this.#scope).get<Record<string, boolean>>('exclude') || {};
 		const v = Object.assign({}, b, a);

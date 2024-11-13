@@ -290,7 +290,7 @@ export function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
 	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
 	// button on a file or package that contains benchmarks and nothing else,
 	// they likely expect those benchmarks to run.
-	if (workspace.getConfiguration('goExp', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
+	if (workspace.getConfiguration('exp-vscode-go', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
 		return true;
 	}
 	for (const test of pkg.getTests()) {
