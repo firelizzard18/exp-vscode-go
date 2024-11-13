@@ -6,6 +6,7 @@ import './expect';
 import { Uri } from 'vscode';
 import { Workspace } from '../../utils/txtar';
 import { Module, Package, TestCase } from '../../../src/test/item';
+import { TestRun } from 'vscode';
 
 describe('Test resolver', () => {
 	// NOTE: These tests assume ~/go/bin/gopls exists and has test support
@@ -218,7 +219,11 @@ describe('Test resolver', () => {
 			expect(tc).toBeDefined();
 			expect(tc).toBeInstanceOf(TestCase);
 
-			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Bar', true)!);
+			// findTest doesn't use any of TestRun's properties so we can get
+			// away with this
+			const run = {} as unknown as TestRun;
+
+			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Bar', true, run)!);
 			await expect(host).toResolve([
 				{
 					kind: 'module',
@@ -248,7 +253,11 @@ describe('Test resolver', () => {
 			expect(tc).toBeDefined();
 			expect(tc).toBeInstanceOf(TestCase);
 
-			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Bar', true)!);
+			// findTest doesn't use any of TestRun's properties so we can get
+			// away with this
+			const run = {} as unknown as TestRun;
+
+			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Bar', true, run)!);
 			await expect(host).toResolve([
 				{
 					kind: 'module',
@@ -270,7 +279,7 @@ describe('Test resolver', () => {
 			]);
 
 			tc.removeDynamicTestCases();
-			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Baz', true)!);
+			await host.manager.reloadGoItem(tc.file.package.findTest('TestFoo/Baz', true, run)!);
 			await expect(host).toResolve([
 				{
 					kind: 'module',
