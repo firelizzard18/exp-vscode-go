@@ -250,10 +250,7 @@ export class TestManager {
 	resolveTestItem(goItem: GoTestItem): Promise<TestItem | undefined>;
 	resolveTestItem(goItem: GoTestItem, create: true): Promise<TestItem>;
 	resolveTestItem(goItem: GoTestItem, create = false) {
-		if (!create) {
-			return this.#resolver?.get(goItem);
-		}
-		return this.#resolver!.getOrCreateAll(goItem);
+		return this.#resolver!.resolveViewItems(goItem, create);
 	}
 
 	resolveGoTestItem(id: string) {

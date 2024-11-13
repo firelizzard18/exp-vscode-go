@@ -53,22 +53,22 @@ export class TestResolver {
 	/**
 	 * Get the {@link TestItem} for a {@link GoTestItem}.
 	 */
-	async get(goItem: GoTestItem): Promise<TestItem | undefined> {
+	async #get(goItem: GoTestItem): Promise<TestItem | undefined> {
 		const id = this.#id(goItem);
 		const parent = await goItem.getParent?.();
 		if (!parent) {
 			return this.#ctrl.items.get(id);
 		}
-		return (await this.get(parent))?.children.get(id);
+		return (await this.#get(parent))?.children.get(id);
 	}
 
 	/**
 	 * Get or create the {@link TestItem} for a {@link GoTestItem}. The items
 	 * ancestors will also be created if they do not exist.
 	 */
-	async getOrCreateAll(goItem: GoTestItem): Promise<TestItem> {
+	async #getOrCreateAll(goItem: GoTestItem): Promise<TestItem> {
 		const parent = await goItem.getParent?.();
-		const children = !parent ? this.#ctrl.items : (await this.getOrCreateAll(parent)).children;
+		const children = !parent ? this.#ctrl.items : (await this.#getOrCreateAll(parent)).children;
 		return await this.#createOrUpdate(goItem, children, true);
 	}
 
@@ -192,7 +192,7 @@ export class TestResolver {
 		}
 
 		// Create a TestItem for each GoTestItem, including its ancestors, and refresh
-		const items = await this.#resolveViewItems(item, true);
+		const items = await this.resolveViewItems(item, true);
 		await Promise.all(items.map((x) => this.reloadViewItem(x)));
 		await this.#didChangeTestItem.fire(item);
 	}
@@ -216,7 +216,7 @@ export class TestResolver {
 		}
 
 		// Update the view
-		const items = await this.#resolveViewItems(reload, true);
+		const items = await this.resolveViewItems(reload, true);
 		await Promise.all(items.map((x) => this.reloadViewItem(x)));
 		invalidate && this.#ctrl.invalidateTestResults?.(items);
 
@@ -226,10 +226,29 @@ export class TestResolver {
 	}
 
 	/**
-	 * Filters out items that should not be displayed and finds the
-	 * corresponding TestItem for each GoTestItem.
+	 * Returns the corresponding {@link TestItem}(s) for one or more
+	 * {@link GoTestItem}s. If a given `GoTestItem` does not have a
+	 * corresponding `TestItem`, such as the root package of a module or a file
+	 * when showFiles is not enabled, the item's parent's `TestItem` will be
+	 * returned instead.
+	 * @param goItems - The {@link GoTestItem} or items to resolve.
+	 * @param create - Whether to create missing {@link TestItem}(s).
+	 * @returns The corresponding {@link TestItem}(s).
 	 */
-	async #resolveViewItems(goItems: Iterable<TestCase | TestFile | Package | RootItem>, create = false) {
+	resolveViewItems(goItems: GoTestItem, create?: boolean): Promise<TestItem | undefined>;
+	resolveViewItems(goItems: GoTestItem, create: true): Promise<TestItem>;
+	resolveViewItems(goItems: Iterable<GoTestItem>, create?: boolean): Promise<TestItem[]>;
+	resolveViewItems(
+		goItems: GoTestItem | Iterable<GoTestItem>,
+		create?: boolean,
+	): Promise<TestItem | undefined> | Promise<TestItem[]> {
+		if (!(Symbol.iterator in goItems)) {
+			return (async () => {
+				const [item] = await this.resolveViewItems([goItems], create);
+				return item;
+			})();
+		}
+
 		const toResolve = [];
 		const config = new TestConfig(this.#context.workspace);
 		for (let item of goItems) {
@@ -249,10 +268,12 @@ export class TestResolver {
 		}
 
 		if (create) {
-			return await Promise.all(toResolve.map((x) => this.getOrCreateAll(x)));
+			return Promise.all(toResolve.map((x) => this.#getOrCreateAll(x)));
 		}
 
-		const items = await Promise.all(toResolve.map((x) => this.get(x)));
-		return items.filter((x) => x) as TestItem[];
+		return (async () => {
+			const items = await Promise.all(toResolve.map((x) => this.#get(x)));
+			return items.filter((x) => !!x);
+		})();
 	}
 }
