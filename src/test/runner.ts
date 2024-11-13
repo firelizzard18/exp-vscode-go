@@ -113,10 +113,20 @@ export class TestRunner {
 			profileParent = parent;
 		}
 
-		// Enqueue tests and remove dynamic test cases
+		// Enqueue tests and remove dynamic test cases from tests that are about
+		// to be run
 		pkg.forEach((item, goItem) => {
 			run.enqueued(item);
 			goItem?.removeDynamicTestCases();
+		});
+
+		// Destroy dynamic tests cases for this run when the run is discarded
+		run.onDidDispose?.(async () => {
+			const removed: ReturnType<TestCase['removeDynamicTestCases']> = [];
+			pkg.forEach((_, goItem) => {
+				removed.push(...(goItem?.removeDynamicTestCases(run) ?? []));
+			});
+			await this.#resolver.reloadGoItem(removed);
 		});
 
 		const cfg = new TestConfig(this.#context.workspace, pkg.goItem.uri);

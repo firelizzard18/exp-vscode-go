@@ -251,7 +251,7 @@ export class PackageTestRun {
 
 		// Resolve the named test case and its associated test item
 		// const test = msg.Test ? await this.#resolveTestCase(this.goItem, msg.Test) : undefined;
-		const test = msg.Test ? this.goItem.findTest(msg.Test, true) : undefined;
+		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.#run) : undefined;
 		const item = test && (await this.#request.manager.resolveTestItem(test, true));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;

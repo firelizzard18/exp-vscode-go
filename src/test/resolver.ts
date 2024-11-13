@@ -16,7 +16,7 @@ export class TestResolver {
 	// managing Go test items, and Go test items should not be responsible for
 	// managing view information.
 
-	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile | Package>) => void>();
+	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile | Package | RootItem>) => void>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
 	readonly #didInvalidateTestResults = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
@@ -178,8 +178,15 @@ export class TestResolver {
 	/**
 	 * Reloads a set of Go items.
 	 */
-	async reloadGoItem(item: TestCase | TestFile | Package | Iterable<TestCase | TestFile | Package>) {
-		if (item instanceof TestCase || item instanceof TestFile || item instanceof Package) {
+	async reloadGoItem(
+		item: TestCase | TestFile | Package | RootItem | Iterable<TestCase | TestFile | Package | RootItem>,
+	) {
+		if (
+			item instanceof TestCase ||
+			item instanceof TestFile ||
+			item instanceof Package ||
+			item instanceof RootItem
+		) {
 			await this.reloadGoItem([item]);
 			return;
 		}
@@ -222,30 +229,30 @@ export class TestResolver {
 	 * Filters out items that should not be displayed and finds the
 	 * corresponding TestItem for each GoTestItem.
 	 */
-	async #resolveViewItems(goItems: Iterable<TestCase | TestFile | Package>, create = false) {
-		// If showFiles is disabled we need to reload the parent of each file
-		// instead of the file. If an item is a package and is the self-package
-		// of a root, we need to reload the root instead of the package.
-		const toReload = [];
+	async #resolveViewItems(goItems: Iterable<TestCase | TestFile | Package | RootItem>, create = false) {
+		const toResolve = [];
 		const config = new TestConfig(this.#context.workspace);
-		for (const item of goItems) {
-			if (item instanceof TestCase) {
-				toReload.push(item);
-				continue;
+		for (let item of goItems) {
+			// If the item is a file and showFiles is disabled, resolve the
+			// parent instead of the file
+			if (item instanceof TestFile && !config.for(item.uri).showFiles()) {
+				item = item.getParent();
 			}
 
-			if (item instanceof Package ? item.isRootPkg : !config.for(item.uri).showFiles()) {
-				toReload.push(item.getParent());
-			} else {
-				toReload.push(item);
+			// If the item is a package and is the self-package of a root,
+			// resolve the root instead of the package
+			if (item instanceof Package && item.isRootPkg) {
+				item = item.getParent();
 			}
+
+			toResolve.push(item);
 		}
 
 		if (create) {
-			return await Promise.all(toReload.map((x) => this.getOrCreateAll(x)));
+			return await Promise.all(toResolve.map((x) => this.getOrCreateAll(x)));
 		}
 
-		const items = await Promise.all(toReload.map((x) => this.get(x)));
+		const items = await Promise.all(toResolve.map((x) => this.get(x)));
 		return items.filter((x) => x) as TestItem[];
 	}
 }

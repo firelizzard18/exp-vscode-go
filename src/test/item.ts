@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
 import { Uri, Range } from 'vscode';
-import type { MarkdownString, ProviderResult, WorkspaceFolder } from 'vscode';
+import type { MarkdownString, ProviderResult, TestRun, WorkspaceFolder } from 'vscode';
 import { Commands, Context } from './testing';
 import path from 'path';
 import { TestConfig } from './config';
@@ -622,23 +622,31 @@ export class Package implements GoTestItem {
 	 *
 	 * @param name - The name of the test to find.
 	 * @param create - Specifies whether to create a dynamic subtest if it doesn't exist.
+	 * @param run - If an item is created, the {@link TestRun} it should be associated with.
 	 * @returns The found test, if found or successfully created.
 	 */
-	findTest(name: string, create = false) {
+	findTest(name: string, create?: false, run?: TestRun): DynamicTestCase | undefined;
+	findTest(name: string, create: true, run: TestRun): DynamicTestCase;
+	findTest(name: string, create = false, run?: TestRun) {
 		// Check for an exact match
 		for (const file of this.files) {
 			for (const test of file.tests) {
 				if (test.name === name) {
+					// If the test is a dynamic test case and a test run is
+					// provided, reassociate the test with the run
+					if (run && test instanceof DynamicTestCase) {
+						test.run = run;
+					}
 					return test;
 				}
 			}
 		}
 
-		if (!create) return;
+		if (create !== true || !run) return;
 
 		// Find the parent test case and create a dynamic subtest
 		const parent = findParentTestCase(this.getTests(), name);
-		return parent?.makeDynamicTestCase(name);
+		return parent?.makeDynamicTestCase(name, run);
 	}
 }
 
@@ -771,14 +779,14 @@ export abstract class TestCase implements GoTestItem {
 	 * total number of this test's children exceeds the limit, no test is
 	 * created.
 	 */
-	makeDynamicTestCase(name: string) {
+	makeDynamicTestCase(name: string, run: TestRun) {
 		const limit = this.#config.dynamicSubtestLimit();
 		if (limit && limit > 0 && (this.file.package.testRelations.getChildren(this)?.length || 0) >= limit) {
 			// TODO: Give some indication to the user?
 			return;
 		}
 
-		const child = new DynamicTestCase(this.#config, this, name);
+		const child = new DynamicTestCase(this.#config, this, name, run);
 		this.file.tests.add(child);
 		this.file.package.testRelations.add(this, child);
 		return child;
@@ -786,9 +794,11 @@ export abstract class TestCase implements GoTestItem {
 
 	/**
 	 * Deletes all {@link DynamicTestCase}s that are children of this test case.
+	 * This is called at the start of a test run.
+	 * @returns The items that should be reloaded.
 	 */
-	removeDynamicTestCases() {
-		this.file.package.testRelations.getChildren(this)?.forEach((x) => x.removeDynamicTestCases());
+	removeDynamicTestCases(run?: TestRun): ReturnType<typeof this.getParent>[] {
+		return this.file.package.testRelations.getChildren(this)?.flatMap((x) => x.removeDynamicTestCases(run)) ?? [];
 	}
 }
 
@@ -855,14 +865,27 @@ export class StaticTestCase extends TestCase {
 }
 
 export class DynamicTestCase extends TestCase {
-	constructor(config: TestConfig, parent: TestCase, name: string) {
+	/**
+	 * The {@link TestRun} that created this dynamic test case.
+	 */
+	run: TestRun;
+
+	constructor(config: TestConfig, parent: TestCase, name: string, run: TestRun) {
 		super(config, parent.file, parent.uri, parent.kind, name);
+		this.run = run;
 	}
 
-	removeDynamicTestCases(): void {
-		super.removeDynamicTestCases();
+	removeDynamicTestCases(run?: TestRun) {
+		// If `run` is specified, only remove this case if it belongs to `run`
+		if (run && run !== this.run) {
+			return [];
+		}
+
+		const parent = this.getParent();
+		super.removeDynamicTestCases(run);
 		this.file.tests.remove(this);
 		this.file.package.testRelations.removeChild(this);
+		return [parent];
 	}
 }
 
