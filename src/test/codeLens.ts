@@ -33,7 +33,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	 * Provide code lenses for a document.
 	 */
 	async provideCodeLenses(document: TextDocument): Promise<GoCodeLens[]> {
-		if (this.#mode() === 'off') {
+		if (!this.#mode()) {
 			return [];
 		}
 
