@@ -139,21 +139,21 @@
           ]
         },
         "exp-vscode-go.testExplorer.codeLens": {
-          "type": "string",
-          "default": "off",
+          "type": ["string", "boolean"],
+          "default": false,
           "scope": "resource",
           "markdownDescription": "Show code lenses for running and debugging tests",
           "enum": [
-            "on",
-            "off",
+            false,
+            true,
             "debug",
             "run"
           ],
-          "markdownEnumDescriptions": [
-            "Enable code lenses for tests",
-            "Disable code lenses for tests",
-            "Enable only \"run test\" code lenses",
-            "Enable only \"debug test\" code lenses"
+          "enumItemLabels": [
+            "Disable code lenses",
+            "Enable all code lenses",
+            "Enable \"run test\" code lenses",
+            "Enable \"debug test\" code lenses"
           ]
         },
         "exp-vscode-go.testExplorer.dynamicSubtestLimit": {
