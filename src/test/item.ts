@@ -625,8 +625,8 @@ export class Package implements GoTestItem {
 	 * @param run - If an item is created, the {@link TestRun} it should be associated with.
 	 * @returns The found test, if found or successfully created.
 	 */
-	findTest(name: string, create?: false, run?: TestRun): DynamicTestCase | undefined;
-	findTest(name: string, create: true, run: TestRun): DynamicTestCase;
+	findTest(name: string, create?: false, run?: TestRun): TestCase | undefined;
+	findTest(name: string, create: true, run: TestRun): TestCase;
 	findTest(name: string, create = false, run?: TestRun) {
 		// Check for an exact match
 		for (const file of this.files) {
