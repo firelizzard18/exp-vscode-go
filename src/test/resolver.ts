@@ -86,10 +86,6 @@ export class TestResolver {
 		} else if (goItem instanceof Package || goItem instanceof TestFile || goItem instanceof TestCase) {
 			tags.push({ id: 'canRun' });
 			tags.push({ id: 'canDebug' });
-		} else {
-			// Profiles shouldn't be runnable but making them not runnable
-			// causes bugs: https://github.com/microsoft/vscode/issues/229120
-			tags.push({ id: 'canRun' });
 		}
 
 		const existing = children.get(id);
