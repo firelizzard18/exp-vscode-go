@@ -7,7 +7,7 @@ import { Context, doSafe, Tail, TestController } from './testing';
 import { TestResolver } from './resolver';
 import { GoTestItem } from './item';
 import { TestRunner } from './runner';
-import { TestRunRequest } from './run';
+import { TestRunRequest } from './testRun';
 import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
 import { RunConfig } from './config';

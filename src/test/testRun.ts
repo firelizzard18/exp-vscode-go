@@ -255,40 +255,51 @@ export class PackageTestRun {
 		const item = test && (await this.#request.manager.resolveTestItem(test, true));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
-		switch (msg.Action) {
-			case 'output': {
-				if (!msg.Output) {
-					break;
-				}
-
-				// Track output
-				const { id } = item || this.testItem;
-				if (!this.output.has(id)) {
-					this.output.set(id, []);
-				}
-				this.output.get(id)!.push(msg.Output);
-
-				if (!item || /^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
-					this.append(msg.Output, undefined, this.testItem);
-					break;
-				}
-
-				const { message, location } = parseOutputLocation(msg.Output, path.join(item.uri!.fsPath, '..'));
-				if (location) {
-					this.currentLocation.set(id, location);
-				}
-				this.append(message, location || this.currentLocation.get(id), item);
-
-				// Detect benchmark completion, e.g.
-				//   "BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op"
-				const m = msg.Output.match(/^(?<name>Benchmark[#/\w+]+)(?:-(?<procs>\d+)\s+(?<result>.*))?(?:$|\n)/);
-				if (m && msg.Test && m.groups?.name === msg.Test) {
-					this.#run.passed(item);
-				}
-
-				break;
+		if (msg.Action === 'output') {
+			if (!msg.Output) {
+				return;
 			}
 
+			// Track output
+			const { id } = item || this.testItem;
+			if (!this.output.has(id)) {
+				this.output.set(id, []);
+			}
+			this.output.get(id)!.push(msg.Output);
+
+			let location: Location | undefined;
+			let message = msg.Output;
+			if (item && !/^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
+				const parsed = parseOutputLocation(msg.Output, path.join(item.uri!.fsPath, '..'));
+				message = parsed.message;
+				location = parsed.location;
+				if (location) {
+					this.currentLocation.set(id, location);
+				} else {
+					location = this.currentLocation.get(id);
+				}
+			}
+			this.append(message, location, item || this.testItem);
+
+			// go test is not good about reporting the start and end of benchmarks
+			// so we'll synthesize those events to make life easier.
+			if (!msg.Test?.startsWith('Benchmark')) {
+				return;
+			}
+			if (msg.Output === `=== RUN   ${msg.Test}\n`) {
+				// === RUN   BenchmarkFooBar
+				msg.Action = 'run';
+			} else if (
+				msg.Output?.match(/^(?<name>Benchmark[/\w]+)-(?<procs>\d+)\s+(?<result>.*)(?:$|\n)/)?.[1] === msg.Test
+			) {
+				// BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op
+				msg.Action = 'pass';
+			} else {
+				return;
+			}
+		}
+
+		switch (msg.Action) {
 			case 'run':
 			case 'start':
 				if (!msg.Test) {

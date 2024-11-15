@@ -53,7 +53,11 @@ export function spawnProcess(context: Context, scope: Uri, flags: Flags, options
 		errbuf.onLine(stderr);
 		errbuf.onDone((x) => x && stderr(x));
 
+		// Always use -json, but don't combine it with -v because weird things
+		// happen (https://github.com/golang/go/issues/70384)
 		flags.json = true;
+		delete flags.v;
+
 		const tp = cp.spawn(binPath, ['test', ...flags2args(flags)], {
 			...rest,
 			stdio: 'pipe',

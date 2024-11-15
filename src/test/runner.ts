@@ -4,7 +4,7 @@ import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri } fro
 import type vscode from 'vscode';
 import { Package, StaticTestCase, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
-import { PackageTestRun, TestRunRequest } from './run';
+import { PackageTestRun, TestRunRequest } from './testRun';
 import { flags2args, Spawner } from './utils';
 import { ProfileType } from './profile';
 import { TestResolver } from './resolver';
