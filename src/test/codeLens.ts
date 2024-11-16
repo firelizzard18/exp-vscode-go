@@ -59,23 +59,12 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	*#fileCodeLenses(file: TestFile) {
 		const mode = this.#mode(file.uri);
 		const runPkg = new GoCodeLens(new Range(0, 0, 0, 0), file.package, 'run');
-		const debugPkg = new GoCodeLens(new Range(0, 0, 0, 0), file.package, 'debug');
 		const runFile = new GoCodeLens(new Range(0, 0, 0, 0), file, 'run');
-		const debugFile = new GoCodeLens(new Range(0, 0, 0, 0), file, 'debug');
 		switch (mode) {
 			case 'run':
-				yield runFile;
-				yield runPkg;
-				break;
-			case 'debug':
-				yield debugFile;
-				yield debugPkg;
-				break;
 			default:
-				yield runFile;
-				yield debugFile;
 				yield runPkg;
-				yield debugPkg;
+				yield runFile;
 				break;
 		}
 
