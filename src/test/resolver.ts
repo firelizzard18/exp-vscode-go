@@ -253,7 +253,7 @@ export class TestResolver {
 	resolveViewItems(goItems: Iterable<GoTestItem>, opts?: ResolveOptions): Promise<TestItem[]>;
 	resolveViewItems(
 		goItems: GoTestItem | Iterable<GoTestItem>,
-		opts?: ResolveOptions,
+		opts: ResolveOptions = {},
 	): Promise<TestItem | undefined> | Promise<TestItem[]> {
 		if (!(Symbol.iterator in goItems)) {
 			if (opts?.children) {
@@ -265,44 +265,43 @@ export class TestResolver {
 			})();
 		}
 
-		const toResolve: GoTestItem[] = [];
-		const add = (item: GoTestItem) => {
+		const config = new TestConfig(this.#context.workspace);
+		return (async () => {
+			const items = [];
+			for await (const item of this.#resolveViewItems(goItems, opts, config)) {
+				items.push(opts.create ? this.#getOrCreateAll(item) : this.#get(item));
+			}
+			return (await Promise.all(items)).filter((x) => !!x);
+		})();
+	}
+
+	async *#resolveViewItems(
+		goItems: Iterable<GoTestItem>,
+		opts: ResolveOptions,
+		config: TestConfig,
+	): AsyncGenerator<GoTestItem> {
+		for (const item of goItems) {
+			let hidden;
+
 			// If the item is a file and showFiles is disabled, resolve the
 			// parent instead of the file
 			if (item instanceof TestFile && !config.for(item.uri).showFiles()) {
-				addHidden(item);
-				return;
+				hidden = item;
 			}
 
 			// If the item is a package and is the self-package of a root,
 			// resolve the root instead of the package
 			if (item instanceof Package && item.isRootPkg) {
-				addHidden(item);
-				return;
+				hidden = item;
 			}
 
-			toResolve.push(item);
-		};
-		const addHidden = (item: { getParent(): GoTestItem; getChildren(): GoTestItem[] }) => {
-			if (opts?.children) {
-				item.getChildren().forEach((x) => add(x));
+			if (!hidden) {
+				yield item;
+			} else if (opts.children) {
+				yield* this.#resolveViewItems(hidden.getChildren(), opts, config);
 			} else {
-				add(item.getParent());
+				yield* this.#resolveViewItems([hidden.getParent()], opts, config);
 			}
-		};
-
-		const config = new TestConfig(this.#context.workspace);
-		for (const item of goItems) {
-			add(item);
 		}
-
-		if (opts?.create) {
-			return Promise.all(toResolve.map((x) => this.#getOrCreateAll(x)));
-		}
-
-		return (async () => {
-			const items = await Promise.all(toResolve.map((x) => this.#get(x)));
-			return items.filter((x) => !!x);
-		})();
 	}
 }
