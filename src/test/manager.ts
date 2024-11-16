@@ -4,7 +4,7 @@ import { TestRunProfileKind, Uri, TestRunRequest as VSCTestRunRequest, Cancellat
 import type { CancellationToken, Disposable, TestItem, TestTag } from 'vscode';
 import type vscode from 'vscode';
 import { Context, doSafe, Tail, TestController } from './testing';
-import { TestResolver } from './resolver';
+import { ResolveOptions, TestResolver } from './resolver';
 import { GoTestItem } from './item';
 import { TestRunner } from './runner';
 import { TestRunRequest } from './testRun';
@@ -121,16 +121,15 @@ export class TestManager {
 	/**
 	 * Run a test.
 	 */
-	runTest(item: TestItem) {
-		this.#executeTestRun(this.#run, new VSCTestRunRequest([item]));
+	runTests(...items: TestItem[]) {
+		this.#executeTestRun(this.#run, new VSCTestRunRequest(items));
 	}
 
 	/**
 	 * Debug a test.
 	 */
-	debugTest(item: TestItem) {
-		if (!this.#debug) return;
-		this.#executeTestRun(this.#debug, new VSCTestRunRequest([item]));
+	debugTests(...items: TestItem[]) {
+		this.#executeTestRun(this.#debug, new VSCTestRunRequest(items));
 	}
 
 	/**
@@ -248,9 +247,10 @@ export class TestManager {
 	}
 
 	resolveTestItem(goItem: GoTestItem): Promise<TestItem | undefined>;
-	resolveTestItem(goItem: GoTestItem, create: true): Promise<TestItem>;
-	resolveTestItem(goItem: GoTestItem, create = false) {
-		return this.#resolver!.resolveViewItems(goItem, create);
+	resolveTestItem(goItem: GoTestItem, opts: ResolveOptions & { create: true }): Promise<TestItem>;
+	resolveTestItem(goItem: GoTestItem, opts: ResolveOptions & { children: true }): Promise<TestItem[]>;
+	resolveTestItem(goItem: GoTestItem, opts?: ResolveOptions) {
+		return this.#resolver!.resolveViewItems(goItem, opts);
 	}
 
 	resolveGoTestItem(id: string) {

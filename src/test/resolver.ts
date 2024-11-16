@@ -6,6 +6,21 @@ import { TestConfig } from './config';
 import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
 import { EventEmitter } from '../utils/eventEmitter';
 
+export type ResolveOptions = {
+	/**
+	 * If this is true and the {@link TestItem} corresponding to a
+	 * {@link GoTestItem} has not been created yet, it will be created.
+	 */
+	create?: boolean;
+
+	/**
+	 * If this is true and a {@link GoTestItem} does not have a corresponding
+	 * {@link TestItem} (e.g. a file when showFiles is false), the GoTestItem
+	 * will resolve to its children instead of its parent.
+	 */
+	children?: boolean;
+};
+
 /**
  * Maps between Go items ({@link GoTestItem}) and view items ({@link TestItem})
  * and manages view updates.
@@ -188,7 +203,7 @@ export class TestResolver {
 		}
 
 		// Create a TestItem for each GoTestItem, including its ancestors, and refresh
-		const items = await this.resolveViewItems(item, true);
+		const items = await this.resolveViewItems(item, { create: true });
 		await Promise.all(items.map((x) => this.reloadViewItem(x)));
 		await this.#didChangeTestItem.fire(item);
 	}
@@ -212,7 +227,7 @@ export class TestResolver {
 		}
 
 		// Update the view
-		const items = await this.resolveViewItems(reload, true);
+		const items = await this.resolveViewItems(reload, { create: true });
 		await Promise.all(items.map((x) => this.reloadViewItem(x)));
 		invalidate && this.#ctrl.invalidateTestResults?.(items);
 
@@ -231,39 +246,57 @@ export class TestResolver {
 	 * @param create - Whether to create missing {@link TestItem}(s).
 	 * @returns The corresponding {@link TestItem}(s).
 	 */
-	resolveViewItems(goItems: GoTestItem, create?: boolean): Promise<TestItem | undefined>;
-	resolveViewItems(goItems: GoTestItem, create: true): Promise<TestItem>;
-	resolveViewItems(goItems: Iterable<GoTestItem>, create?: boolean): Promise<TestItem[]>;
+	resolveViewItems(goItems: GoTestItem): Promise<TestItem | undefined>;
+	resolveViewItems(goItems: GoTestItem, opts: ResolveOptions & { create: true }): Promise<TestItem>;
+	resolveViewItems(goItems: GoTestItem, opts: ResolveOptions & { children: true }): Promise<TestItem[]>;
+	resolveViewItems(goItems: GoTestItem, opts?: ResolveOptions): Promise<TestItem | undefined> | Promise<TestItem[]>;
+	resolveViewItems(goItems: Iterable<GoTestItem>, opts?: ResolveOptions): Promise<TestItem[]>;
 	resolveViewItems(
 		goItems: GoTestItem | Iterable<GoTestItem>,
-		create?: boolean,
+		opts?: ResolveOptions,
 	): Promise<TestItem | undefined> | Promise<TestItem[]> {
 		if (!(Symbol.iterator in goItems)) {
+			if (opts?.children) {
+				return this.resolveViewItems([goItems], opts);
+			}
 			return (async () => {
-				const [item] = await this.resolveViewItems([goItems], create);
+				const [item] = await this.resolveViewItems([goItems], opts);
 				return item;
 			})();
 		}
 
-		const toResolve = [];
-		const config = new TestConfig(this.#context.workspace);
-		for (let item of goItems) {
+		const toResolve: GoTestItem[] = [];
+		const add = (item: GoTestItem) => {
 			// If the item is a file and showFiles is disabled, resolve the
 			// parent instead of the file
 			if (item instanceof TestFile && !config.for(item.uri).showFiles()) {
-				item = item.getParent();
+				addHidden(item);
+				return;
 			}
 
 			// If the item is a package and is the self-package of a root,
 			// resolve the root instead of the package
 			if (item instanceof Package && item.isRootPkg) {
-				item = item.getParent();
+				addHidden(item);
+				return;
 			}
 
 			toResolve.push(item);
+		};
+		const addHidden = (item: { getParent(): GoTestItem; getChildren(): GoTestItem[] }) => {
+			if (opts?.children) {
+				item.getChildren().forEach((x) => add(x));
+			} else {
+				add(item.getParent());
+			}
+		};
+
+		const config = new TestConfig(this.#context.workspace);
+		for (const item of goItems) {
+			add(item);
 		}
 
-		if (create) {
+		if (opts?.create) {
 			return Promise.all(toResolve.map((x) => this.#getOrCreateAll(x)));
 		}
 

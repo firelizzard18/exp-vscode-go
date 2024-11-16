@@ -55,8 +55,8 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	command('goExp.testExplorer.refresh', (item: TestItem) => manager.enabled && manager.reloadViewItem(item));
 
 	// [Command] Run Test, Debug Test
-	command('goExp.test.run', (item: TestItem) => manager.enabled && manager.runTest(item));
-	command('goExp.test.debug', (item: TestItem) => manager.enabled && manager.debugTest(item));
+	command('goExp.test.run', (...item: TestItem[]) => manager.enabled && manager.runTests(...item));
+	command('goExp.test.debug', (...item: TestItem[]) => manager.enabled && manager.debugTests(...item));
 
 	// [Command] Browser navigation
 	command('goExp.browser.back', () => Browser.active?.back());

@@ -160,7 +160,7 @@ export class TestRunRequest {
 			[...include.values()].map((x) =>
 				Promise.all(
 					x.map(async (y) => {
-						const item = await this.manager.resolveTestItem(y, true);
+						const item = await this.manager.resolveTestItem(y, { create: true });
 						testItems.push(item);
 					}),
 				),
@@ -186,7 +186,7 @@ export class TestRunRequest {
 
 	async *packages(run: TestRun) {
 		for (const pkg of this.#packages) {
-			const pkgItem = await this.manager.resolveTestItem(pkg, true);
+			const pkgItem = await this.manager.resolveTestItem(pkg, { create: true });
 			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.getTests());
 			const exclude = await this.#resolveTestItems(this.exclude.get(pkg) || []);
 
@@ -197,7 +197,9 @@ export class TestRunRequest {
 	async #resolveTestItems<T extends GoTestItem>(goItems: T[]) {
 		return new Map(
 			await Promise.all(
-				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, true)]),
+				goItems.map(
+					async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, { create: true })],
+				),
 			),
 		);
 	}
@@ -252,7 +254,7 @@ export class PackageTestRun {
 		// Resolve the named test case and its associated test item
 		// const test = msg.Test ? await this.#resolveTestCase(this.goItem, msg.Test) : undefined;
 		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.#run) : undefined;
-		const item = test && (await this.#request.manager.resolveTestItem(test, true));
+		const item = test && (await this.#request.manager.resolveTestItem(test, { create: true }));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		if (msg.Action === 'output') {

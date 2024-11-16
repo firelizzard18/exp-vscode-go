@@ -57,10 +57,31 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	 * Provide code lenses for a file.
 	 */
 	*#fileCodeLenses(file: TestFile) {
+		const mode = this.#mode(file.uri);
+		const runPkg = new GoCodeLens(new Range(0, 0, 0, 0), file.package, 'run');
+		const debugPkg = new GoCodeLens(new Range(0, 0, 0, 0), file.package, 'debug');
+		const runFile = new GoCodeLens(new Range(0, 0, 0, 0), file, 'run');
+		const debugFile = new GoCodeLens(new Range(0, 0, 0, 0), file, 'debug');
+		switch (mode) {
+			case 'run':
+				yield runFile;
+				yield runPkg;
+				break;
+			case 'debug':
+				yield debugFile;
+				yield debugPkg;
+				break;
+			default:
+				yield runFile;
+				yield debugFile;
+				yield runPkg;
+				yield debugPkg;
+				break;
+		}
+
 		// Depending on the mode, create a run and/or debug code lens for each
 		// test case that has a range. We can't do this for dynamic test cases
 		// because `go test` does not provide a range for those.
-		const mode = this.#mode(file.uri);
 		for (const test of file.tests) {
 			if (test instanceof StaticTestCase && test.range) {
 				const run = new GoCodeLens(test.range, test, 'run');
@@ -92,10 +113,10 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		lens.command = {
 			title: `${lens.kind} ${lens.item.kind}`,
 			command: `goExp.test.${lens.kind}`,
-			arguments: [await this.#manager.resolveTestItem(lens.item)],
+			arguments: await this.#manager.resolveTestItem(lens.item, { children: true }),
 		};
 		if (!(lens.item instanceof TestCase)) {
-			lens.command.title += ' files';
+			lens.command.title += ' tests';
 		}
 		return lens;
 	}
