@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
 import { Context } from './testing';
 import { Module, RootItem } from './item';
+import { parseJSONStream } from '../utils/util';
 
 /**
  * Parses a coverage file from `go test` into a map of
@@ -19,9 +20,19 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 		throw new Error('Failed to run "go env" as the "go" binary cannot be found in either GOROOT or PATH');
 	}
 
+	const modules: Record<string, string> = {};
+	parseJSONStream(await gets(binPath, scope, 'list', '-m', '-json', 'all'), (v) => {
+		const dep = v as {
+			Path: string;
+			Dir: string;
+		};
+		modules[dep.Path] = dep.Dir;
+	});
+
 	const env = {
-		GOROOT: await getEnv(binPath, 'GOROOT'),
-		GOMODCACHE: await getEnv(binPath, 'GOMODCACHE'),
+		modules,
+		GOROOT: await gets(binPath, scope, 'env', 'GOROOT'),
+		GOMODCACHE: await gets(binPath, scope, 'env', 'GOMODCACHE'),
 	};
 
 	const lines = Buffer.from(await context.workspace.fs.readFile(coverageFile))
@@ -48,14 +59,15 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 	return coverage;
 }
 
-async function getEnv(binPath: string, name: string) {
-	const { stdout } = await promisify(cp.execFile)(binPath, ['env', name]);
+async function gets(binPath: string, scope: RootItem, ...args: string[]) {
+	const { stdout } = await promisify(cp.execFile)(binPath, args, { cwd: scope.dir.fsPath });
 	return stdout.trim();
 }
 
 // Derived from https://golang.org/cl/179377
 
 interface Env {
+	modules: Record<string, string>;
 	GOROOT: string;
 	GOMODCACHE: string;
 }
@@ -126,13 +138,22 @@ function resolveCoveragePath(env: Env, scope: RootItem, filename: string) {
 		return path.join(scope.dir.fsPath, filename.substring(scope.path.length + 1));
 	}
 
-	// If the first segment of the path contains a dot, assume it's a module
-	const [first] = filename.split(/\\|\//);
-	if (first.includes('.')) {
-		// TODO: Resolve the version
-		return path.join(env.GOMODCACHE, filename);
+	// If the first segment does not contain a dot, assume it's a stdlib package
+	const parts = filename.split(/\\|\//);
+	if (!parts[0].includes('.')) {
+		return path.join(env.GOROOT, 'src', filename);
 	}
 
-	// If the first segment does not contain a dot, assume it's a stdlib package
-	return path.join(env.GOROOT, 'src', filename);
+	// If the first segment contains a dot, attempt to find a module that
+	// matches it
+	for (let i = parts.length - 1; i > 0; i--) {
+		const s = parts.slice(0, i).join('/');
+		if (s in env.modules) {
+			return path.join(env.modules[s], ...parts.slice(i));
+		}
+	}
+
+	// There's no matching module. This is guaranteed to fail but it's better
+	// than nothing as it will give the user some idea where to look.
+	return path.join(env.GOMODCACHE, filename);
 }

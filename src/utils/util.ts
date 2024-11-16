@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Tokenizer, TokenParser, ParsedElementInfo } from '@streamparser/json';
 
 // From vscode-go
 
@@ -95,4 +97,26 @@ export function cleanupTempDir() {
 		rmdirRecursive(tmpDir);
 	}
 	tmpDir = undefined;
+}
+
+type JsonValue = Exclude<ParsedElementInfo.ParsedElementInfo['value'], undefined>;
+
+export function parseJSONStream(s: string, onValue: (_: JsonValue) => void) {
+	const t = new Tokenizer();
+
+	let p = new TokenParser();
+	p.onValue = (x) => {
+		if (x.parent || !x.value) return;
+		onValue(x.value);
+	};
+	p.onEnd = () => {
+		const { onValue, onEnd } = p;
+		p = new TokenParser();
+		Object.assign(p, { onValue, onEnd });
+	};
+
+	t.onToken = (t) => {
+		p.write(t);
+	};
+	t.write(s);
 }

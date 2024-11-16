@@ -139,7 +139,10 @@
           ]
         },
         "exp-vscode-go.testExplorer.codeLens": {
-          "type": ["string", "boolean"],
+          "type": [
+            "string",
+            "boolean"
+          ],
           "default": false,
           "scope": "resource",
           "markdownDescription": "Show code lenses for running and debugging tests",
@@ -327,6 +330,7 @@
     "vscode-languageserver-types": "^3.17.5"
   },
   "dependencies": {
+    "@streamparser/json": "^0.0.21",
     "axios": "^1.7.7",
     "chroma-js": "^3.1.1",
     "deep-equal": "^2.2.3",
