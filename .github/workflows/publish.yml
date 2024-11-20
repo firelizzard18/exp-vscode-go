@@ -15,7 +15,6 @@ jobs:
       - name: Validate version
         run: |
           yarn install
-          sudo apt install -y jq
           X=$(jq < package.json -re .version)
           Y=$(yarn --silent semver "${GITHUB_REF#refs/tags/}" | sed 's/^v//')
           if [ "$X" != "$Y" ]; then
