@@ -50,7 +50,12 @@ To profile tests:
 If multiple tests are run with profiling enabled, `Profiles` will appear under
 the package instead of the individual test.
 
-## Documentation Viewer (**TODO**)
+![cpu-pprof](./docs/assets/cpu-pprof.png)
 
-I plan to add an in-editor documentation viewer such that you can view
-documentation for your code similar to what you would see on pkg.go.dev.
+## Documentation Viewer
+
+Go Companion provides a command and editor context menu item for rendering
+package documentation. Right click a declaration in a Go file and select "Go
+Companion: Render Documentation":
+
+![doc-viewer](./docs/assets/doc-viewer.png)
