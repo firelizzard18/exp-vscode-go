@@ -897,6 +897,11 @@
   dependencies:
     "@sinonjs/commons" "^3.0.0"
 
+"@streamparser/json@^0.0.21":
+  version "0.0.21"
+  resolved "https://registry.yarnpkg.com/@streamparser/json/-/json-0.0.21.tgz#8ce7b241d6fbe0a7f1907ca402f646baadbbfadf"
+  integrity sha512-v+49JBiG1kmc/9Ug79Lz9wyKaRocBgCnpRaLpdy7p0d3ICKtOAfc/H/Epa1j3F6YdnzjnZKKrnJ8xnh/v1P8Aw==
+
 "@tsconfig/node10@^1.0.7":
   version "1.0.11"
   resolved "https://registry.npmjs.org/@tsconfig/node10/-/node10-1.0.11.tgz"

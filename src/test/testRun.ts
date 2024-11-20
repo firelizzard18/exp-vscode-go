@@ -160,7 +160,7 @@ export class TestRunRequest {
 			[...include.values()].map((x) =>
 				Promise.all(
 					x.map(async (y) => {
-						const item = await this.manager.resolveTestItem(y, true);
+						const item = await this.manager.resolveTestItem(y, { create: true });
 						testItems.push(item);
 					}),
 				),
@@ -186,7 +186,7 @@ export class TestRunRequest {
 
 	async *packages(run: TestRun) {
 		for (const pkg of this.#packages) {
-			const pkgItem = await this.manager.resolveTestItem(pkg, true);
+			const pkgItem = await this.manager.resolveTestItem(pkg, { create: true });
 			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.getTests());
 			const exclude = await this.#resolveTestItems(this.exclude.get(pkg) || []);
 
@@ -197,7 +197,9 @@ export class TestRunRequest {
 	async #resolveTestItems<T extends GoTestItem>(goItems: T[]) {
 		return new Map(
 			await Promise.all(
-				goItems.map(async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, true)]),
+				goItems.map(
+					async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, { create: true })],
+				),
 			),
 		);
 	}
@@ -252,43 +254,54 @@ export class PackageTestRun {
 		// Resolve the named test case and its associated test item
 		// const test = msg.Test ? await this.#resolveTestCase(this.goItem, msg.Test) : undefined;
 		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.#run) : undefined;
-		const item = test && (await this.#request.manager.resolveTestItem(test, true));
+		const item = test && (await this.#request.manager.resolveTestItem(test, { create: true }));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
-		switch (msg.Action) {
-			case 'output': {
-				if (!msg.Output) {
-					break;
-				}
-
-				// Track output
-				const { id } = item || this.testItem;
-				if (!this.output.has(id)) {
-					this.output.set(id, []);
-				}
-				this.output.get(id)!.push(msg.Output);
-
-				if (!item || /^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
-					this.append(msg.Output, undefined, this.testItem);
-					break;
-				}
-
-				const { message, location } = parseOutputLocation(msg.Output, path.join(item.uri!.fsPath, '..'));
-				if (location) {
-					this.currentLocation.set(id, location);
-				}
-				this.append(message, location || this.currentLocation.get(id), item);
-
-				// Detect benchmark completion, e.g.
-				//   "BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op"
-				const m = msg.Output.match(/^(?<name>Benchmark[#/\w+]+)(?:-(?<procs>\d+)\s+(?<result>.*))?(?:$|\n)/);
-				if (m && msg.Test && m.groups?.name === msg.Test) {
-					this.#run.passed(item);
-				}
-
-				break;
+		if (msg.Action === 'output') {
+			if (!msg.Output) {
+				return;
 			}
 
+			// Track output
+			const { id } = item || this.testItem;
+			if (!this.output.has(id)) {
+				this.output.set(id, []);
+			}
+			this.output.get(id)!.push(msg.Output);
+
+			let location: Location | undefined;
+			let message = msg.Output;
+			if (item && !/^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
+				const parsed = parseOutputLocation(msg.Output, path.join(item.uri!.fsPath, '..'));
+				message = parsed.message;
+				location = parsed.location;
+				if (location) {
+					this.currentLocation.set(id, location);
+				} else {
+					location = this.currentLocation.get(id);
+				}
+			}
+			this.append(message, location, item || this.testItem);
+
+			// go test is not good about reporting the start and end of benchmarks
+			// so we'll synthesize those events to make life easier.
+			if (!msg.Test?.startsWith('Benchmark')) {
+				return;
+			}
+			if (msg.Output === `=== RUN   ${msg.Test}\n`) {
+				// === RUN   BenchmarkFooBar
+				msg.Action = 'run';
+			} else if (
+				msg.Output?.match(/^(?<name>Benchmark[/\w]+)-(?<procs>\d+)\s+(?<result>.*)(?:$|\n)/)?.[1] === msg.Test
+			) {
+				// BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op
+				msg.Action = 'pass';
+			} else {
+				return;
+			}
+		}
+
+		switch (msg.Action) {
 			case 'run':
 			case 'start':
 				if (!msg.Test) {

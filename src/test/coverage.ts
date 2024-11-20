@@ -1,7 +1,10 @@
 import path from 'node:path';
+import cp from 'node:child_process';
+import { promisify } from 'node:util';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
 import { Context } from './testing';
 import { Module, RootItem } from './item';
+import { parseJSONStream } from '../utils/util';
 
 /**
  * Parses a coverage file from `go test` into a map of
@@ -11,6 +14,27 @@ import { Module, RootItem } from './item';
  * @returns Statement coverage information.
  */
 export async function parseCoverage(context: Context, scope: RootItem, coverageFile: Uri) {
+	// Resolve GOROOT and GOMODCACHE
+	const { binPath } = context.go.settings.getExecutionCommand('go') || {};
+	if (!binPath) {
+		throw new Error('Failed to run "go env" as the "go" binary cannot be found in either GOROOT or PATH');
+	}
+
+	const modules: Record<string, string> = {};
+	parseJSONStream(await gets(binPath, scope, 'list', '-m', '-json', 'all'), (v) => {
+		const dep = v as {
+			Path: string;
+			Dir: string;
+		};
+		modules[dep.Path] = dep.Dir;
+	});
+
+	const env = {
+		modules,
+		GOROOT: await gets(binPath, scope, 'env', 'GOROOT'),
+		GOMODCACHE: await gets(binPath, scope, 'env', 'GOMODCACHE'),
+	};
+
 	const lines = Buffer.from(await context.workspace.fs.readFile(coverageFile))
 		.toString('utf-8')
 		.split('\n');
@@ -24,7 +48,7 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 		// the actual file path (either absolute or starting with .)
 		// See https://golang.org/issues/40251.
 
-		const parse = parseLine(scope, line);
+		const parse = parseLine(env, scope, line);
 		if (!parse) continue;
 
 		const statements = coverage.get(`${parse.location.uri}`) || [];
@@ -35,7 +59,18 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 	return coverage;
 }
 
+async function gets(binPath: string, scope: RootItem, ...args: string[]) {
+	const { stdout } = await promisify(cp.execFile)(binPath, args, { cwd: scope.dir.fsPath });
+	return stdout.trim();
+}
+
 // Derived from https://golang.org/cl/179377
+
+interface Env {
+	modules: Record<string, string>;
+	GOROOT: string;
+	GOMODCACHE: string;
+}
 
 /**
  * Parses a line in a coverage file.
@@ -43,7 +78,7 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
  * @param s - The line.
  * @returns The parsed line.
  */
-function parseLine(scope: RootItem, s: string) {
+function parseLine(env: Env, scope: RootItem, s: string) {
 	/**
 	 * Finds the last occurrence of {@link sep} in {@link s}, splits {@link s}
 	 * on that index, and returns the RHS parsed as a number.
@@ -80,20 +115,45 @@ function parseLine(scope: RootItem, s: string) {
 		return;
 	}
 
-	// If it's a relative file path, convert it to an absolute path. From now
-	// on, we can assume that it's a real file name if it is an absolute path.
-	let filename = s;
-	if (filename.startsWith('.' + path.sep)) {
-		filename = path.resolve(filename, scope.dir.fsPath);
-	}
-
-	// If the 'filename' is the package path + file, convert that to a real
-	// path, e.g. example.com/foo/bar.go -> /home/user/src/foo/bar.go.
-	if (scope instanceof Module && filename.startsWith(`${scope.path}/`)) {
-		filename = path.join(scope.dir.fsPath, filename.substring(scope.path.length + 1));
-	}
-
+	const filename = resolveCoveragePath(env, scope, s);
 	const range = new Range(startLine, startCol, endLine, endCol);
 	const location = new Location(Uri.file(filename), range);
 	return { location, count, statements };
+}
+
+function resolveCoveragePath(env: Env, scope: RootItem, filename: string) {
+	// If it's an absolute path, assume it's correct
+	if (path.isAbsolute(filename)) {
+		return filename;
+	}
+
+	// If it's a relative path, convert it to an absolute path and return
+	if (filename.startsWith(`.${path.sep}`)) {
+		return path.resolve(filename, scope.dir.fsPath);
+	}
+
+	// If the scope is a module and the file belongs to it, convert the filepath
+	// to a real path, e.g. example.com/foo/bar.go -> /home/user/src/foo/bar.go.
+	if (scope instanceof Module && filename.startsWith(`${scope.path}/`)) {
+		return path.join(scope.dir.fsPath, filename.substring(scope.path.length + 1));
+	}
+
+	// If the first segment does not contain a dot, assume it's a stdlib package
+	const parts = filename.split(/\\|\//);
+	if (!parts[0].includes('.')) {
+		return path.join(env.GOROOT, 'src', filename);
+	}
+
+	// If the first segment contains a dot, attempt to find a module that
+	// matches it
+	for (let i = parts.length - 1; i > 0; i--) {
+		const s = parts.slice(0, i).join('/');
+		if (s in env.modules) {
+			return path.join(env.modules[s], ...parts.slice(i));
+		}
+	}
+
+	// There's no matching module. This is guaranteed to fail but it's better
+	// than nothing as it will give the user some idea where to look.
+	return path.join(env.GOMODCACHE, filename);
 }
