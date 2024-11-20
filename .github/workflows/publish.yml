@@ -14,7 +14,7 @@ jobs:
           node-version: 20
       - run: |
           yarn install
-          apt install -y jq
+          sudo apt install -y jq
           X=$(jq < package.json -re .version)
           Y=$(yarn --silent semver "${{ vars.GITHUB_REF_NAME }}" | sed 's/^v//')
           if [ "$X" != "$Y" ]; then
