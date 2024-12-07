@@ -44,7 +44,7 @@ To profile tests:
 7. There will now be a `Profiles` item under the test
 8. Open `Profiles`
 9. Open the profile set, e.g. `12:34:56`
-10. Open the profile, e.g. `CPU`, by double-clicking the item or clicking the open symbol
+10. Open the profile, e.g. `CPU`, by double clicking the item or clicking the open symbol
 
 ![profiles](./docs/assets/profile-items.png)
 
@@ -56,7 +56,7 @@ the package instead of the individual test.
 ## Documentation Viewer
 
 Go Companion provides a command and editor context menu item for rendering
-package documentation. Right-click a declaration in a Go file and select "Go
+package documentation. Right click a declaration in a Go file and select "Go
 Companion: Render Documentation":
 
 ![doc-viewer](./docs/assets/doc-viewer.png)
