@@ -36,7 +36,7 @@ export function resolvePath(inputPath: string, workspaceFolder?: string): string
 }
 
 /**
- * Exapnds ~ to homedir in non-Windows platform
+ * Expands ~ to homedir in non-Windows platform
  */
 export function resolveHomeDir(inputPath: string): string {
 	if (!inputPath || !inputPath.trim()) {
