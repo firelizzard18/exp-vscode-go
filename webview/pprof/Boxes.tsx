@@ -277,7 +277,7 @@ class Renderer<B extends Box> {
 		readonly hovered: WebGLUniformLocation;
 
 		/**
-		 * The base color for boxe.
+		 * The base color for box.
 		 */
 		readonly boxColor: WebGLUniformLocation;
 	};

@@ -389,8 +389,8 @@ function* testCases(items: GoTestItem[]) {
 	}
 }
 
-function resolveGoItem(mananger: TestManager, item: TestItem) {
-	let pi = mananger.resolveGoTestItem(item.id);
+function resolveGoItem(manager: TestManager, item: TestItem) {
+	let pi = manager.resolveGoTestItem(item.id);
 	if (!pi) throw new Error(`Cannot find test item ${item.id}`);
 
 	// VSCode appears to have a bug where clicking {run} on a test item that
