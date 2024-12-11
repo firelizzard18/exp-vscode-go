@@ -147,7 +147,7 @@ export class TestManager {
 			throw new Error('Continuous test runs require a cancellation token');
 		}
 
-		// Create a new cancelation token if one is not provided.
+		// Create a new cancellation token if one is not provided.
 		let cancel: CancellationTokenSource | undefined;
 		if (!token) {
 			cancel = new CancellationTokenSource();
