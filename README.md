@@ -1,9 +1,10 @@
 # Go Companion
 
-An unofficial companion to the [official Go extension][vscode-go-ms] that
+The [unofficial VS Code Go companion][vscode-go-companion] to the [official Go extension][vscode-go-ms] that
 provides experimental features.
 
 [vscode-go-ms]: https://marketplace.visualstudio.com/items?itemName=golang.go
+[vscode-go-companion]: https://marketplace.visualstudio.com/items?itemName=ethan-reesor.exp-vscode-go
 
 ## Issues
 
