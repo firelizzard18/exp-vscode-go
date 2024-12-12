@@ -5,7 +5,7 @@ import type vscode from 'vscode';
 import { Package, StaticTestCase, TestCase, TestFile } from './item';
 import { Context, Workspace } from './testing';
 import { PackageTestRun, TestRunRequest } from './testRun';
-import { flags2args, Spawner } from './utils';
+import { Flags, Spawner } from './utils';
 import { ProfileType } from './profile';
 import { TestResolver } from './resolver';
 import { RunConfig, TestConfig } from './config';
@@ -130,7 +130,7 @@ export class TestRunner {
 		});
 
 		const cfg = new TestConfig(this.#context.workspace, pkg.goItem.uri);
-		const flags = Object.assign({}, cfg.testFlags());
+		const flags: Flags = {};
 
 		flags.fullpath = true; // Include the full path for output events
 
@@ -200,13 +200,7 @@ export class TestRunner {
 			}
 		}
 
-		pkg.append(
-			`$ cd ${pkg.goItem.uri.fsPath}\n$ go test ${flags2args(niceFlags).join(' ')}\n\n`,
-			undefined,
-			pkg.testItem,
-		);
-		const r = await this.#spawn(this.#context, pkg.goItem.uri, flags, {
-			run: run,
+		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags(), {
 			cwd: pkg.goItem.uri.fsPath,
 			env: cfg.testEnvVars(),
 			cancel: this.#token,

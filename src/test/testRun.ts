@@ -210,8 +210,8 @@ export class PackageTestRun {
 	readonly testItem: TestItem;
 	readonly include: Map<TestCase, TestItem>;
 	readonly exclude: Map<TestCase, TestItem>;
+	readonly run: TestRun;
 	readonly #request: TestRunRequest;
-	readonly #run: TestRun;
 
 	constructor(
 		request: TestRunRequest,
@@ -225,8 +225,8 @@ export class PackageTestRun {
 		this.testItem = testItem;
 		this.include = include;
 		this.exclude = exclude;
+		this.run = run;
 		this.#request = request;
-		this.#run = run;
 	}
 
 	readonly stderr: string[] = [];
@@ -253,7 +253,7 @@ export class PackageTestRun {
 
 		// Resolve the named test case and its associated test item
 		// const test = msg.Test ? await this.#resolveTestCase(this.goItem, msg.Test) : undefined;
-		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.#run) : undefined;
+		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.run) : undefined;
 		const item = test && (await this.#request.manager.resolveTestItem(test, { create: true }));
 
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
@@ -305,32 +305,32 @@ export class PackageTestRun {
 			case 'run':
 			case 'start':
 				if (!msg.Test) {
-					this.#run.started(this.testItem);
+					this.run.started(this.testItem);
 				} else if (item) {
-					this.#run.started(item);
+					this.run.started(item);
 				}
 				break;
 
 			case 'skip':
 				if (!msg.Test) {
-					this.#run.skipped(this.testItem);
+					this.run.skipped(this.testItem);
 				} else if (item) {
-					this.#run.skipped(item);
+					this.run.skipped(item);
 				}
 				break;
 
 			case 'pass':
 				if (!msg.Test) {
-					this.#run.passed(this.testItem, elapsed);
+					this.run.passed(this.testItem, elapsed);
 				} else if (item) {
-					this.#run.passed(item, elapsed);
+					this.run.passed(item, elapsed);
 				}
 				break;
 
 			case 'fail': {
 				if (!msg.Test) {
 					processPackageFailure(
-						this.#run,
+						this.run,
 						this.goItem,
 						this.testItem,
 						elapsed,
@@ -339,7 +339,7 @@ export class PackageTestRun {
 					);
 				} else if (item) {
 					const messages = parseTestFailure(test, this.output.get(item.id) || []);
-					this.#run.failed(item, messages, elapsed);
+					this.run.failed(item, messages, elapsed);
 				}
 				break;
 			}
@@ -358,7 +358,7 @@ export class PackageTestRun {
 	append(output: string, location?: Location, test?: TestItem) {
 		if (!output.endsWith('\n')) output += '\n';
 		output = output.replace(/\n/g, '\r\n');
-		this.#run.appendOutput(output, location, test);
+		this.run.appendOutput(output, location, test);
 	}
 
 	forEach(fn: (item: TestItem, goItem?: TestCase) => void) {

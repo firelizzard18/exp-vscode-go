@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.4
+
+- Reworked handling of `go.testFlags` to address
+  [vscode-go#1636](https://github.com/golang/vscode-go/issues/1636).
+
 ## v0.0.3
 
 ### New Features
@@ -12,7 +17,8 @@
 ### Changes
 
 - Detect whether `gopls` supports test discovery.
-- Remove dynamically discovered test cases when the associated test run is discarded.
+- Remove dynamically discovered test cases when the associated test run is
+  discarded.
 - Use enumerations for settings.
 - Add 'run package tests' and 'run file tests' code lenses when enabled.
 
