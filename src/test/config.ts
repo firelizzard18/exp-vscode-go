@@ -4,6 +4,7 @@ import {
 	ConfigurationScope,
 	FileCoverage,
 	FileCoverageDetail,
+	QuickPickItem,
 	QuickPickOptions,
 	TestRunProfileKind,
 	TestRunRequest,
@@ -209,7 +210,7 @@ export class RunConfig {
 	}
 
 	async configure(args: ConfigureArgs) {
-		const options: QuickPickOptions = { title: 'Go tests' };
+		const options: QuickPickOptions = { title: 'Configure Go tests' };
 		if (this.kind === TestRunProfileKind.Coverage) {
 			await configureMenu(args, options, {
 				Coverage: () => this.#configureCoverage(args),
@@ -234,19 +235,29 @@ export class RunConfig {
 	}
 
 	async #configureCoverage(args: ConfigureArgs) {
+		const makeScopeOption = ({ scope, ...item }: QuickPickItem & { scope: CoverageScope }) => ({
+			...item,
+			description: this.settings.coverageScope === scope ? '✓' : undefined,
+			func: () => ((this.settings.coverageScope = scope), this.#update()),
+		});
+
 		await configureMenu(
 			args,
-			{ title: 'Coverage' },
+			{ title: 'Configure test coverage' },
 			{
 				Scope: () =>
-					configureMenu(
-						args,
-						{ title: 'Coverage scope' },
-						{
-							Module: () => ((this.settings.coverageScope = 'module'), this.#update()),
-							Package: () => ((this.settings.coverageScope = 'package'), this.#update()),
-						},
-					),
+					configureMenuOnce(args, { title: 'Configure test coverage scope' }, [
+						makeScopeOption({
+							label: 'Module',
+							scope: 'module',
+							detail: 'Show coverage for the entire module',
+						}),
+						makeScopeOption({
+							label: 'Package',
+							scope: 'package',
+							detail: 'Only show coverage for the package the test belongs to',
+						}),
+					]),
 			},
 		);
 	}
@@ -275,14 +286,29 @@ export class RunConfig {
 	}
 }
 
-async function configureMenu(
+type ConfigMenuFunc = () => void | boolean | Promise<void | boolean>;
+
+async function configureMenu(...args: Parameters<typeof configureMenuOnce>) {
+	for (;;) {
+		const r = await configureMenuOnce(...args);
+		if (!r) return;
+	}
+}
+
+async function configureMenuOnce(
 	args: ConfigureArgs,
 	options: QuickPickOptions,
-	choices: Record<string, () => void | Promise<void>>,
+	choices: Record<string, ConfigMenuFunc> | (QuickPickItem & { func: ConfigMenuFunc })[],
 ) {
-	for (;;) {
-		const r = await args.showQuickPick(Object.keys(choices), options);
-		if (!r || !(r in choices)) return;
-		await choices[r]();
-	}
+	const r = await args.showQuickPick(
+		choices instanceof Array
+			? choices
+			: Object.entries(choices).map(([label, func]) => ({
+					label,
+					func,
+				})),
+		options,
+	);
+	await r?.func();
+	return !!r;
 }

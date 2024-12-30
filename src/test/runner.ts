@@ -166,7 +166,9 @@ export class TestRunner {
 			if (!expr.startsWith('.')) {
 				expr = path.join('.', expr);
 			}
-			flags.coverpkg = path.join(expr, '...');
+			if (this.#config.settings.coverageScope === 'module') {
+				flags.coverpkg = path.join(expr, '...');
+			}
 		}
 
 		// Capture profiles

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.5
+
+- Added a command for configuring coverage scope (package vs module). This will
+  be removed in the future if microsoft/vscode#237106 is resolved.
+
 ## v0.0.4
 
 - Reworked handling of `go.testFlags` to address

@@ -175,6 +175,11 @@
     },
     "commands": [
       {
+        "command": "goExp.configureCoverageRunProfile",
+        "title": "Go Companion: Configure Coverage Run Profile",
+        "description": "Workaround for https://github.com/microsoft/vscode/issues/237106"
+      },
+      {
         "command": "goExp.renderDocs",
         "title": "Go Companion: Render Documentation",
         "description": "Render the documentation for the current selection."

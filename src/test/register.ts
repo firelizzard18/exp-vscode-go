@@ -63,6 +63,9 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	command('goExp.browser.refresh', () => Browser.active?.reload());
 	command('goExp.browser.forward', () => Browser.active?.forward());
 
+	// [Command] Workaround for https://github.com/microsoft/vscode/issues/237106
+	command('goExp.configureCoverageRunProfile', () => manager.configureCoverageRunProfile(window));
+
 	// [Event] Configuration change
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
 		if (e.affectsConfiguration('exp-vscode-go.testExplorer.enable')) {

@@ -119,6 +119,13 @@ export class TestManager {
 	}
 
 	/**
+	 * This is a workaround for https://github.com/microsoft/vscode/issues/237106
+	 */
+	configureCoverageRunProfile(...args: Parameters<RunConfig['configure']>) {
+		this.#coverage.configure(...args);
+	}
+
+	/**
 	 * Run a test.
 	 */
 	runTests(...items: TestItem[]) {
