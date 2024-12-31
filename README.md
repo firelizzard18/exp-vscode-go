@@ -29,6 +29,13 @@ Additionally, Go Companion provides the following features:
 
 See [settings](./docs/settings.md) for more details.
 
+### Coverage
+
+Coverage is supported through VSCode's test coverage API. The coverage scope (as
+in, show coverage for the current package or for the entire module) may be
+configured with the "Configure Coverage Run Profile" command. This is a
+workaround for microsoft/vscode#237106.
+
 ## Profiling
 
 Go Companion supports profiling tests and includes a pprof profile viewer that
