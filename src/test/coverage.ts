@@ -21,7 +21,7 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 	}
 
 	const modules: Record<string, string> = {};
-	parseJSONStream(await gets(binPath, scope, 'list', '-m', '-json', 'all'), (v) => {
+	parseJSONStream(await gets(binPath, scope, 'list', '-m', '-mod=readonly', '-json', 'all'), (v) => {
 		const dep = v as {
 			Path: string;
 			Dir: string;
