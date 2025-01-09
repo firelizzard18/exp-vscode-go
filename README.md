@@ -1,11 +1,11 @@
 # Go Companion
 
-The [unofficial VS Code Go companion][vscode-go-companion] to the [official Go
+The [unofficial companion][vscode-go-companion] to the [official Go
 extension][vscode-go-ms] that provides experimental features.
 
 **Go Companion is intended to be used with *prerelease* versions of the Go
-extension.** The user experience may be somewhat degraded when used with release
-versions of the Go extension.
+extension and requires gopls v0.17.0 or later.** The user experience may be
+somewhat degraded when used with release versions of the Go extension.
 
 [vscode-go-ms]: https://marketplace.visualstudio.com/items?itemName=golang.go
 [vscode-go-companion]: https://marketplace.visualstudio.com/items?itemName=ethan-reesor.exp-vscode-go
