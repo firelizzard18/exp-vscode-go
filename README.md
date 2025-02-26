@@ -31,7 +31,8 @@ Additionally, Go Companion provides the following features:
 -   Support for continuous runs.
 -   Code lenses (hidden by default) that are integrated with the test explorer.
 
-See [settings](./docs/settings.md) for more details.
+More detailed descriptions of these settings are provided in VSCode's settings
+editor.
 
 ### Coverage
 
