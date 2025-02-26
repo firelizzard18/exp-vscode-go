@@ -1,5 +1,10 @@
 # Changelog
 
+## Next
+
+- Disable the test explorer by default when using a non-prerelease version of
+  vscode-go.
+
 ## v0.0.7
 
 - A better workaround for [microsoft/vscode#242124][vsc-242124].
