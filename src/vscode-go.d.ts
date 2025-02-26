@@ -58,6 +58,9 @@ export interface CommandInvocation {
 }
 
 export interface GoExtensionAPI {
+	/** True if the extension is running in preview mode (e.g. prerelease) */
+	isPreview?: boolean;
+
 	settings: {
 		/**
 		 * Returns the execution command corresponding to the specified resource, taking into account

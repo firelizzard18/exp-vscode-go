@@ -57,10 +57,23 @@
       "properties": {
         "exp-vscode-go.testExplorer.enable": {
           "order": 0,
-          "type": "boolean",
-          "default": true,
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "default": "auto",
           "scope": "window",
-          "markdownDescription": "Enable the Go test explorer"
+          "markdownDescription": "Enable the Go test explorer. By default the test explorer is enabled if the Go extension is a prerelease version and disabled otherwise.",
+          "enum": [
+            true,
+            false,
+            "auto"
+          ],
+          "enumItemLabels": [
+            "Enable",
+            "Disable",
+            "Automatic"
+          ]
         },
         "exp-vscode-go.testExplorer.discovery": {
           "order": 1,
