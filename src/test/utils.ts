@@ -7,7 +7,17 @@
 
 import cp from 'child_process';
 import { LineBuffer } from '../utils/lineBuffer';
-import { CancellationToken, debug, DebugConfiguration, DebugSession, Disposable, Event, TestRun, Uri } from 'vscode';
+import {
+	CancellationToken,
+	debug,
+	DebugConfiguration,
+	DebugSession,
+	DebugSessionOptions,
+	Disposable,
+	Event,
+	TestRun,
+	Uri,
+} from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
 import { Context } from './testing';
 import { GoLaunchRequest } from '../vscode-go';
@@ -147,9 +157,9 @@ export async function debugProcess(
 	run: PackageTestRun,
 	flags: Flags,
 	userFlags: Flags,
-	options: SpawnOptions,
+	spawnOptions: SpawnOptions,
 ): Promise<ProcessResult | void> {
-	const { cancel, cwd, env, stdout, stderr } = options;
+	const { cancel, cwd, env, stdout, stderr } = spawnOptions;
 	if (cancel.isCancellationRequested) {
 		return Promise.resolve();
 	}
@@ -239,7 +249,7 @@ export async function debugProcess(
 	);
 	const ws = ctx.workspace.getWorkspaceFolder(Uri.file(cwd));
 	const config: DebugConfiguration = {
-		...(options.debug || {}),
+		...(spawnOptions.debug || {}),
 		sessionID: id,
 		name: 'Debug test',
 		type: 'go',
@@ -251,8 +261,13 @@ export async function debugProcess(
 		args: flags2args(testFlags),
 	} satisfies GoLaunchRequest;
 
+	const options: DebugSessionOptions = {
+		/* Disabled for now because https://github.com/microsoft/vscode/issues/242124. */
+		// testRun: run.run,
+	};
+
 	try {
-		if (!(await debug.startDebugging(ws, config, { testRun: run.run }))) {
+		if (!(await debug.startDebugging(ws, config, options))) {
 			return;
 		}
 		await didStart;

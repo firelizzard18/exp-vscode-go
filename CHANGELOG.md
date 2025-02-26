@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.6
+
+- Temporary workaround for
+  [microsoft/vscode#242124](https://github.com/microsoft/vscode/issues/242124).
+
 ## v0.0.5
 
 - Added a command for configuring coverage scope (package vs module). This will
