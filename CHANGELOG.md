@@ -1,9 +1,14 @@
 # Changelog
 
+## v0.0.7
+
+- A better workaround for [microsoft/vscode#242124][vsc-242124].
+
 ## v0.0.6
 
-- Temporary workaround for
-  [microsoft/vscode#242124](https://github.com/microsoft/vscode/issues/242124).
+- Temporary workaround for [microsoft/vscode#242124][vsc-242124].
+
+[vsc-242124]: https://github.com/microsoft/vscode/issues/242124
 
 ## v0.0.5
 
@@ -12,8 +17,9 @@
 
 ## v0.0.4
 
-- Reworked handling of `go.testFlags` to address
-  [vscode-go#1636](https://github.com/golang/vscode-go/issues/1636).
+- Reworked handling of `go.testFlags` to address [vscode-go#1636][vscgo-1636].
+
+[vscgo-1636]: https://github.com/golang/vscode-go/issues/1636
 
 ## v0.0.3
 

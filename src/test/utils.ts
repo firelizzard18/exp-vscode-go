@@ -182,7 +182,8 @@ export async function debugProcess(
 				return;
 			}
 			resolve(s);
-			cancel.onCancellationRequested(() => debug.stopDebugging(s));
+			event(run.run.token.onCancellationRequested, () => debug.stopDebugging(s));
+			event(cancel.onCancellationRequested, () => debug.stopDebugging(s));
 		}),
 	);
 
@@ -261,13 +262,8 @@ export async function debugProcess(
 		args: flags2args(testFlags),
 	} satisfies GoLaunchRequest;
 
-	const options: DebugSessionOptions = {
-		/* Disabled for now because https://github.com/microsoft/vscode/issues/242124. */
-		// testRun: run.run,
-	};
-
 	try {
-		if (!(await debug.startDebugging(ws, config, options))) {
+		if (!(await debug.startDebugging(ws, config, { testRun: run.run }))) {
 			return;
 		}
 		await didStart;
