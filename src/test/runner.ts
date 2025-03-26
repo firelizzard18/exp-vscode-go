@@ -70,6 +70,10 @@ export class TestRunner {
 
 	async #run(request: TestRunRequest, continuous = false) {
 		const run = this.#createRun(request);
+		const sub = this.#token.onCancellationRequested(() => {
+			run.appendOutput(`\r\n*** Cancelled ***\r\n`);
+			run.end();
+		});
 
 		// Execute the tests
 		try {
@@ -95,6 +99,7 @@ export class TestRunner {
 			}
 		} finally {
 			run.end();
+			sub.dispose();
 		}
 	}
 
