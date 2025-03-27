@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { Uri, Range } from 'vscode';
 import type { MarkdownString, ProviderResult, TestRun, WorkspaceFolder } from 'vscode';
-import { Commands, Context } from './testing';
+import { Commands, Context } from '../utils/testing';
 import path from 'path';
 import { TestConfig } from './config';
 import deepEqual from 'deep-equal';

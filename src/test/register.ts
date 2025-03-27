@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { commands, Event, ExtensionContext, ExtensionMode, TestItem, tests, window, workspace } from 'vscode';
-import { Context, doSafe } from './testing';
+import { commands, ExtensionContext, ExtensionMode, TestItem, tests, window, workspace } from 'vscode';
+import { Context, helpers } from '../utils/testing';
 import { GoExtensionAPI } from '../vscode-go';
 import { debugProcess, spawnProcess } from './utils';
 import { TestManager } from './manager';
@@ -29,14 +29,7 @@ export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExten
 }
 
 async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
-	const event = <T>(event: Event<T>, msg: string, fn: (e: T) => unknown) => {
-		ctx.subscriptions.push(event((e) => doSafe(testCtx, msg, () => fn(e))));
-	};
-	const command = (name: string, fn: (...args: any[]) => any) => {
-		ctx.subscriptions.push(
-			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args))),
-		);
-	};
+	const { event, command } = helpers(ctx, testCtx, commands);
 
 	// Initialize the controller
 	const manager = new TestManager(testCtx);

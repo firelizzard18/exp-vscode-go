@@ -2,7 +2,7 @@
 import { commands, env, ExtensionContext, Uri, ViewColumn, WebviewPanel, window } from 'vscode';
 import axios from 'axios';
 import { HTMLElement, parse } from 'node-html-parser';
-import { Tail } from './test/testing';
+import { Tail } from './utils/testing';
 
 // TODO(firelizzard18): Disable back/forward when not applicable
 

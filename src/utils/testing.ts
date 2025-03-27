@@ -7,8 +7,8 @@
 import type vscode from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
 import type { GoExtensionAPI } from '../vscode-go';
-import type { Spawner } from './utils';
-import { Memento, TestItem, TestItemCollection } from 'vscode';
+import type { Spawner } from '../test/utils';
+import { ExtensionContext, Memento, TestItem, TestItemCollection } from 'vscode';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Tail<T extends any[]> = T extends [any, ...infer Tail] ? Tail : never;
@@ -106,6 +106,17 @@ export namespace Commands {
 		Loc: lsp.Location;
 	}
 }
+
+export const helpers = (ctx: ExtensionContext, testCtx: Context, commands: typeof vscode.commands) => ({
+	event: <T>(event: vscode.Event<T>, msg: string, fn: (e: T) => unknown) => {
+		ctx.subscriptions.push(event((e) => doSafe(testCtx, msg, () => fn(e))));
+	},
+	command: (name: string, fn: (...args: any[]) => any) => {
+		ctx.subscriptions.push(
+			commands.registerCommand(name, (...args) => doSafe(testCtx, `executing ${name}`, () => fn(...args))),
+		);
+	},
+});
 
 export const doSafe = async <T>(ctx: Context, msg: string, fn: () => T | Promise<T>) => {
 	try {

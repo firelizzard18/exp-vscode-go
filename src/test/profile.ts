@@ -24,7 +24,7 @@ import {
 import type { GoTestItem } from './item';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
-import { Context, doSafe } from './testing';
+import { Context, doSafe } from '../utils/testing';
 import moment from 'moment';
 import { HoverEvent, Message } from '../../webview/pprof/messages';
 

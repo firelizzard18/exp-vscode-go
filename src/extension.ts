@@ -4,6 +4,7 @@ import { cleanupTempDir } from './utils/util';
 import { GoExtensionAPI } from './vscode-go';
 import { registerTestingFeatures } from './test/register';
 import { Browser } from './browser';
+import { GoGenerateManager } from './go-generate/manager';
 
 const output = vscode.window.createOutputChannel('Go Companion', { log: true });
 
@@ -29,6 +30,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 	const go = await goExt.activate();
 	await registerTestingFeatures(ctx, go);
+	await GoGenerateManager.register(ctx, go);
 
 	// [Command] Render documentation
 	command('goExp.renderDocs', () => Browser.renderDocs(ctx));

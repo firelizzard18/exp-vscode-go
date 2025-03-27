@@ -1,5 +1,5 @@
 import vscode from 'vscode';
-import { Context } from './testing';
+import { Context } from '../utils/testing';
 import { TestConfig } from './config';
 import { GoTestItem, StaticTestCase, TestCase, TestFile } from './item';
 import { EventEmitter } from '../utils/eventEmitter';

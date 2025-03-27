@@ -2,7 +2,7 @@ import path from 'node:path';
 import cp from 'node:child_process';
 import { promisify } from 'node:util';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
-import { Context } from './testing';
+import { Context } from '../utils/testing';
 import { Module, RootItem } from './item';
 import { parseJSONStream } from '../utils/util';
 

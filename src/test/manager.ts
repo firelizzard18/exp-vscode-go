@@ -3,7 +3,7 @@
 import { TestRunProfileKind, Uri, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
 import type { CancellationToken, Disposable, TestItem, TestTag } from 'vscode';
 import type vscode from 'vscode';
-import { Context, doSafe, Tail, TestController } from './testing';
+import { Context, doSafe, Tail, TestController } from '../utils/testing';
 import { ResolveOptions, TestResolver } from './resolver';
 import { GoTestItem } from './item';
 import { TestRunner } from './runner';

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Range, Uri, WorkspaceFolder, type TestItem, type TestItemCollection } from 'vscode';
-import { Context, debugViewTree, TestController } from './testing';
+import { Context, debugViewTree, TestController } from '../utils/testing';
 import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { TestConfig } from './config';
 import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';

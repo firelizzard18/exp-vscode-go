@@ -12,16 +12,16 @@ import {
 	debug,
 	DebugConfiguration,
 	DebugSession,
-	DebugSessionOptions,
 	Disposable,
 	Event,
+	Location,
+	TestItem,
 	TestRun,
 	Uri,
 } from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
-import { Context } from './testing';
+import { Context } from '../utils/testing';
 import { GoLaunchRequest } from '../vscode-go';
-import { PackageTestRun } from './testRun';
 
 export interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	cwd: string;
@@ -29,42 +29,52 @@ export interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	stdout: (line: string) => void;
 	stderr: (line: string) => void;
 	debug?: Partial<GoLaunchRequest>;
+	mode: 'test' | 'run';
 }
 
-interface ProcessResult {
+export interface ProcessResult {
 	code: number | null;
 	signal: NodeJS.Signals | null;
 }
 
 export type Flags = { [key: string]: string | boolean };
 
+export interface TestRunContext {
+	uri: Uri;
+	testItem: TestItem;
+	run: TestRun;
+	append(output: string, location?: Location, test?: TestItem): void;
+}
+
 export interface Spawner {
 	(
 		ctx: Context,
-		run: PackageTestRun,
+		run: TestRunContext,
 		flags: Flags,
 		userFlags: Flags,
+		args: string[],
 		options: SpawnOptions,
-	): Promise<ProcessResult | void>;
+	): Promise<ProcessResult>;
 }
 
 export function spawnProcess(
 	context: Context,
-	run: PackageTestRun,
+	run: TestRunContext,
 	flags: Flags,
 	userFlags: Flags,
+	args: string[],
 	options: SpawnOptions,
 ) {
-	return new Promise<ProcessResult | void>((resolve) => {
-		const { stdout, stderr, cancel, ...rest } = options;
+	return new Promise<ProcessResult>((resolve) => {
+		const { mode, stdout, stderr, cancel, ...rest } = options;
 		if (cancel.isCancellationRequested) {
-			resolve();
+			resolve({ code: null, signal: null });
 			return;
 		}
 
-		const { binPath } = context.go.settings.getExecutionCommand('go', run.goItem.uri) || {};
+		const { binPath } = context.go.settings.getExecutionCommand('go', run.uri) || {};
 		if (!binPath) {
-			throw new Error('Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH');
+			throw new Error(`Failed to run "go ${mode}" as the "go" binary cannot be found in either GOROOT or PATH`);
 		}
 
 		const outbuf = new LineBuffer();
@@ -75,26 +85,28 @@ export function spawnProcess(
 		errbuf.onLine(stderr);
 		errbuf.onDone((x) => x && stderr(x));
 
-		flags.json = true;
-		fixFlags(run, flags, userFlags);
+		if (mode === 'test') {
+			flags.json = true;
+			fixTestFlags(run, flags, userFlags);
 
-		const ws = context.workspace.getWorkspaceFolder(run.goItem.uri);
-		const niceFlags = Object.assign({}, flags);
-		if (ws) {
-			for (const [flag, value] of Object.entries(niceFlags)) {
-				if (typeof value === 'string') {
-					niceFlags[flag] = value.replace(ws.uri.fsPath, '${workspaceFolder}');
+			const ws = context.workspace.getWorkspaceFolder(run.uri);
+			const niceFlags = Object.assign({}, flags);
+			if (ws) {
+				for (const [flag, value] of Object.entries(niceFlags)) {
+					if (typeof value === 'string') {
+						niceFlags[flag] = value.replace(ws.uri.fsPath, '${workspaceFolder}');
+					}
 				}
 			}
 		}
 
 		run.append(
-			`$ cd ${run.goItem.uri.fsPath}\n$ go test ${prettyPrintFlags(context, run, flags, userFlags).join(' ')}\n\n`,
+			`$ cd ${run.uri.fsPath}\n$ go ${mode} ${[...prettyPrintFlags(context, run, flags, userFlags), ...args].join(' ')}\n\n`,
 			undefined,
 			run.testItem,
 		);
 
-		const tp = cp.spawn(binPath, ['test', ...flags2args(flags), ...flags2args(userFlags)], {
+		const tp = cp.spawn(binPath, [mode, ...flags2args(flags), ...flags2args(userFlags), ...args], {
 			...rest,
 			stdio: 'pipe',
 		});
@@ -154,17 +166,19 @@ debug?.registerDebugAdapterTrackerFactory('go', {
  */
 export async function debugProcess(
 	ctx: Context,
-	run: PackageTestRun,
+	run: TestRunContext,
 	flags: Flags,
 	userFlags: Flags,
+	args: string[],
 	spawnOptions: SpawnOptions,
-): Promise<ProcessResult | void> {
+): Promise<ProcessResult> {
+	const mode = spawnOptions.mode === 'run' ? 'debug' : spawnOptions.mode;
 	const { cancel, cwd, env, stdout, stderr } = spawnOptions;
 	if (cancel.isCancellationRequested) {
-		return Promise.resolve();
+		return { code: null, signal: null };
 	}
 
-	const { binPath } = ctx.go.settings.getExecutionCommand('go', run.goItem.uri) || {};
+	const { binPath } = ctx.go.settings.getExecutionCommand('go', run.uri) || {};
 	if (!binPath) {
 		throw new Error('Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH');
 	}
@@ -197,32 +211,44 @@ export async function debugProcess(
 		}),
 	);
 
-	// Run go test2json to parse the output
-	const outbuf = new LineBuffer();
-	outbuf.onLine(stdout);
-	outbuf.onDone((x) => x && stdout(x));
+	switch (mode) {
+		case 'debug':
+			// Capture output
+			debugSessionOutput.set(id, { stderr, stdout });
+			subs.push({ dispose: () => debugSessionOutput.delete(id) });
+			break;
 
-	const proc = cp.spawn(binPath, ['tool', 'test2json']);
-	proc.stdout.on('data', (chunk) => outbuf.append(chunk.toString('utf-8')));
-	proc.on('close', () => outbuf.done());
-	subs.push({ dispose: () => killProcessTree(proc) });
+		case 'test': {
+			// Run go test2json to parse the output
+			const outbuf = new LineBuffer();
+			outbuf.onLine(stdout);
+			outbuf.onDone((x) => x && stdout(x));
 
-	// Capture output
-	debugSessionOutput.set(id, {
-		stderr,
-		stdout: (line) => proc.stdin.write(line),
-	});
-	subs.push({ dispose: () => debugSessionOutput.delete(id) });
+			const proc = cp.spawn(binPath, ['tool', 'test2json']);
+			proc.stdout.on('data', (chunk) => outbuf.append(chunk.toString('utf-8')));
+			proc.on('close', () => outbuf.done());
+			subs.push({ dispose: () => killProcessTree(proc) });
 
-	fixFlags(run, flags, userFlags);
+			// Capture output
+			debugSessionOutput.set(id, {
+				stderr,
+				stdout: (line) => proc.stdin.write(line),
+			});
+			subs.push({ dispose: () => debugSessionOutput.delete(id) });
+			break;
+		}
+	}
 
 	// Build flags must be handled separately, test flags must be prefixed
-	const testFlags: Flags = {
-		'test.v': true, // TODO: use 'test2json' and ignore -v and -test.v user flags
-	};
+	const testFlags: Flags = {};
 	const buildFlags: Flags = {};
+	if (mode === 'test') {
+		fixTestFlags(run, flags, userFlags);
+		testFlags.v = true; // TODO: use 'test2json' and ignore -v and -test.v user flags
+	}
+
 	for (const [flag, value] of Object.entries(flags)) {
-		if (isBuildFlag(flag)) {
+		if (isBuildFlag(flag) || mode === 'debug') {
 			buildFlags[flag] = value;
 		} else {
 			testFlags[`test.${flag}`] = value;
@@ -242,12 +268,18 @@ export async function debugProcess(
 		}
 	}
 
+	const program = mode === 'debug' ? args.shift() : cwd;
+	if (!program) {
+		throw new Error('No package to run!');
+	}
+
 	const prettyBuildFlags = prettyPrintFlags(ctx, run, buildFlags).join(' ');
 	run.append(
-		`$ cd ${run.goItem.uri.fsPath}\n$ dlv test ${prettyBuildFlags && `--build-flags "${prettyBuildFlags}" `}-- ${prettyPrintFlags(ctx, run, testFlags).join(' ')}\n\n`,
+		`$ cd ${cwd}\n$ dlv ${mode} ${prettyBuildFlags && `--build-flags "${prettyBuildFlags}" `}${mode === 'debug' ? program + ' ' : ''}-- ${[...prettyPrintFlags(ctx, run, testFlags), ...args].join(' ')}\n\n`,
 		undefined,
 		run.testItem,
 	);
+
 	const ws = ctx.workspace.getWorkspaceFolder(Uri.file(cwd));
 	const config: DebugConfiguration = {
 		...(spawnOptions.debug || {}),
@@ -255,8 +287,8 @@ export async function debugProcess(
 		name: 'Debug test',
 		type: 'go',
 		request: 'launch',
-		mode: 'test',
-		program: cwd,
+		mode,
+		program,
 		env,
 		buildFlags: flags2args(buildFlags).join(' '),
 		args: flags2args(testFlags),
@@ -264,10 +296,11 @@ export async function debugProcess(
 
 	try {
 		if (!(await debug.startDebugging(ws, config, { testRun: run.run }))) {
-			return;
+			return { code: null, signal: null };
 		}
 		await didStart;
 		await didStop;
+		return { code: null, signal: null };
 	} finally {
 		subs.forEach((s) => s.dispose());
 	}
@@ -277,7 +310,7 @@ function flags2args(flags: Flags) {
 	return Object.entries(flags).map(([k, v]) => (v === true ? `-${k}` : `-${k}=${v}`));
 }
 
-function fixFlags(run: PackageTestRun, flags: Flags, userFlags: Flags) {
+function fixTestFlags(run: TestRunContext, flags: Flags, userFlags: Flags) {
 	// Always use -json (the caller must add this), but don't combine it with -v
 	// because weird things happen (https://github.com/golang/go/issues/70384)
 	delete flags.v;
@@ -289,8 +322,8 @@ function fixFlags(run: PackageTestRun, flags: Flags, userFlags: Flags) {
 	}
 }
 
-function prettyPrintFlags(context: Context, run: PackageTestRun, ...flags: Flags[]) {
-	const ws = context.workspace.getWorkspaceFolder(run.goItem.uri);
+function prettyPrintFlags(context: Context, run: TestRunContext, ...flags: Flags[]) {
+	const ws = context.workspace.getWorkspaceFolder(run.uri);
 	const niceFlags: Flags = {};
 	flags.forEach((x) => Object.assign(niceFlags, x));
 	if (ws) {

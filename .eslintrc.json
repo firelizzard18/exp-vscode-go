@@ -2,7 +2,8 @@
 	"extends": "./node_modules/gts/",
 	"root": true,
 	"rules": {
-		"n/no-unpublished-import": "off"
+		"n/no-unpublished-import": "off",
+		"@typescript-eslint/no-explicit-any": "off"
 	},
 	"ignorePatterns": [
 		"dist/",

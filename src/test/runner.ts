@@ -3,7 +3,7 @@
 import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri } from 'vscode';
 import type vscode from 'vscode';
 import { Package, StaticTestCase, TestCase, TestFile } from './item';
-import { Context, Workspace } from './testing';
+import { Context, Workspace } from '../utils/testing';
 import { PackageTestRun, TestRunRequest } from './testRun';
 import { Flags, Spawner } from './utils';
 import { ProfileType } from './profile';
@@ -71,7 +71,7 @@ export class TestRunner {
 	async #run(request: TestRunRequest, continuous = false) {
 		const run = this.#createRun(request);
 		const sub = this.#token.onCancellationRequested(() => {
-			run.appendOutput(`\r\n*** Cancelled ***\r\n`);
+			run.appendOutput('\r\n*** Cancelled ***\r\n');
 			run.end();
 		});
 
@@ -207,7 +207,8 @@ export class TestRunner {
 			}
 		}
 
-		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags(), {
+		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags(), [], {
+			mode: 'test',
 			cwd: pkg.goItem.uri.fsPath,
 			env: cfg.testEnvVars(),
 			cancel: this.#token,

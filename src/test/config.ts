@@ -1,4 +1,4 @@
-import { Context, doSafe, TestController, Workspace } from './testing';
+import { Context, doSafe, TestController, Workspace } from '../utils/testing';
 import {
 	CancellationToken,
 	ConfigurationScope,
@@ -122,9 +122,16 @@ export class TestConfig {
 	};
 
 	/**
+	 * @returns `go.toolsEnvVars` with `${...}` expressions resolved.
+	 */
+	readonly toolsEnvVars = () => this.#envVars('toolsEnvVars');
+
+	/**
 	 * @returns `go.testEnvVars` and `go.toolsEnvVars` (merged) with `${...}` expressions resolved.
 	 */
-	readonly testEnvVars = () => {
+	readonly testEnvVars = () => this.#envVars('toolsEnvVars', 'testEnvVars');
+
+	readonly #envVars = (...names: string[]) => {
 		// Determine the workspace folder from the scope
 		const wsf =
 			this.#scope instanceof Uri
@@ -135,12 +142,10 @@ export class TestConfig {
 
 		// Get go.toolsEnvVars and go.testEnvVars
 		const cfg = this.#workspace.getConfiguration('go', this.#scope);
-		const env = Object.assign(
-			{},
-			process.env,
-			cfg.get<Record<string, string>>('toolsEnvVars'),
-			cfg.get<Record<string, string>>('testEnvVars'),
-		) as Record<string, string>;
+		const env = Object.assign({}, process.env, ...names.map((x) => cfg.get<Record<string, string>>(x))) as Record<
+			string,
+			string
+		>;
 
 		// Resolve ${...} expressions
 		for (const key in env) {

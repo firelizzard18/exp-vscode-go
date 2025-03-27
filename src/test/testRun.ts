@@ -233,6 +233,10 @@ export class PackageTestRun {
 	readonly output = new Map<string, string[]>();
 	readonly currentLocation = new Map<string, Location>();
 
+	get uri() {
+		return this.goItem.uri;
+	}
+
 	get includeAll() {
 		return !this.#request.include.has(this.goItem);
 	}
