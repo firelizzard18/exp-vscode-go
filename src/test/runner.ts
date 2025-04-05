@@ -13,6 +13,7 @@ import path from 'node:path';
 import { getTempDirPath } from '../utils/util';
 import { createHash } from 'node:crypto';
 import { parseCoverage } from './coverage';
+import { TaskQueue } from '../utils/taskQueue';
 
 export class TestRunner {
 	readonly #context: Context;
@@ -207,6 +208,9 @@ export class TestRunner {
 			}
 		}
 
+		// Use a task queue to ensure stdout calls are sequenced
+		const q = new TaskQueue();
+
 		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags(), [], {
 			mode: 'test',
 			cwd: pkg.goItem.uri.fsPath,
@@ -216,7 +220,7 @@ export class TestRunner {
 			stdout: (s: string | null) => {
 				if (!s) return;
 				this.#context.output.debug(`stdout> ${s}`);
-				pkg.onStdout(s);
+				q.do(() => pkg.onStdout(s));
 			},
 			stderr: (s: string | null) => {
 				if (!s) return;
@@ -234,6 +238,11 @@ export class TestRunner {
 			run.errored(pkg.testItem, {
 				message: `${r.error}`,
 			});
+			return;
+		}
+
+		if (pkg.buildFailed) {
+			// The run has already been marked as failed
 			return;
 		}
 

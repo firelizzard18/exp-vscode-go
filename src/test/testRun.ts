@@ -22,7 +22,8 @@ interface Event {
 	Output?: string;
 	Package?: string;
 	Test?: string;
-	Elapsed?: number; // seconds
+	Elapsed?: number;
+	FailedBuild?: string;
 }
 
 export class TestRunRequest {
@@ -212,6 +213,7 @@ export class PackageTestRun {
 	readonly exclude: Map<TestCase, TestItem>;
 	readonly run: TestRun;
 	readonly #request: TestRunRequest;
+	#buildFailed = false;
 
 	constructor(
 		request: TestRunRequest,
@@ -230,7 +232,7 @@ export class PackageTestRun {
 	}
 
 	readonly stderr: string[] = [];
-	readonly output = new Map<string, string[]>();
+	readonly output = new Map<string, { output: string[]; item: TestItem; test?: TestCase }>();
 	readonly currentLocation = new Map<string, Location>();
 
 	get uri() {
@@ -239,6 +241,10 @@ export class PackageTestRun {
 
 	get includeAll() {
 		return !this.#request.include.has(this.goItem);
+	}
+
+	get buildFailed() {
+		return this.#buildFailed;
 	}
 
 	/**
@@ -256,56 +262,38 @@ export class PackageTestRun {
 		}
 
 		// Resolve the named test case and its associated test item
-		// const test = msg.Test ? await this.#resolveTestCase(this.goItem, msg.Test) : undefined;
 		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.run) : undefined;
 		const item = test && (await this.#request.manager.resolveTestItem(test, { create: true }));
+		await this.#onEvent(test, item, msg);
+	}
 
+	async #onEvent(test: TestCase | undefined, item: TestItem | undefined, msg: Event) {
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
-		if (msg.Action === 'output') {
-			if (!msg.Output) {
-				return;
-			}
-
-			// Track output
-			const { id } = item || this.testItem;
-			if (!this.output.has(id)) {
-				this.output.set(id, []);
-			}
-			this.output.get(id)!.push(msg.Output);
-
-			let location: Location | undefined;
-			let message = msg.Output;
-			if (item && !/^(=== RUN|\s*--- (FAIL|PASS): )/.test(msg.Output)) {
-				const parsed = parseOutputLocation(msg.Output, path.join(item.uri!.fsPath, '..'));
-				message = parsed.message;
-				location = parsed.location;
-				if (location) {
-					this.currentLocation.set(id, location);
-				} else {
-					location = this.currentLocation.get(id);
-				}
-			}
-			this.append(message, location, item || this.testItem);
-
-			// go test is not good about reporting the start and end of benchmarks
-			// so we'll synthesize those events to make life easier.
-			if (!msg.Test?.startsWith('Benchmark')) {
-				return;
-			}
-			if (msg.Output === `=== RUN   ${msg.Test}\n`) {
-				// === RUN   BenchmarkFooBar
-				msg.Action = 'run';
-			} else if (
-				msg.Output?.match(/^(?<name>Benchmark[/\w]+)-(?<procs>\d+)\s+(?<result>.*)(?:$|\n)/)?.[1] === msg.Test
-			) {
-				// BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op
-				msg.Action = 'pass';
-			} else {
-				return;
-			}
-		}
-
 		switch (msg.Action) {
+			case 'output':
+			case 'build-output':
+				await this.#onOutput(test, item, msg);
+				break;
+
+			case 'build-fail': {
+				let didReport = false;
+				this.output.forEach(({ output, item }) => {
+					// Exclude the comment lines
+					const message = output.filter((x) => !x.startsWith('# ')).join('\n');
+					if (!message) return;
+
+					didReport = true;
+					item.error = message;
+					this.run.errored(item, { message });
+				});
+				if (!didReport) {
+					this.testItem.error = 'Build error';
+				}
+				this.run.errored(item || this.testItem, []);
+				this.#buildFailed = true;
+				break;
+			}
+
 			case 'run':
 			case 'start':
 				if (!msg.Test) {
@@ -338,11 +326,11 @@ export class PackageTestRun {
 						this.goItem,
 						this.testItem,
 						elapsed,
-						this.output.get(this.testItem.id) || [],
+						this.output.get(this.testItem.id)?.output || [],
 						this.stderr,
 					);
-				} else if (item) {
-					const messages = parseTestFailure(test, this.output.get(item.id) || []);
+				} else if (item && test) {
+					const messages = parseTestFailure(test, this.output.get(item.id)?.output || []);
 					this.run.failed(item, messages, elapsed);
 				}
 				break;
@@ -351,6 +339,66 @@ export class PackageTestRun {
 			default:
 				// Ignore 'cont' and 'pause'
 				break;
+		}
+	}
+
+	async #onOutput(test: TestCase | undefined, item: TestItem | undefined, msg: Event) {
+		if (!msg.Output) {
+			return;
+		}
+
+		// Try to deduce the location of the output
+		const parsed = parseOutputLocation(msg.Output, path.join((item || this.testItem).uri!.fsPath, '..'));
+		const message = parsed.message;
+		let location = parsed.location;
+
+		const origItem = item;
+		const origTest = test;
+		item ??= this.testItem;
+
+		// The output location is only shown on the first line so remember what
+		// the 'current' location is; continuations are prefixed with 4 spaces
+		if (location) {
+			this.currentLocation.set(item.id, location);
+		} else if (origItem && message.startsWith('    ')) {
+			location = this.currentLocation.get(item.id);
+		}
+
+		// Determine the test from the location
+		if (!origTest && location) {
+			test = this.goItem.findTestAt(location);
+			item = test ? await this.#request.manager.resolveTestItem(test, { create: true }) : item;
+		}
+
+		// Record the output
+		this.append(message, location, item || this.testItem);
+
+		// Track output for later detection of errors
+		if (!this.output.has(item.id)) {
+			this.output.set(item.id, { output: [], item, test });
+		}
+		this.output.get(item.id)!.output.push(msg.Output);
+
+		// go test is not good about reporting the start and end of benchmarks
+		// so we'll synthesize them.
+		if (!msg.Test?.startsWith('Benchmark')) {
+			return;
+		}
+
+		if (msg.Output === `=== RUN   ${msg.Test}\n`) {
+			// === RUN   BenchmarkFooBar
+			this.#onEvent(origTest, origItem, {
+				...msg,
+				Action: 'run',
+			});
+		} else if (
+			msg.Output?.match(/^(?<name>Benchmark[/\w]+)-(?<procs>\d+)\s+(?<result>.*)(?:$|\n)/)?.[1] === msg.Test
+		) {
+			// BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op
+			this.#onEvent(origTest, origItem, {
+				...msg,
+				Action: 'pass',
+			});
 		}
 	}
 

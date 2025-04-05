@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-namespace */
 import { Uri, Range } from 'vscode';
-import type { MarkdownString, ProviderResult, TestRun, WorkspaceFolder } from 'vscode';
+import type { Location, MarkdownString, ProviderResult, TestRun, WorkspaceFolder } from 'vscode';
 import { Commands, Context } from '../utils/testing';
 import path from 'path';
 import { TestConfig } from './config';
@@ -647,6 +647,21 @@ export class Package implements GoTestItem {
 		// Find the parent test case and create a dynamic subtest
 		const parent = findParentTestCase(this.getTests(), name);
 		return parent?.makeDynamicTestCase(name, run);
+	}
+
+	findTestAt(location: Location) {
+		for (const file of this.files) {
+			for (const test of file.tests) {
+				if (
+					test instanceof StaticTestCase &&
+					test.range &&
+					`${test.uri}` === `${location.uri}` &&
+					test.range.contains(location.range)
+				) {
+					return test;
+				}
+			}
+		}
 	}
 }
 
