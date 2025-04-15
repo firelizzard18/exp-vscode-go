@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.9
+
+- Fixes a bug in how `-coverpkg` was calculated for coverage test runs.
+- Coverage log entries for files that are not within any workspace are skipped.
+
 ## v0.0.8
 
 - Disable the test explorer by default when using a non-prerelease version of

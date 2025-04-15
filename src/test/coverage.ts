@@ -14,6 +14,8 @@ import { parseJSONStream } from '../utils/util';
  * @returns Statement coverage information.
  */
 export async function parseCoverage(context: Context, scope: RootItem, coverageFile: Uri) {
+	const dirs = context.workspace.workspaceFolders?.filter((x) => x.uri.scheme === 'file').map((x) => x.uri.fsPath);
+
 	// Resolve GOROOT and GOMODCACHE
 	const { binPath } = context.go.settings.getExecutionCommand('go') || {};
 	if (!binPath) {
@@ -50,6 +52,15 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 
 		const parse = parseLine(env, scope, line);
 		if (!parse) continue;
+
+		// Exclude files that are not within a workspace
+		if (
+			!dirs?.some((x) => {
+				const rel = path.relative(x, parse.location.uri.fsPath);
+				return !path.isAbsolute(rel) && !rel.startsWith('../');
+			})
+		)
+			continue;
 
 		const statements = coverage.get(`${parse.location.uri}`) || [];
 		coverage.set(`${parse.location.uri}`, statements);

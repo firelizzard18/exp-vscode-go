@@ -173,7 +173,11 @@ export class TestRunner {
 				expr = path.join('.', expr);
 			}
 			if (this.#config.settings.coverageScope === 'module') {
-				flags.coverpkg = path.join(expr, '...');
+				if (expr === '.') {
+					flags.coverpkg = './...';
+				} else {
+					flags.coverpkg = path.join(expr, '...');
+				}
 			}
 		}
 
