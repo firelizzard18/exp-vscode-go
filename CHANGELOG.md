@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.10
+
+- Fixes coverage for modules using vendoring –
+  [#3654](https://github.com/golang/vscode-go/issues/3654).
+
 ## v0.0.9
 
 - Fixes a bug in how `-coverpkg` was calculated for coverage test runs.
