@@ -1,9 +1,11 @@
 # Changelog
 
-## Next
+## v0.0.8
 
 - Disable the test explorer by default when using a non-prerelease version of
   vscode-go.
+- (Opt-in) Allow `go:generate go run ...` directives to be run and debugged as
+  pseudo-tests. **This only works for `go run ...` commands.**
 
 ## v0.0.7
 
