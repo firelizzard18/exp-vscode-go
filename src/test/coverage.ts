@@ -1,10 +1,9 @@
-import path from 'node:path';
-import cp from 'node:child_process';
-import { promisify } from 'node:util';
+import path, { isAbsolute, relative } from 'node:path';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
 import { Context } from '../utils/testing';
 import { Module, RootItem } from './item';
-import { parseJSONStream } from '../utils/util';
+import { execGoStr } from '../utils/util';
+import { getModulePaths } from '../utils/modules';
 
 /**
  * Parses a coverage file from `go test` into a map of
@@ -14,27 +13,19 @@ import { parseJSONStream } from '../utils/util';
  * @returns Statement coverage information.
  */
 export async function parseCoverage(context: Context, scope: RootItem, coverageFile: Uri) {
+	const coverage = new Map<string, StatementCoverage[]>();
 	const dirs = context.workspace.workspaceFolders?.filter((x) => x.uri.scheme === 'file').map((x) => x.uri.fsPath);
+	const modules = await getModulePaths(context, scope.dir);
 
-	// Resolve GOROOT and GOMODCACHE
-	const { binPath } = context.go.settings.getExecutionCommand('go') || {};
-	if (!binPath) {
-		throw new Error('Failed to run "go env" as the "go" binary cannot be found in either GOROOT or PATH');
+	if (!dirs) {
+		context.output.error('Cannot calculate coverage when outside of a workspace');
+		return coverage;
 	}
-
-	const modules: Record<string, string> = {};
-	parseJSONStream(await gets(binPath, scope, 'list', '-m', '-json', 'all'), (v) => {
-		const dep = v as {
-			Path: string;
-			Dir: string;
-		};
-		modules[dep.Path] = dep.Dir;
-	});
 
 	const env = {
 		modules,
-		GOROOT: await gets(binPath, scope, 'env', 'GOROOT'),
-		GOMODCACHE: await gets(binPath, scope, 'env', 'GOMODCACHE'),
+		GOROOT: await gets(context, scope, 'env', 'GOROOT'),
+		GOMODCACHE: await gets(context, scope, 'env', 'GOMODCACHE'),
 	};
 
 	const lines = Buffer.from(await context.workspace.fs.readFile(coverageFile))
@@ -42,7 +33,6 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 		.split('\n');
 
 	// The first line will be like "mode: set" which we will ignore.
-	const coverage = new Map<string, StatementCoverage[]>();
 	for (const line of lines.slice(1)) {
 		// go test's output format is:
 		//    Filename:StartLine.StartColumn,EndLine.EndColumn Hits CoverCount
@@ -54,25 +44,21 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 		if (!parse) continue;
 
 		// Exclude files that are not within a workspace
-		if (
-			!dirs?.some((x) => {
-				const rel = path.relative(x, parse.location.uri.fsPath);
-				return !path.isAbsolute(rel) && !rel.startsWith('../');
-			})
-		)
+		const { uri } = parse.location;
+		if (dirs.map((x) => relative(x, uri.fsPath)).every((x) => isAbsolute(x) || x.startsWith('../'))) {
 			continue;
+		}
 
-		const statements = coverage.get(`${parse.location.uri}`) || [];
-		coverage.set(`${parse.location.uri}`, statements);
+		const statements = coverage.get(`${uri}`) || [];
+		coverage.set(`${uri}`, statements);
 		statements.push(new StatementCoverage(parse.count, parse.location.range));
 	}
 
 	return coverage;
 }
 
-async function gets(binPath: string, scope: RootItem, ...args: string[]) {
-	const { stdout } = await promisify(cp.execFile)(binPath, args, { cwd: scope.dir.fsPath });
-	return stdout.trim();
+async function gets(context: Context, scope: RootItem, ...args: string[]) {
+	return execGoStr(context, args, { cwd: scope.dir.fsPath });
 }
 
 // Derived from https://golang.org/cl/179377

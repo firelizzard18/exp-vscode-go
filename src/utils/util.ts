@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Tokenizer, TokenParser, ParsedElementInfo } from '@streamparser/json';
+import { stat } from 'node:fs/promises';
+import { promisify } from 'node:util';
+import { execFile, ExecFileOptions } from 'node:child_process';
+import { Context } from './testing';
 
 // From vscode-go
 
@@ -99,7 +103,7 @@ export function cleanupTempDir() {
 	tmpDir = undefined;
 }
 
-type JsonValue = Exclude<ParsedElementInfo.ParsedElementInfo['value'], undefined>;
+export type JsonValue = Exclude<ParsedElementInfo.ParsedElementInfo['value'], undefined>;
 
 export function parseJSONStream(s: string, onValue: (_: JsonValue) => void) {
 	const t = new Tokenizer();
@@ -119,4 +123,24 @@ export function parseJSONStream(s: string, onValue: (_: JsonValue) => void) {
 		p.write(t);
 	};
 	t.write(s);
+}
+
+export async function exists(s: string) {
+	try {
+		return await stat(s);
+	} catch (err) {
+		if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+			return;
+		}
+		throw err;
+	}
+}
+
+export async function execGoStr(context: Context, args: string[], opts: ExecFileOptions) {
+	const { binPath } = context.go.settings.getExecutionCommand('go') || {};
+	if (!binPath) {
+		throw new Error('Failed to run "go env" as the "go" binary cannot be found in either GOROOT or PATH');
+	}
+	const { stdout } = await promisify(execFile)(binPath, args, opts);
+	return stdout.trim();
 }
