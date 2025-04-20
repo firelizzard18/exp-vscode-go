@@ -244,7 +244,7 @@ export async function debugProcess(
 	const buildFlags: Flags = {};
 	if (mode === 'test') {
 		fixTestFlags(run, flags, userFlags);
-		testFlags.v = true; // TODO: use 'test2json' and ignore -v and -test.v user flags
+		testFlags['test.v'] = true; // TODO: use 'test2json' and ignore -v and -test.v user flags
 	}
 
 	for (const [flag, value] of Object.entries(flags)) {

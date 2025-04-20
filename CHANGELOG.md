@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.11
+
+- Fixes a bug that broke debugging.
+
 ## v0.0.10
 
 - Fixes coverage for modules using vendoring –
