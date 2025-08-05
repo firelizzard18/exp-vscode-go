@@ -17,6 +17,7 @@ import {
 import { Browser } from '../browser';
 import { registerProfileEditor } from './profile';
 import { Context, helpers } from '../utils/testing';
+import { TestConfig } from './config';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -110,8 +111,9 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	event(workspace.onDidOpenTextDocument, 'opened document', (e) => manager.enabled && manager.reloadUri(e.uri));
 
 	// [Event] File change
-	event(workspace.onDidChangeTextDocument, 'updated document', (e) => {
-		if (!manager.enabled) {
+	event(workspace.onDidChangeTextDocument, 'updated document', async (e) => {
+		const cfg = new TestConfig(workspace, e.document.uri);
+		if (!manager.enabled || cfg.update() !== 'on-edit') {
 			return;
 		}
 
@@ -121,15 +123,34 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			return;
 		}
 
-		manager.reloadUri(
+		const start = performance.now();
+		await manager.reloadUri(
 			e.document.uri,
 			e.contentChanges.map((x) => x.range),
 			true,
 		);
+		const duration = performance.now() - start;
+		if (duration > 500) {
+			await badReloadPerformanceNotification(ctx.workspaceState);
+		} else if (duration > 150) {
+			console.warn('Reloading tests took', duration, 'ms');
+		}
 	});
 
 	// [Event] File save
-	event(workspace.onDidSaveTextDocument, 'saved document', (e) => manager.enabled && manager.didSave(e.uri));
+	//
+	// Only fire when the document changed. This logic is based on vscode-go's
+	// GoPackageOutlineProvider. vscode-go also filters out changes to documents
+	// that are not the active document, but I prefer not to because that could
+	// have false negatives.
+	const previousVersion = new Map<string, number>();
+	event(workspace.onDidSaveTextDocument, 'saved document', (e) => {
+		const uri = `${e.uri}`;
+		if (!manager.enabled) return;
+		if (e.version === previousVersion.get(uri)) return;
+		previousVersion.set(uri, e.version);
+		manager.didSave(e.uri);
+	});
 
 	// [Event] Workspace change
 	event(
@@ -165,14 +186,14 @@ async function isEnabled(state: Memento) {
 		return true;
 	}
 
-	notifyUser(state);
+	experimentalExplorerNotification(state);
 	return false;
 }
 
 /**
  * Notify the user that we're enabling the experimental explorer.
  */
-async function notifyUser(state: Memento) {
+async function experimentalExplorerNotification(state: Memento) {
 	// If the user has acknowledged the notification, don't show it again.
 	const id = 'testExplorer.didAckDisableNotification';
 	if (state.get(id) === true) {
@@ -188,12 +209,39 @@ async function notifyUser(state: Memento) {
 	switch (r) {
 		case 'Open settings':
 			await commands.executeCommand('workbench.action.openSettings2', {
-				query: 'goExp.testExplorer.enable',
+				query: 'exp-vscode-go.testExplorer.enable',
 			});
 			break;
 
 		case 'Ok':
 			state.update(id, true);
+			break;
+	}
+}
+
+let didWarnOfSlowReload = false;
+async function badReloadPerformanceNotification(state: Memento) {
+	if (didWarnOfSlowReload) return;
+	didWarnOfSlowReload = true;
+
+	const id = 'testExplorer.ignoreBadReloadPerformanceNotification';
+	if (state.get(id) === true) {
+		return;
+	}
+
+	const r = await window.showWarningMessage(
+		'Consider disabling on-edit updates. Reloading tests took more than half a second. Disabling on-edit updates to fix this issue.',
+		'Ok',
+		"Don't warn me again",
+	);
+	switch (r) {
+		case "Don't warn me again":
+			await state.update(id, true);
+			break;
+		case 'Ok':
+			await commands.executeCommand('workbench.action.openSettings2', {
+				query: 'exp-vscode-go.testExplorer.update',
+			});
 			break;
 	}
 }

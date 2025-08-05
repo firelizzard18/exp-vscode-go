@@ -49,6 +49,7 @@ export class TestConfig {
 
 	readonly enable = () => this.get<boolean>('enable');
 	readonly discovery = () => this.get<'on' | 'off'>('discovery');
+	readonly update = () => this.get<'on-save' | 'on-edit' | 'off'>('update');
 	readonly showFiles = () => this.get<boolean>('showFiles');
 	readonly nestPackages = () => this.get<boolean>('nestPackages');
 	readonly nestSubtests = () => this.get<boolean>('nestSubtests');

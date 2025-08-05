@@ -3,7 +3,7 @@
   "publisher": "ethan-reesor",
   "displayName": "Go Companion",
   "description": "An unofficial companion to the official Go extension, providing experimental features",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "icon": "docs/assets/icon.png",
   "license": "MIT",
   "homepage": "https://github.com/firelizzard18/exp-vscode-go",
@@ -89,6 +89,23 @@
             "Enable automatic discovery of tests in open workspaces",
             "Disable automatic discovery. No tests are shown until a file is open, and only tests within the same package will be shown. Tests within that package will continue to be shown (even if all files are closed) until the editor/extension is restarted."
           ]
+        },
+        "exp-vscode-go.testExplorer.update": {
+          "order": 2,
+            "type": "string",
+            "scope": "resource",
+            "markdownDescription": "Update tests as you edit files.",
+            "default": "on-save",
+            "enum": [
+              "on-save",
+              "on-edit",
+              "off"
+            ],
+            "markdownEnumDescriptions": [
+              "Update tests when a file is saved",
+              "Update tests when a file is edited (continuously as you type)",
+              "Do not automatically update tests"
+            ]
         },
         "exp-vscode-go.testExplorer.exclude": {
           "type": "object",

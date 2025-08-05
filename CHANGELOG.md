@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.12
+
+- Defaults to updating tests when a document is saved instead of as a document
+  is edited to resolve performance issues with large projects. The previous
+  behavior can be restored or completely disabled (no automatic updates) with
+  the new configuration setting, `exp-vscode-go.testExplorer.update`.
+
 ## v0.0.11
 
 - Fixes a bug that broke debugging.

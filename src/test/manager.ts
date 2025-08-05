@@ -10,7 +10,7 @@ import { TestRunner } from './runner';
 import { TestRunRequest } from './testRun';
 import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
-import { RunConfig } from './config';
+import { RunConfig, TestConfig } from './config';
 
 /**
  * Entry point for the test explorer implementation.
@@ -106,6 +106,17 @@ export class TestManager {
 		if (this.context.testing || isCoverageSupported(ctrl)) {
 			createRunProfile(this.#coverage);
 		}
+
+		// Update tests when a document is saved (unless we're updating on
+		// edit).
+		this.#disposable.push(
+			this.#didSave.event((uri) => {
+				const cfg = new TestConfig(this.context.workspace, uri);
+				if (cfg.update() === 'on-save') {
+					this.reloadUri(uri, [], true);
+				}
+			}),
+		);
 	}
 
 	/**
