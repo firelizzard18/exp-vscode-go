@@ -35,8 +35,13 @@ export class GoGenerateManager {
 			storageUri: ctx.storageUri,
 			output: window.createOutputChannel('Go Generate', { log: true }),
 			commands: {
-				modules: (args) => commands.executeCommand('gopls.modules', args),
-				packages: (args) => commands.executeCommand('gopls.packages', args),
+				// These should never be called.
+				modules: () => {
+					throw new Error('Internal error');
+				},
+				packages: () => {
+					throw new Error('Internal error');
+				},
 			},
 		};
 		const { event } = helpers(ctx, testCtx, commands);

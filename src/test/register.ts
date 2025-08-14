@@ -107,8 +107,16 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 		await maybeChangedEnabled();
 	});
 
-	// [Event] File open
-	event(workspace.onDidOpenTextDocument, 'opened document', (e) => manager.enabled && manager.reloadUri(e.uri));
+	// [Event] The user opened a file in an editor
+	let seenDocuments = new Set<string>();
+	event(window.onDidChangeVisibleTextEditors, 'opened document', (editors) => {
+		for (const editor of editors) {
+			if (seenDocuments.has(`${editor.document.uri}`)) continue;
+			manager.reloadUri(editor.document.uri);
+		}
+
+		seenDocuments = new Set(editors.map((x) => `${x.document.uri}`));
+	});
 
 	// [Event] File change
 	event(workspace.onDidChangeTextDocument, 'updated document', async (e) => {

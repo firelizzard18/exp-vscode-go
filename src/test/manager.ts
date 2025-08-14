@@ -56,18 +56,6 @@ export class TestManager {
 				createTestController(id: string, label: string): TestController;
 			},
 	) {
-		// Verify that gopls is new enough to support the packages command
-		try {
-			await this.context.commands.packages({ Files: [] });
-		} catch (error) {
-			if (!`${error}`.match(/^Error: command '.*' not found$/)) {
-				throw error;
-			}
-
-			await args.showWarningMessage('gopls is not installed or does not support test discovery');
-			return;
-		}
-
 		// Register the legacy code lens provider
 		this.#disposable.push(
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens),
