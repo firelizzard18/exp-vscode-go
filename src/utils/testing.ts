@@ -25,20 +25,20 @@ export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
 	readonly testing: boolean;
 	readonly go: GoExtensionAPI;
 	readonly output: vscode.LogOutputChannel;
-	readonly workspace: Workspace;
+	readonly workspace: VSCodeWorkspace;
 	readonly state: Memento;
 	readonly commands: Commands;
 	readonly spawn: Spawner;
 	readonly debug: Spawner;
 }
 
-export type FileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory' | 'readFile'>;
+export type VSCodeFileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory' | 'readFile'>;
 
 // The subset of vscode.workspace that is used by the test explorer.
-export type Workspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
+export type VSCodeWorkspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
 	getConfiguration(section: string, scope?: vscode.ConfigurationScope | null): ConfigValue;
 
-	readonly fs: FileSystem;
+	readonly fs: VSCodeFileSystem;
 };
 
 export interface ConfigValue {

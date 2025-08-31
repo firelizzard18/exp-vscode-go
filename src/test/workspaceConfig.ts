@@ -1,5 +1,5 @@
 import { ConfigurationChangeEvent, ConfigurationScope, Uri } from 'vscode';
-import { Workspace } from '../utils/testing';
+import { VSCodeWorkspace } from '../utils/testing';
 import { Minimatch } from 'minimatch';
 import { Flags } from './utils';
 import { resolvePath, substituteEnv } from '../utils/util';
@@ -9,7 +9,7 @@ export class WorkspaceConfig {
 	readonly #scope;
 	readonly #items: Item<unknown>[] = [];
 
-	constructor(workspace: Workspace, scope?: ConfigurationScope) {
+	constructor(workspace: VSCodeWorkspace, scope?: ConfigurationScope) {
 		this.#workspace = workspace;
 		this.#scope = scope;
 	}
@@ -147,7 +147,7 @@ class ConfigItem<T> implements Item<T> {
 	#has = false;
 	#value?: T;
 
-	constructor(workspace: Workspace, scope: ConfigurationScope | undefined, section: string, name: string) {
+	constructor(workspace: VSCodeWorkspace, scope: ConfigurationScope | undefined, section: string, name: string) {
 		this.#workspace = workspace;
 		this.#scope = scope;
 		this.#section = section;

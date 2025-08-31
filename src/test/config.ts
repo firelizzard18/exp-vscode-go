@@ -1,4 +1,4 @@
-import { Workspace } from '../utils/testing';
+import { VSCodeWorkspace } from '../utils/testing';
 import { ConfigurationScope, Uri } from 'vscode';
 import { Minimatch } from 'minimatch';
 import deepEqual from 'deep-equal';
@@ -15,7 +15,7 @@ export class TestConfig {
 	#excludeValue?: string[];
 	#excludeCompiled?: Minimatch[];
 
-	constructor(workspace: Workspace, scope?: ConfigurationScope) {
+	constructor(workspace: VSCodeWorkspace, scope?: ConfigurationScope) {
 		this.#workspace = workspace;
 		this.#scope = scope;
 	}

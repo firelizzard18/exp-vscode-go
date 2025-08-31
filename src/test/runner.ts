@@ -3,7 +3,7 @@
 import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri } from 'vscode';
 import type vscode from 'vscode';
 import { Package, StaticTestCase, TestCase, TestFile } from './item';
-import { Context, Workspace } from '../utils/testing';
+import { Context, VSCodeWorkspace } from '../utils/testing';
 import { PackageTestRun, TestRunRequest } from './testRun';
 import { Flags, Spawner } from './utils';
 import { ProfileType } from './profile';
@@ -298,7 +298,7 @@ export class TestRunner {
 	}
 }
 
-export function shouldRunBenchmarks(workspace: Workspace, pkg: Package) {
+export function shouldRunBenchmarks(workspace: VSCodeWorkspace, pkg: Package) {
 	// When the user clicks the run button on a package, they expect all of the
 	// tests within that package to run - they probably don't want to run the
 	// benchmarks. So if a benchmark is not explicitly selected, don't run
