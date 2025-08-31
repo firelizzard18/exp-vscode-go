@@ -5,6 +5,7 @@ import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './it
 import { TestConfig } from './config';
 import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
 import { EventEmitter } from '../utils/eventEmitter';
+import { timeit } from '../utils/util';
 
 export type ResolveOptions = {
 	/**
@@ -215,20 +216,22 @@ export class TestResolver {
 	 * @param invalidate Whether to invalidate test results.
 	 */
 	async reloadUri(ws: WorkspaceFolder, uri: Uri, ranges: Range[] = [], invalidate = false) {
-		const reload = [];
-		const invalidated = [];
-		for (const { item, type } of await this.#goRoots.didUpdate(ws, uri, { [`${uri}`]: ranges })) {
-			if (type !== 'removed') {
-				reload.push(item);
+		const reload: (TestCase | TestFile | Package)[] = [];
+		const invalidated: (TestCase | TestFile)[] = [];
+		await timeit('didUpdate', async () => {
+			for (const { item, type } of await this.#goRoots.didUpdate(ws, uri, { [`${uri}`]: ranges })) {
+				if (type !== 'removed') {
+					reload.push(item);
+				}
+				if (type === 'modified' && !(item instanceof Package)) {
+					invalidated.push(item);
+				}
 			}
-			if (type === 'modified' && !(item instanceof Package)) {
-				invalidated.push(item);
-			}
-		}
+		});
 
 		// Update the view
-		const items = await this.resolveViewItems(reload, { create: true });
-		await Promise.all(items.map((x) => this.reloadViewItem(x)));
+		const items = await timeit('resolveViewItems', () => this.resolveViewItems(reload, { create: true }));
+		await timeit('reloadViewItem', () => Promise.all(items.map((x) => this.reloadViewItem(x))));
 		invalidate && this.#ctrl.invalidateTestResults?.(items);
 
 		// Notify listeners
@@ -267,19 +270,15 @@ export class TestResolver {
 
 		const config = new TestConfig(this.#context.workspace);
 		return (async () => {
-			const items = [];
-			for await (const item of this.#resolveViewItems(goItems, opts, config)) {
+			const items: Promise<TestItem | undefined>[] = [];
+			for (const item of this.#resolveViewItems(goItems, opts, config)) {
 				items.push(opts.create ? this.#getOrCreateAll(item) : this.#get(item));
 			}
-			return (await Promise.all(items)).filter((x) => !!x);
+			return (await timeit('await get or create all', () => Promise.all(items))).filter((x) => !!x);
 		})();
 	}
 
-	async *#resolveViewItems(
-		goItems: Iterable<GoTestItem>,
-		opts: ResolveOptions,
-		config: TestConfig,
-	): AsyncGenerator<GoTestItem> {
+	*#resolveViewItems(goItems: Iterable<GoTestItem>, opts: ResolveOptions, config: TestConfig): Generator<GoTestItem> {
 		for (const item of goItems) {
 			let hidden;
 

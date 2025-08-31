@@ -10,7 +10,8 @@ import { TestRunner } from './runner';
 import { TestRunRequest } from './testRun';
 import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
-import { RunConfig, TestConfig } from './config';
+import { TestConfig } from './config';
+import { RunConfig } from './runConfig';
 
 /**
  * Entry point for the test explorer implementation.
@@ -206,13 +207,6 @@ export class TestManager {
 	 */
 	async reloadViewItem(...args: Parameters<TestResolver['reloadViewItem']>) {
 		await this.#resolver?.reloadViewItem(...args);
-	}
-
-	/**
-	 * Calls {@link TestResolver.reloadGoItem}.
-	 */
-	async reloadGoItem(...args: Parameters<TestResolver['reloadGoItem']>) {
-		await this.#resolver?.reloadGoItem(...args);
 	}
 
 	/**

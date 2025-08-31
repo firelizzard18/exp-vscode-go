@@ -1,30 +1,17 @@
-import { Context, doSafe, TestController, Workspace } from '../utils/testing';
-import {
-	CancellationToken,
-	ConfigurationScope,
-	FileCoverage,
-	FileCoverageDetail,
-	QuickPickItem,
-	QuickPickOptions,
-	TestRunProfileKind,
-	TestRunRequest,
-	TestTag,
-	Uri,
-	type window,
-} from 'vscode';
+import { Workspace } from '../utils/testing';
+import { ConfigurationScope, Uri } from 'vscode';
 import { Minimatch } from 'minimatch';
 import deepEqual from 'deep-equal';
 import { resolvePath, substituteEnv } from '../utils/util';
 import { Flags } from './utils';
-import { makeProfileTypeSet } from './profile';
-import { GoLaunchRequest } from '../vscode-go';
 
 /**
  * Wrapper for accessing test explorer configuration.
  */
 export class TestConfig {
-	readonly #workspace: Workspace;
-	readonly #scope?: ConfigurationScope;
+	readonly #workspace;
+	readonly #scope;
+	readonly #cache = new Map<string, any>();
 	#excludeValue?: string[];
 	#excludeCompiled?: Minimatch[];
 
@@ -44,7 +31,30 @@ export class TestConfig {
 	 * Get a configuration value.
 	 */
 	get<T>(name: string) {
-		return this.#workspace.getConfiguration('exp-vscode-go', this.#scope).get<T>(`testExplorer.${name}`);
+		return this.#get<T>(`testExplorer.${name}`, 'exp-vscode-go');
+	}
+
+	#get<T>(name: string, section: string): T {
+		const key = `${section}::${name}`;
+		if (this.#cache.has(key)) {
+			return this.#cache.get(key) as T;
+		}
+
+		const config = this.#workspace.getConfiguration(section, this.#scope);
+		const value = config.get(name);
+		this.#cache.set(name, value);
+		return value as T;
+	}
+
+	#calc<T>(key: string, calc: () => T) {
+		key = `::${key}`;
+		if (this.#cache.has(key)) {
+			return this.#cache.get(key) as T;
+		}
+
+		const value = calc();
+		this.#cache.set(key, value);
+		return value;
 	}
 
 	readonly enable = () => this.get<boolean>('enable');
@@ -56,83 +66,84 @@ export class TestConfig {
 	readonly codeLens = () => this.get<true | false | 'run' | 'debug'>('codeLens');
 	readonly runPackageBenchmarks = () => this.get<boolean>('runPackageBenchmarks');
 	readonly dynamicSubtestLimit = () => this.get<number>('dynamicSubtestLimit');
+	readonly testTags = () => this.#get<string[]>('testTags', 'go') || this.#get<string[]>('buildTags', 'go') || [];
 
-	readonly testTags = () => {
-		const cfg = this.#workspace.getConfiguration('go', this.#scope);
-		return cfg.get<string[]>('testTags') || cfg.get<string[]>('buildTags') || [];
-	};
+	/**
+	 * @returns `go.toolsEnvVars` with `${...}` expressions resolved.
+	 */
+	readonly toolsEnvVars = () => this.#calc('toolsEnvVars', () => this.#envVars('toolsEnvVars'));
+
+	/**
+	 * @returns `go.testEnvVars` and `go.toolsEnvVars` (merged) with `${...}` expressions resolved.
+	 */
+	readonly testEnvVars = () => this.#calc('testEnvVars', () => this.#envVars('toolsEnvVars', 'testEnvVars'));
 
 	/**
 	 * @returns An array of compiled minimatch patterns from
 	 * `exp-vscode-go.testExplorer.exclude` and `files.exclude`.
 	 */
-	readonly exclude = () => {
-		// Merge files.exclude and exp-vscode-go.testExplorer.exclude
-		const a = this.get<Record<string, boolean>>('exclude') || {};
-		const b = this.#workspace.getConfiguration('files', this.#scope).get<Record<string, boolean>>('exclude') || {};
-		const v = Object.assign({}, b, a);
+	exclude() {
+		return this.#calc('exclude', () => {
+			// Merge files.exclude and exp-vscode-go.testExplorer.exclude
+			const a = this.get<Record<string, boolean>>('exclude') || {};
+			const b =
+				this.#workspace.getConfiguration('files', this.#scope).get<Record<string, boolean>>('exclude') || {};
+			const v = Object.assign({}, b, a);
 
-		// List enabled patterns
-		const patterns = Object.entries(v)
-			.filter(([, v]) => v)
-			.map(([k]) => k);
+			// List enabled patterns
+			const patterns = Object.entries(v)
+				.filter(([, v]) => v)
+				.map(([k]) => k);
 
-		// Only recompile if the patterns have changed
-		if (deepEqual(patterns, this.#excludeValue)) {
+			// Only recompile if the patterns have changed
+			if (deepEqual(patterns, this.#excludeValue)) {
+				return this.#excludeCompiled;
+			}
+
+			this.#excludeValue = patterns;
+			this.#excludeCompiled = patterns.map((x) => new Minimatch(x));
 			return this.#excludeCompiled;
-		}
-
-		this.#excludeValue = patterns;
-		this.#excludeCompiled = patterns.map((x) => new Minimatch(x));
-		return this.#excludeCompiled;
-	};
+		});
+	}
 
 	/**
 	 * @returns `go.testFlags` or `go.buildFlags`, converted to {@link Flags}.
 	 */
-	readonly testFlags = () => {
-		// Determine the workspace folder from the scope
-		const wsf =
-			this.#scope instanceof Uri
-				? this.#workspace.getWorkspaceFolder(this.#scope)
-				: this.#scope?.uri
-					? this.#workspace.getWorkspaceFolder(this.#scope.uri)
-					: undefined;
+	testFlags() {
+		return this.#calc('testFlags', () => {
+			// Determine the workspace folder from the scope
+			const wsf =
+				this.#scope instanceof Uri
+					? this.#workspace.getWorkspaceFolder(this.#scope)
+					: this.#scope?.uri
+						? this.#workspace.getWorkspaceFolder(this.#scope.uri)
+						: undefined;
 
-		// Get go.testFlags or go.buildFlags
-		const cfg = this.#workspace.getConfiguration('go', this.#scope);
-		const flagArgs = cfg.get<string[]>('testFlags') || cfg.get<string[]>('buildFlags') || [];
+			// Get go.testFlags or go.buildFlags
+			const cfg = this.#workspace.getConfiguration('go', this.#scope);
+			const flagArgs = cfg.get<string[]>('testFlags') || cfg.get<string[]>('buildFlags') || [];
 
-		// Convert to an object
-		const flags: Flags = {};
-		for (let arg of flagArgs) {
-			arg = arg.replace(/^--?/, '');
-			const i = arg.indexOf('=');
-			if (i === -1) {
-				flags[arg] = true;
-			} else {
-				flags[arg.slice(0, i)] = resolvePath(arg.slice(i + 1), wsf?.uri?.fsPath);
+			// Convert to an object
+			const flags: Flags = {};
+			for (let arg of flagArgs) {
+				arg = arg.replace(/^--?/, '');
+				const i = arg.indexOf('=');
+				if (i === -1) {
+					flags[arg] = true;
+				} else {
+					flags[arg.slice(0, i)] = resolvePath(arg.slice(i + 1), wsf?.uri?.fsPath);
+				}
 			}
-		}
 
-		// Get go.testTags or go.buildTags
-		const tags = cfg.get<string>('testTags') ?? cfg.get<string>('buildTags') ?? '';
-		if (tags) flags.tags = tags;
+			// Get go.testTags or go.buildTags
+			const tags = cfg.get<string>('testTags') ?? cfg.get<string>('buildTags') ?? '';
+			if (tags) flags.tags = tags;
 
-		return flags;
-	};
+			return flags;
+		});
+	}
 
-	/**
-	 * @returns `go.toolsEnvVars` with `${...}` expressions resolved.
-	 */
-	readonly toolsEnvVars = () => this.#envVars('toolsEnvVars');
-
-	/**
-	 * @returns `go.testEnvVars` and `go.toolsEnvVars` (merged) with `${...}` expressions resolved.
-	 */
-	readonly testEnvVars = () => this.#envVars('toolsEnvVars', 'testEnvVars');
-
-	readonly #envVars = (...names: string[]) => {
+	#envVars(...names: string[]) {
 		// Determine the workspace folder from the scope
 		const wsf =
 			this.#scope instanceof Uri
@@ -154,167 +165,5 @@ export class TestConfig {
 		}
 
 		return env;
-	};
-}
-
-type ConfigureArgs = Pick<typeof window, 'showQuickPick'>;
-
-type CoverageScope = 'module' | 'package';
-
-interface StoredSettings {
-	profile: string[];
-	coverageScope: CoverageScope;
-}
-
-export class RunConfig {
-	static readonly #memento = 'runnerSettings';
-
-	readonly settings = {
-		profile: makeProfileTypeSet(),
-		coverageScope: 'module',
-	} as {
-		readonly profile: ReturnType<typeof makeProfileTypeSet>;
-		coverageScope: CoverageScope;
-	};
-
-	readonly #context: Context;
-	readonly #label: string;
-	readonly kind: TestRunProfileKind;
-	readonly #isDefault?: boolean;
-	readonly #tag?: TestTag;
-	readonly #supportsContinuousRun?: boolean;
-	readonly coverage = new WeakMap<FileCoverage, FileCoverageDetail[]>();
-	readonly options: Partial<GoLaunchRequest> = {};
-
-	constructor(
-		context: Context,
-		label: string,
-		kind: TestRunProfileKind,
-		isDefault?: boolean,
-		tag?: TestTag,
-		supportsContinuousRun?: boolean,
-	) {
-		this.#context = context;
-		this.#label = label;
-		this.kind = kind;
-		this.#isDefault = isDefault;
-		this.#tag = tag;
-		this.#supportsContinuousRun = supportsContinuousRun;
-
-		const stored = context.state.get<StoredSettings>(`${RunConfig.#memento}[${label}]`);
-		if (stored) {
-			this.settings.profile.forEach((x) => (x.enabled = (stored.profile ?? []).includes(x.id)));
-			this.settings.coverageScope = stored.coverageScope;
-		}
 	}
-
-	async #update() {
-		await this.#context.state.update(`${RunConfig.#memento}[${this.#label}]`, {
-			profile: this.settings.profile.filter((x) => x.enabled).map((x) => x.id),
-			coverageScope: this.settings.coverageScope,
-		} satisfies StoredSettings);
-	}
-
-	async configure(args: ConfigureArgs) {
-		const options: QuickPickOptions = { title: 'Configure Go tests' };
-		if (this.kind === TestRunProfileKind.Coverage) {
-			await configureMenu(args, options, {
-				Coverage: () => this.#configureCoverage(args),
-			});
-		} else {
-			await configureMenu(args, options, {
-				Profiling: () => this.#configureProfiling(args),
-			});
-		}
-	}
-
-	async #configureProfiling(args: ConfigureArgs) {
-		this.settings.profile.forEach((x) => (x.picked = x.enabled));
-		const r = await args.showQuickPick(this.settings.profile, {
-			title: 'Profile',
-			canPickMany: true,
-		});
-		if (!r) return;
-
-		this.settings.profile.forEach((x) => (x.enabled = r.includes(x)));
-		await this.#update();
-	}
-
-	async #configureCoverage(args: ConfigureArgs) {
-		const makeScopeOption = ({ scope, ...item }: QuickPickItem & { scope: CoverageScope }) => ({
-			...item,
-			description: this.settings.coverageScope === scope ? '✓' : undefined,
-			func: () => ((this.settings.coverageScope = scope), this.#update()),
-		});
-
-		await configureMenu(
-			args,
-			{ title: 'Configure test coverage' },
-			{
-				Scope: () =>
-					configureMenuOnce(args, { title: 'Configure test coverage scope' }, [
-						makeScopeOption({
-							label: 'Module',
-							scope: 'module',
-							detail: 'Show coverage for the entire module',
-						}),
-						makeScopeOption({
-							label: 'Package',
-							scope: 'package',
-							detail: 'Only show coverage for the package the test belongs to',
-						}),
-					]),
-			},
-		);
-	}
-
-	createRunProfile(
-		args: ConfigureArgs,
-		ctrl: TestController,
-		runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void,
-	) {
-		const profile = ctrl.createRunProfile(
-			this.#label,
-			this.kind,
-			runHandler,
-			this.#isDefault,
-			this.#tag,
-			this.#supportsContinuousRun,
-		);
-
-		profile.loadDetailedCoverage = (_, summary) => Promise.resolve(this.coverage.get(summary) || []);
-
-		if (this.kind !== TestRunProfileKind.Debug) {
-			profile.configureHandler = () => doSafe(this.#context, 'configure profile', () => this.configure(args));
-		}
-
-		return profile;
-	}
-}
-
-type ConfigMenuFunc = () => void | boolean | Promise<void | boolean>;
-
-async function configureMenu(...args: Parameters<typeof configureMenuOnce>) {
-	for (;;) {
-		const r = await configureMenuOnce(...args);
-		if (!r) return;
-	}
-}
-
-async function configureMenuOnce(
-	args: ConfigureArgs,
-	options: QuickPickOptions,
-	choices: Record<string, ConfigMenuFunc> | (QuickPickItem & { func: ConfigMenuFunc })[],
-) {
-	const r = await args.showQuickPick(
-		choices instanceof Array
-			? choices
-			: Object.entries(choices).map(([label, func]) => ({
-					label,
-					func,
-				})),
-		options,
-	);
-	await r?.func();
-	return !!r;
 }

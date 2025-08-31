@@ -7,6 +7,8 @@ import path from 'path';
 import { TestConfig } from './config';
 import deepEqual from 'deep-equal';
 import { ProfileContainer } from './profile';
+import { ItemEvent, ItemSet } from './itemSet';
+import { RelationMap } from './relationMap';
 
 export namespace GoTestItem {
 	/**
@@ -69,11 +71,11 @@ export class RootSet {
 		this.#context = context;
 	}
 
-	*[Symbol.iterator]() {
-		for (const ws of this.#roots.values()) {
-			yield* ws;
-		}
-	}
+	// *[Symbol.iterator]() {
+	// 	for (const ws of this.#roots.values()) {
+	// 		yield* ws;
+	// 	}
+	// }
 
 	/**
 	 * Marks the root as requested so that it is included by getChildren when
@@ -918,170 +920,5 @@ export function findParentTestCase(allTests: TestCase[], name: string) {
 				return test;
 			}
 		}
-	}
-}
-
-/**
- * Bidirectional map for parent-child relationships.
- */
-export class RelationMap<Child, Parent> {
-	readonly #childParent = new Map<Child, Parent>();
-	readonly #parentChild = new Map<Parent, Set<Child>>();
-
-	constructor(relations: Iterable<[Child, Parent]> = []) {
-		for (const [child, parent] of relations) {
-			this.add(parent, child);
-		}
-	}
-
-	add(parent: Parent, child: Child) {
-		this.#childParent.set(child, parent);
-		const children = this.#parentChild.get(parent);
-		if (children) {
-			children.add(child);
-		} else {
-			this.#parentChild.set(parent, new Set([child]));
-		}
-	}
-
-	replace(relations: Iterable<[Child, Parent]>) {
-		this.#childParent.clear();
-		this.#parentChild.clear();
-		for (const [child, parent] of relations) {
-			this.add(parent, child);
-		}
-	}
-
-	removeChild(child: Child) {
-		const parent = this.#childParent.get(child);
-		if (!parent) return;
-		this.#parentChild.get(parent)!.delete(child);
-		this.#childParent.delete(child);
-	}
-
-	removeChildren(parent: Parent) {
-		for (const child of this.#parentChild.get(parent) || []) {
-			this.#childParent.delete(child);
-		}
-		this.#parentChild.delete(parent);
-	}
-
-	getParent(child: Child) {
-		return this.#childParent.get(child);
-	}
-
-	getChildren(parent: Parent) {
-		const set = this.#parentChild.get(parent);
-		return set ? [...set] : undefined;
-	}
-}
-
-/**
- * Represents an update to a test item.
- *  - `added` indicates that the item was added.
- *  - `removed` indicates that the item was removed.
- *  - `moved` indicates that the item's range changed without changing its contents.
- *  - `modified` indicates that the item's contents and possibly its range changed.
- */
-type ItemEvent<T> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
-
-export class ItemSet<T extends { key: string }> {
-	readonly #items: Map<string, T>;
-
-	constructor(items: T[] = []) {
-		this.#items = new Map(items.map((x) => [x.key, x]));
-	}
-
-	*keys() {
-		yield* this.#items.keys();
-	}
-
-	*values() {
-		yield* this.#items.values();
-	}
-
-	[Symbol.iterator]() {
-		return this.#items.values();
-	}
-
-	get size() {
-		return this.#items.size;
-	}
-
-	has(item: string | T) {
-		return this.#items.has(typeof item === 'string' ? item : item.key);
-	}
-
-	get(item: string | T) {
-		return this.#items.get(typeof item === 'string' ? item : item.key);
-	}
-
-	add(...items: T[]) {
-		for (const item of items) {
-			if (this.has(item)) continue;
-			this.#items.set(item.key, item);
-		}
-	}
-
-	remove(item: string | T) {
-		this.#items.delete(typeof item === 'string' ? item : item.key);
-	}
-
-	/**
-	 * Replaces the set of items with a new set. If the existing set has items
-	 * with the same key, the original items are preserved.
-	 */
-	replace(items: T[]) {
-		// Insert new items
-		this.add(...items);
-
-		// Delete items that are no longer present
-		const keep = new Set(items.map((x) => x.key));
-		for (const key of this.keys()) {
-			if (!keep.has(key)) {
-				this.remove(key);
-			}
-		}
-	}
-
-	/**
-	 * Replaces the set of items with a new set. For each value in source, if an
-	 * item with the same key exists in the set, the item is updated. Otherwise,
-	 * a new item is created.
-	 * @param src The sources to create items from.
-	 * @param id A function that returns the item key of a source value.
-	 * @param make A function that creates a new item from a source value.
-	 * @param update A function that updates an existing item with a source value.
-	 */
-	update<S, R>(
-		src: S[],
-		id: (_: S) => string,
-		make: (_: S) => T,
-		update: (_1: S, _2: T) => Iterable<ItemEvent<R>>,
-		keep: (_: T) => boolean = () => false,
-	): ItemEvent<T | R>[] {
-		// Delete items that are no longer present
-		const changed: ItemEvent<T | R>[] = [];
-		const srcKeys = new Set(src.map(id));
-		for (const [key, item] of this.#items.entries()) {
-			if (!srcKeys.has(key) && !keep(item)) {
-				changed.push({ item, type: 'removed' });
-				this.remove(key);
-			}
-		}
-
-		// Update and insert items
-		for (const value of src) {
-			const key = id(value);
-			let item = this.get(key);
-			if (!item) {
-				item = make(value);
-				this.add(item);
-				changed.push({ item, type: 'added' });
-			}
-
-			changed.push(...update(value, item));
-		}
-		return changed;
 	}
 }
