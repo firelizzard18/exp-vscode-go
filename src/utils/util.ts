@@ -8,6 +8,30 @@ import { stat } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { execFile, ExecFileOptions } from 'node:child_process';
 import { Context } from './testing';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+export function timeit<R>(display: string, fn: () => R) {
+	const prefix = timeit.store.getStore() ?? '';
+	const start = performance.now();
+	console.log(`${prefix}> ${display} [${start}]`);
+
+	try {
+		timeit.store.enterWith(prefix + '  ');
+		const r = fn();
+		if (r && typeof r === 'object' && 'then' in r && typeof r.then === 'function') {
+			return (r as Thenable<unknown>).then((r) => {
+				console.log(`${prefix}  ${display}: ${performance.now() - start} ms`);
+				return r;
+			}) as R;
+		}
+		console.log(`${prefix}< ${display}: ${performance.now() - start} ms`);
+		return r;
+	} finally {
+		timeit.store.enterWith(prefix);
+	}
+}
+
+timeit.store = new AsyncLocalStorage<string>();
 
 // From vscode-go
 
