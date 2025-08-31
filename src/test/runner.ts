@@ -8,12 +8,13 @@ import { PackageTestRun, TestRunRequest } from './testRun';
 import { Flags, Spawner } from './utils';
 import { ProfileType } from './profile';
 import { TestResolver } from './resolver';
-import { RunConfig, TestConfig } from './config';
+import { TestConfig } from './config';
 import path from 'node:path';
 import { getTempDirPath } from '../utils/util';
 import { createHash } from 'node:crypto';
 import { parseCoverage } from './coverage';
 import { TaskQueue } from '../utils/taskQueue';
+import { RunConfig } from './runConfig';
 
 export class TestRunner {
 	readonly #context: Context;
