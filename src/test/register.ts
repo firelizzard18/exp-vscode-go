@@ -18,6 +18,7 @@ import { Browser } from '../browser';
 import { registerProfileEditor } from './profile';
 import { Context, helpers } from '../utils/testing';
 import { TestConfig } from './config';
+import { WorkspaceConfig } from './workspaceConfig';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -83,20 +84,21 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	command('goExp.configureCoverageRunProfile', () => manager.configureCoverageRunProfile(window));
 
 	// [Event] Configuration change
+	const config = new WorkspaceConfig(workspace);
 	event(workspace.onDidChangeConfiguration, 'changed configuration', async (e) => {
-		if (e.affectsConfiguration('exp-vscode-go.testExplorer.enable')) {
+		if (config.enable.isAffected(e)) {
 			await maybeChangedEnabled();
 		}
 		if (!manager.enabled) {
 			return;
 		}
 		if (
-			e.affectsConfiguration('files.exclude') ||
-			e.affectsConfiguration('exp-vscode-go.testExplorer.exclude') ||
-			e.affectsConfiguration('exp-vscode-go.testExplorer.discovery') ||
-			e.affectsConfiguration('exp-vscode-go.testExplorer.showFiles') ||
-			e.affectsConfiguration('exp-vscode-go.testExplorer.nestPackages') ||
-			e.affectsConfiguration('exp-vscode-go.testExplorer.nestSubtests')
+			config.exclude.isAffected(e) ||
+			config.exclude.isAffected(e) ||
+			config.discovery.isAffected(e) ||
+			config.showFiles.isAffected(e) ||
+			config.nestPackages.isAffected(e) ||
+			config.nestSubtests.isAffected(e)
 		) {
 			await manager.reloadView();
 		}
@@ -182,7 +184,8 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 async function isEnabled(state: Memento) {
 	// If the user has explicitly enabled or disabled the test explorer, use
 	// that.
-	const enabled = workspace.getConfiguration('exp-vscode-go').get<boolean | 'auto'>('testExplorer.enable');
+	const config = new WorkspaceConfig(workspace);
+	const enabled = config.enable.get();
 	if (typeof enabled === 'boolean') {
 		return enabled;
 	}

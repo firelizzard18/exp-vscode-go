@@ -35,7 +35,7 @@ export class WorkspaceConfig {
 		return item;
 	}
 
-	readonly enable = this.#config<boolean>('exp-vscode-go', 'testExplorer.enable');
+	readonly enable = this.#config<boolean | 'auto'>('exp-vscode-go', 'testExplorer.enable');
 	readonly discovery = this.#config<'on' | 'off'>('exp-vscode-go', 'testExplorer.discovery');
 	readonly update = this.#config<'on-save' | 'on-edit' | 'off'>('exp-vscode-go', 'testExplorer.update');
 	readonly showFiles = this.#config<boolean>('exp-vscode-go', 'testExplorer.showFiles');
