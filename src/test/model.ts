@@ -1,9 +1,8 @@
-import { Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
+import { ConfigurationChangeEvent, Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
 import { Commands, Context } from '../utils/testing';
 import { ItemEvent, ItemSet } from './itemSet';
 import deepEqual from 'deep-equal';
 import { RelationMap } from './relationMap';
-import { TestConfig } from './config';
 import path from 'node:path';
 import { ProfileContainer } from './profile';
 import { WorkspaceConfig } from './workspaceConfig';
@@ -17,17 +16,19 @@ export class GoTestItemProvider {
 	readonly #items = new Map<string, GoTestItem>();
 	readonly #roots = new ItemSet<Workspace>();
 	readonly #requested = new Set<string>();
-
-	#config = new WeakMap<Workspace, WorkspaceConfig>();
+	readonly #config = new WeakMap<Workspace, WorkspaceConfig>();
 
 	constructor(context: Context) {
 		this.#context = context;
 	}
 
-	didChangeConfiguration() {
-		// Flush the cached config objects, since they cache the values they
-		// read.
-		this.#config = new WeakMap();
+	didChangeConfiguration(e: ConfigurationChangeEvent) {
+		// Invalidate cached configuration values for all workspaces. It would
+		// be better to directly iterate over the config cache, but weak maps
+		// can't be iterated.
+		for (const ws of this.#roots) {
+			this.#config.get(ws)?.invalidate(e);
+		}
 	}
 
 	labelFor(item: GoTestItem) {
