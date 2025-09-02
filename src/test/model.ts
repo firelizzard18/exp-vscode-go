@@ -4,19 +4,22 @@ import { ItemEvent, ItemSet } from './itemSet';
 import deepEqual from 'deep-equal';
 import { RelationMap } from './relationMap';
 import path from 'node:path';
-import { ProfileContainer } from './profile';
 import { WorkspaceConfig } from './workspaceConfig';
+import { WeakMapWithDefault } from '../utils/map';
 
 export type GoTestItem = Module | Workspace | Package | TestFile | TestCase;
 
 export class GoTestItemProvider {
 	readonly #context;
-	readonly #pkgRel = new RelationMap<Package, Package | undefined>();
-	readonly #testRel = new RelationMap<TestCase, TestCase | undefined>();
-	readonly #items = new Map<string, GoTestItem>();
-	readonly #roots = new ItemSet<Workspace>();
-	readonly #requested = new Set<string>();
+	readonly #pkgRel = new WeakMapWithDefault<Workspace | Module, RelationMap<Package, Package | undefined>>(
+		() => new RelationMap(),
+	);
+	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
+		() => new RelationMap(),
+	);
+	readonly #workspaces = new ItemSet<Workspace>();
 	readonly #config = new WeakMap<Workspace, WorkspaceConfig>();
+	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
 	constructor(context: Context) {
 		this.#context = context;
@@ -26,7 +29,7 @@ export class GoTestItemProvider {
 		// Invalidate cached configuration values for all workspaces. It would
 		// be better to directly iterate over the config cache, but weak maps
 		// can't be iterated.
-		for (const ws of this.#roots) {
+		for (const ws of this.#workspaces) {
 			this.#config.get(ws)?.invalidate(e);
 		}
 	}
@@ -40,7 +43,7 @@ export class GoTestItemProvider {
 
 			case 'package': {
 				const config = this.#configFor(item);
-				const pkgParent = this.#pkgRel.getParent(item);
+				const pkgParent = this.#pkgRel.get(item.parent).getParent(item);
 				if (pkgParent && config.nestPackages.get()) {
 					return item.path.substring(pkgParent.path.length + 1);
 				}
@@ -76,7 +79,7 @@ export class GoTestItemProvider {
 				if (!config.nestPackages.get()) {
 					return item.parent;
 				}
-				return this.#pkgRel.getParent(item) || item.parent;
+				return this.#pkgRel.get(item.parent).getParent(item) || item.parent;
 			}
 
 			case 'file': {
@@ -88,7 +91,7 @@ export class GoTestItemProvider {
 
 			default: {
 				const config = this.#configFor(item);
-				const parentTest = config.nestSubtests.get() && this.#testRel.getParent(item);
+				const parentTest = config.nestSubtests.get() && this.#testRel.get(item.file.package).getParent(item);
 				if (parentTest) {
 					return parentTest;
 				}
@@ -116,11 +119,11 @@ export class GoTestItemProvider {
 	getChildren(item?: GoTestItem): GoTestItem[] {
 		if (!item) {
 			const children = [];
-			for (const ws of this.#roots) {
+			for (const ws of this.#workspaces) {
 				// If the workspace has discovery disabled and has _not_
 				// been requested (e.g. by opening a file), skip it.
 				const mode = this.#configFor(ws).discovery.get();
-				if (mode !== 'on' && this.#requested.has(`${ws.uri}`)) {
+				if (mode !== 'on' && this.#requested.has(ws)) {
 					continue;
 				}
 
@@ -148,7 +151,7 @@ export class GoTestItemProvider {
 					? [...item.files]
 					: [...item.files].flatMap((x) => this.getChildren(x));
 				if (config.nestPackages.get()) {
-					children.push(...(this.#pkgRel.getChildren(item) || []));
+					children.push(...(this.#pkgRel.get(item.parent).getChildren(item) || []));
 				}
 
 				children.push(...tests);
@@ -162,7 +165,7 @@ export class GoTestItemProvider {
 			case 'file': {
 				const config = this.#configFor(item);
 				if (config.nestSubtests.get()) {
-					return [...item.tests].filter((x) => !this.#testRel.getParent(x));
+					return [...item.tests].filter((x) => !this.#testRel.get(item.package).getParent(x));
 				}
 				return [...item.tests];
 			}
@@ -174,7 +177,7 @@ export class GoTestItemProvider {
 				// 	children.push(this.profiles);
 				// }
 				if (config.nestSubtests.get()) {
-					children.push(...(this.#testRel.getChildren(item) || []));
+					children.push(...(this.#testRel.get(item.file.package).getChildren(item) || []));
 				}
 
 				return children;
@@ -189,7 +192,7 @@ export class GoTestItemProvider {
 		}
 
 		// Update the workspace item set.
-		this.#roots.update(
+		this.#workspaces.update(
 			this.#context.workspace.workspaceFolders,
 			(ws) => `${ws.uri}`,
 			(ws) => new Workspace(ws),
@@ -198,7 +201,7 @@ export class GoTestItemProvider {
 
 		// Query gopls.
 		const results = await Promise.all(
-			[...this.#roots].map(async (ws) => {
+			[...this.#workspaces].map(async (ws) => {
 				const r = await this.#context.commands.modules({
 					Dir: `${ws.uri}`,
 					MaxDepth: -1,
@@ -213,13 +216,205 @@ export class GoTestItemProvider {
 
 			const config = this.#configFor(ws);
 			const exclude = config.exclude.get() || [];
-			ws.update(
+			ws.updateModules(
 				Modules.filter((m) => {
 					const p = path.relative(ws.uri.fsPath, m.Path);
 					return !exclude.some((x) => x.match(p));
 				}),
 			);
 		}
+	}
+
+	async resolvePackages(root: Workspace | Module) {
+		// Query gopls.
+		const result = await this.#context.commands.packages({
+			Files: [`${root.dir}`],
+			Mode: 1,
+			Recursive: true,
+		});
+
+		// Consolidate `foo` and `foo_test`.
+		const ws = root instanceof Workspace ? root : root.workspace;
+		const packages = this.#consolidatePackages(ws, result);
+
+		// Update.
+		root.updatePackages(packages);
+		this.#rebuildRelations(root);
+	}
+
+	async didUpdateFile(wsf: WorkspaceFolder, file: Uri, ranges: Record<string, Range[]> = {}) {
+		// Resolve or create the workspace.
+		let ws = this.#workspaces.get(`${wsf.uri}`);
+		if (!ws) {
+			ws = new Workspace(wsf);
+			this.#workspaces.add(ws);
+		}
+
+		// Query gopls.
+		const packages = this.#consolidatePackages(
+			ws,
+			await this.#context.commands.packages({
+				Files: [`${file}`],
+				Mode: 1,
+			}),
+		);
+
+		// A helper to get the root for a package. If the package belongs to a
+		// module and there is no corresponding module, try reloading. Fallback
+		// to the workspace, for example when the workspace is a subdirectory of
+		// a module.
+		let didReload = false;
+		const getRoot = async (pkg: Commands.Package) => {
+			if (!pkg.ModulePath) return ws;
+
+			const mod = ws.modules.get(pkg.ModulePath);
+			if (mod || didReload) return mod ?? ws;
+
+			// Try reloading, maybe the module will appear.
+			didReload = true;
+			await this.resolveRoots();
+			return ws.modules.get(pkg.ModulePath) ?? ws;
+		};
+
+		// Process packages. An alternative build system may allow a file to be
+		// part of multiple packages, so we can't assume there's only one
+		// package.
+		const updated = [];
+		const roots = new Set<Workspace | Module>([ws]);
+		for (const src of packages) {
+			// Sanity check.
+			if (!src.TestFiles?.length) continue;
+
+			// Get the workspace or module that owns this package.
+			const root = await getRoot(src);
+			roots.add(root);
+
+			// Get or create the package.
+			let pkg = root.packages.get(src.Path);
+			if (!pkg) {
+				pkg = new Package(root, src);
+				root.packages.add(pkg);
+				updated.push({ item: pkg, type: 'added' });
+			}
+
+			// Update the package.
+			updated.push(...pkg.update(src, ranges));
+
+			// Mark the root and the package as requested.
+			this.#requested.add(root);
+			this.#requested.add(pkg);
+		}
+
+		// If anything changed, rebuild relations.
+		if (updated.length > 0) {
+			for (const root of roots) {
+				this.#rebuildRelations(root);
+			}
+		}
+
+		return updated;
+	}
+
+	/**
+	 * Consolidates test and source package data from gopls and filters out
+	 * excluded packages.
+	 *
+	 * If a directory contains `foo.go`, `foo_test.go`, and `foo2_test.go` with
+	 * package directives `foo`, `foo`, and `foo_test`, respectively, gopls will
+	 * report those as three separate packages. This function consolidates them
+	 * into a single package.
+	 * @param ws The workspace.
+	 * @param packages Data provided by gopls.
+	 * @returns The consolidated and filtered package data.
+	 */
+	#consolidatePackages(ws: Workspace, { Packages: all = [] }: Commands.PackagesResults) {
+		if (!all) return [];
+
+		const exclude = this.#configFor(ws).exclude.get() || [];
+		const paths = new Set(all.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
+		const results: Commands.Package[] = [];
+		for (const pkgPath of paths) {
+			const pkgs = all.filter((x) => x.Path === pkgPath || x.ForTest === pkgPath);
+			const files = pkgs
+				.flatMap((x) => x.TestFiles || [])
+				.filter((m) => {
+					const p = path.relative(ws.dir.fsPath, Uri.parse(m.URI).fsPath);
+					return !exclude.some((x) => x.match(p));
+				});
+			if (!files.length) {
+				continue;
+			}
+			results.push({
+				Path: pkgPath,
+				ModulePath: pkgs[0].ModulePath,
+				TestFiles: files,
+			});
+		}
+		return results;
+	}
+
+	/** Rebuilds the package and test relations maps. */
+	#rebuildRelations(root: Workspace | Module) {
+		const pkgs = [...root.packages];
+		this.#pkgRel.get(root).replace(
+			pkgs.map((pkg): [Package, Package | undefined] => {
+				const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
+				ancestors.sort((a, b) => a.path.length - b.path.length);
+				return [pkg, ancestors[0]];
+			}),
+		);
+
+		for (const pkg of pkgs) {
+			const tests = [...pkg.allTests()];
+			this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(tests, test.name)]));
+		}
+	}
+
+	/**
+	 * Adds a new {@link DynamicTestCase dynamic subtest}.
+	 */
+	addTestCase(parent: TestCase, name: string, run: TestRun) {
+		const child = new DynamicTestCase(parent, name, run);
+		parent.file.tests.add(child);
+		this.#testRel.get(parent.file.package).add(parent, child);
+		return child;
+	}
+
+	/**
+	 * Deletes all {@link DynamicTestCase dynamic subtests} that are children of
+	 * the given test case. If a test run is specified, only items from that run
+	 * are removed.
+	 * @returns The items that should be reloaded.
+	 */
+	*removeTestCases(parent: TestCase, run?: TestRun): Iterable<TestCase> {
+		const rel = this.#testRel.get(parent.file.package);
+		if (!(parent instanceof DynamicTestCase)) {
+			const children = rel.getChildren(parent) ?? [];
+			for (const child of children) {
+				yield* this.removeTestCases(child, run);
+			}
+			return;
+		}
+
+		// If `run` is specified, only remove this case if it belongs to `run`
+		if (run && run !== parent.run) {
+			return;
+		}
+
+		// This item's parent should be refreshed.
+		yield rel.getParent(parent)!;
+
+		// Remove children.
+		const children = rel.getChildren(parent) ?? [];
+		for (const child of children) {
+			for (const _ of this.removeTestCases(child, run)) {
+				// Discard
+			}
+		}
+
+		// Remove this item.
+		parent.file.tests.remove(parent);
+		rel.removeChild(parent);
 	}
 
 	/** Returns a {@link TestConfig} for the workspace of the given item. */
@@ -272,35 +467,38 @@ export class Workspace {
 		return this.ws.uri;
 	}
 
-	get root(): Uri {
-		return this.ws.uri;
-	}
-
 	get key() {
 		return `${this.uri}`;
 	}
 
-	update(modules: Commands.Module[]) {
+	updateModules(modules: Commands.Module[]) {
 		this.modules.update(
 			modules,
 			(x) => x.Path,
-			(x) => new Module(this, this.uri, x),
+			(x) => new Module(this, x),
 			() => [], // Nothing to update
+		);
+	}
+
+	updatePackages(packages: Commands.Package[]) {
+		this.packages.update(
+			packages,
+			(x) => x.Path,
+			(x) => new Package(this, x),
+			(x, pkg) => pkg.update(x, {}),
 		);
 	}
 }
 
 export class Module {
 	readonly kind = 'module';
-	readonly root;
 	readonly uri;
 	readonly path;
 	readonly workspace;
 	readonly packages = new ItemSet<Package>();
 
-	constructor(workspace: Workspace, root: Uri, mod: Commands.Module) {
+	constructor(workspace: Workspace, mod: Commands.Module) {
 		this.workspace = workspace;
-		this.root = root;
 		this.uri = Uri.parse(mod.GoMod);
 		this.path = mod.Path;
 	}
@@ -312,6 +510,15 @@ export class Module {
 	get key() {
 		return this.path;
 	}
+
+	updatePackages(packages: Commands.Package[]) {
+		this.packages.update(
+			packages,
+			(x) => x.Path,
+			(x) => new Package(this, x),
+			(x, pkg) => pkg.update(x, {}),
+		);
+	}
 }
 
 export class Package {
@@ -320,7 +527,6 @@ export class Package {
 	readonly uri;
 	readonly path;
 	readonly files = new ItemSet<TestFile>();
-	readonly testRelations = new RelationMap<TestCase, TestCase | undefined>();
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package) {
 		this.parent = parent;
@@ -346,7 +552,6 @@ export class Package {
 	 * @returns Update events. See {@link ItemEvent}.
 	 */
 	update(src: Commands.Package, ranges: Record<string, Range[]>) {
-		// Apply the update
 		const changes = this.files.update(
 			src.TestFiles!.filter((x) => x.Tests.length),
 			(src) => src.URI,
@@ -356,12 +561,6 @@ export class Package {
 		if (!changes.length) {
 			return [];
 		}
-
-		// Recalculate test-subtest relations
-		const allTests = Array.from(this.allTests());
-		this.testRelations.replace(
-			allTests.map((test): [TestCase, TestCase | undefined] => [test, findParentTestCase(allTests, test.name)]),
-		);
 		return changes;
 	}
 
@@ -420,23 +619,6 @@ export abstract class TestCase {
 	get key() {
 		return this.name;
 	}
-
-	/**
-	 * Create a new {@link DynamicTestCase} as a child of this test case.
-	 */
-	addTestCase(name: string, run: TestRun) {
-		const child = new DynamicTestCase(this, name, run);
-		this.file.tests.add(child);
-		this.file.package.testRelations.add(this, child);
-		return child;
-	}
-
-	/**
-	 * Deletes all {@link DynamicTestCase}s that are children of this test case.
-	 * If a test run is specified, only items from that run are removed.
-	 * @returns The items that should be reloaded.
-	 */
-	abstract removeTestCases(run?: TestRun): Iterable<TestCase>;
 }
 
 export class StaticTestCase extends TestCase {
@@ -503,13 +685,6 @@ export class StaticTestCase extends TestCase {
 		if (!r.isEmpty) return true;
 		return !r.start.isEqual(this.range.start) && !r.end.isEqual(this.range.end);
 	}
-
-	*removeTestCases(run?: TestRun) {
-		const children = this.file.package.testRelations.getChildren(this) ?? [];
-		for (const child of children) {
-			yield* child.removeTestCases(run);
-		}
-	}
 }
 
 export class DynamicTestCase extends TestCase {
@@ -521,29 +696,6 @@ export class DynamicTestCase extends TestCase {
 	constructor(parent: TestCase, name: string, run: TestRun) {
 		super(parent.file, parent.uri, parent.kind, name);
 		this.run = run;
-	}
-
-	*removeTestCases(run?: TestRun) {
-		// If `run` is specified, only remove this case if it belongs to `run`
-		if (run && run !== this.run) {
-			return;
-		}
-
-		// This item's parent should be refreshed.
-		const rel = this.file.package.testRelations;
-		yield rel.getParent(this)!;
-
-		// Remove children.
-		const children = rel.getChildren(this) ?? [];
-		for (const child of children) {
-			for (const _ of child.removeTestCases(run)) {
-				// Discard
-			}
-		}
-
-		// Remove this item.
-		this.file.tests.remove(this);
-		rel.removeChild(this);
 	}
 }
 

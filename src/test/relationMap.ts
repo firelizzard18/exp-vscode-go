@@ -11,6 +11,10 @@ export class RelationMap<Child, Parent> {
 		}
 	}
 
+	[Symbol.iterator]() {
+		return this.#childParent.entries();
+	}
+
 	add(parent: Parent, child: Child) {
 		this.#childParent.set(child, parent);
 		const children = this.#parentChild.get(parent);
