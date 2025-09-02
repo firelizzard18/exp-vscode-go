@@ -17,7 +17,7 @@ export class GoTestItemProvider {
 	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
 		() => new RelationMap(),
 	);
-	readonly #workspaces = new ItemSet<Workspace>();
+	readonly #workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
 	readonly #config = new WeakMap<Workspace, WorkspaceConfig>();
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
@@ -194,7 +194,6 @@ export class GoTestItemProvider {
 		// Update the workspace item set.
 		this.#workspaces.update(
 			this.#context.workspace.workspaceFolders,
-			(ws) => `${ws.uri}`,
 			(ws) => new Workspace(ws),
 			() => [], // Nothing to update
 		);
@@ -244,7 +243,7 @@ export class GoTestItemProvider {
 
 	async didUpdateFile(wsf: WorkspaceFolder, file: Uri, ranges: Record<string, Range[]> = {}) {
 		// Resolve or create the workspace.
-		let ws = this.#workspaces.get(`${wsf.uri}`);
+		let ws = this.#workspaces.get(wsf);
 		if (!ws) {
 			ws = new Workspace(wsf);
 			this.#workspaces.add(ws);
@@ -290,7 +289,7 @@ export class GoTestItemProvider {
 			roots.add(root);
 
 			// Get or create the package.
-			let pkg = root.packages.get(src.Path);
+			let pkg = root.packages.get(src);
 			if (!pkg) {
 				pkg = new Package(root, src);
 				root.packages.add(pkg);
@@ -452,8 +451,8 @@ export class GoTestItemProvider {
 export class Workspace {
 	readonly kind = 'workspace';
 	readonly ws;
-	readonly modules = new ItemSet<Module>();
-	readonly packages = new ItemSet<Package>();
+	readonly modules = new ItemSet<Module, Commands.Module>((x) => x.Path);
+	readonly packages = new ItemSet<Package, Commands.Package>((x) => x.Path);
 
 	constructor(ws: WorkspaceFolder) {
 		this.ws = ws;
@@ -474,7 +473,6 @@ export class Workspace {
 	updateModules(modules: Commands.Module[]) {
 		this.modules.update(
 			modules,
-			(x) => x.Path,
 			(x) => new Module(this, x),
 			() => [], // Nothing to update
 		);
@@ -483,7 +481,6 @@ export class Workspace {
 	updatePackages(packages: Commands.Package[]) {
 		this.packages.update(
 			packages,
-			(x) => x.Path,
 			(x) => new Package(this, x),
 			(x, pkg) => pkg.update(x, {}),
 		);
@@ -495,7 +492,7 @@ export class Module {
 	readonly uri;
 	readonly path;
 	readonly workspace;
-	readonly packages = new ItemSet<Package>();
+	readonly packages = new ItemSet<Package, Commands.Package>((x) => x.Path);
 
 	constructor(workspace: Workspace, mod: Commands.Module) {
 		this.workspace = workspace;
@@ -514,7 +511,6 @@ export class Module {
 	updatePackages(packages: Commands.Package[]) {
 		this.packages.update(
 			packages,
-			(x) => x.Path,
 			(x) => new Package(this, x),
 			(x, pkg) => pkg.update(x, {}),
 		);
@@ -526,7 +522,7 @@ export class Package {
 	readonly parent;
 	readonly uri;
 	readonly path;
-	readonly files = new ItemSet<TestFile>();
+	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package) {
 		this.parent = parent;
@@ -554,7 +550,6 @@ export class Package {
 	update(src: Commands.Package, ranges: Record<string, Range[]>) {
 		const changes = this.files.update(
 			src.TestFiles!.filter((x) => x.Tests.length),
-			(src) => src.URI,
 			(src) => new TestFile(this, src),
 			(src, file) => file.update(src, ranges[`${file.uri}`] || []),
 		);
@@ -575,7 +570,7 @@ export class TestFile {
 	readonly kind = 'file';
 	readonly package;
 	readonly uri;
-	readonly tests = new ItemSet<TestCase>();
+	readonly tests = new ItemSet<TestCase, Commands.TestCase>((x) => x.Name);
 
 	constructor(pkg: Package, file: Commands.TestFile) {
 		this.package = pkg;
@@ -595,7 +590,6 @@ export class TestFile {
 	update(src: Commands.TestFile, ranges: Range[]) {
 		return this.tests.update(
 			src.Tests,
-			(src) => src.Name,
 			(src) => new StaticTestCase(this, src),
 			(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges) : []),
 			(test) => test instanceof DynamicTestCase,

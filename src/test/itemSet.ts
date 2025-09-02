@@ -7,10 +7,12 @@
  */
 export type ItemEvent<T> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
 
-export class ItemSet<T extends { key: string }> {
-	readonly #items: Map<string, T>;
+export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullable<object>> {
+	readonly #srcKey;
+	readonly #items;
 
-	constructor(items: T[] = []) {
+	constructor(srcKey: (s: S) => string, items: T[] = []) {
+		this.#srcKey = srcKey;
 		this.#items = new Map(items.map((x) => [x.key, x]));
 	}
 
@@ -30,12 +32,26 @@ export class ItemSet<T extends { key: string }> {
 		return this.#items.size;
 	}
 
-	has(item: string | T) {
-		return this.#items.has(typeof item === 'string' ? item : item.key);
+	has(item: string | T | S) {
+		return this.#items.has(this.#key(item));
 	}
 
-	get(item: string | T) {
-		return this.#items.get(typeof item === 'string' ? item : item.key);
+	get(item: string | T | S) {
+		return this.#items.get(this.#key(item));
+	}
+
+	remove(item: string | T | S) {
+		this.#items.delete(this.#key(item));
+	}
+
+	#key(item: string | T | S) {
+		if (typeof item !== 'object') {
+			return item;
+		}
+		if ('key' in item) {
+			return item.key;
+		}
+		return this.#srcKey(item);
 	}
 
 	add(...items: T[]) {
@@ -43,10 +59,6 @@ export class ItemSet<T extends { key: string }> {
 			if (this.has(item)) continue;
 			this.#items.set(item.key, item);
 		}
-	}
-
-	remove(item: string | T) {
-		this.#items.delete(typeof item === 'string' ? item : item.key);
 	}
 
 	/**
@@ -75,16 +87,15 @@ export class ItemSet<T extends { key: string }> {
 	 * @param make A function that creates a new item from a source value.
 	 * @param update A function that updates an existing item with a source value.
 	 */
-	update<S, R>(
-		src: readonly S[],
-		id: (_: S) => string,
-		make: (_: S) => T,
-		update: (_1: S, _2: T) => Iterable<ItemEvent<R>>,
+	update<SS extends S, R>(
+		src: readonly SS[],
+		make: (_: SS) => T,
+		update: (_1: SS, _2: T) => Iterable<ItemEvent<R>>,
 		keep: (_: T) => boolean = () => false,
 	): ItemEvent<T | R>[] {
 		// Delete items that are no longer present
 		const changed: ItemEvent<T | R>[] = [];
-		const srcKeys = new Set(src.map(id));
+		const srcKeys = new Set(src.map((x) => this.#srcKey(x)));
 		for (const [key, item] of this.#items.entries()) {
 			if (!srcKeys.has(key) && !keep(item)) {
 				changed.push({ item, type: 'removed' });
@@ -94,7 +105,7 @@ export class ItemSet<T extends { key: string }> {
 
 		// Update and insert items
 		for (const value of src) {
-			const key = id(value);
+			const key = this.#srcKey(value);
 			let item = this.get(key);
 			if (!item) {
 				item = make(value);
