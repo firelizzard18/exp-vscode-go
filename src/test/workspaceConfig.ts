@@ -3,8 +3,51 @@ import { VSCodeWorkspace } from '../utils/testing';
 import { Minimatch } from 'minimatch';
 import { Flags } from './utils';
 import { resolvePath, substituteEnv } from '../utils/util';
+import { GoTestItem, Workspace } from './model';
+
+const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 
 export class WorkspaceConfig {
+	readonly #vsc;
+	readonly #workspaces = new WeakMap<Workspace, ConfigSet>();
+
+	constructor(workspace: VSCodeWorkspace) {
+		this.#vsc = workspace;
+	}
+
+	/** Returns a {@link TestConfig} for the workspace of the given item. */
+	for(item: GoTestItem) {
+		for (;;) {
+			switch (item.kind) {
+				case 'workspace':
+					break;
+
+				case 'module':
+					item = item.workspace;
+					continue;
+				case 'package':
+					item = item.parent;
+					continue;
+				case 'file':
+					item = item.package;
+					continue;
+				default:
+					item = item.file;
+					continue;
+			}
+
+			// Cache config objects.
+			const existing = this.#workspaces.get(item);
+			if (existing) return existing;
+
+			const config = new ConfigSet(this.#vsc, item.ws);
+			this.#workspaces.set(item, config);
+			return config;
+		}
+	}
+}
+
+class ConfigSet {
 	readonly #workspace;
 	readonly #scope;
 	readonly #items: Item<unknown>[] = [];
@@ -12,6 +55,11 @@ export class WorkspaceConfig {
 	constructor(workspace: VSCodeWorkspace, scope?: ConfigurationScope) {
 		this.#workspace = workspace;
 		this.#scope = scope;
+
+		// Subscribe to config changes, and unsubscribe when the Workspace is
+		// collected.
+		const sub = workspace.onDidChangeConfiguration((e) => this.invalidate(e));
+		dispose.register(this, () => sub.dispose());
 	}
 
 	/** Invalidates cached configuration values. */

@@ -35,7 +35,10 @@ export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
 export type VSCodeFileSystem = Pick<vscode.FileSystem, 'delete' | 'createDirectory' | 'readFile'>;
 
 // The subset of vscode.workspace that is used by the test explorer.
-export type VSCodeWorkspace = Pick<typeof vscode.workspace, 'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll'> & {
+export type VSCodeWorkspace = Pick<
+	typeof vscode.workspace,
+	'workspaceFolders' | 'getWorkspaceFolder' | 'saveAll' | 'onDidChangeConfiguration'
+> & {
 	getConfiguration(section: string, scope?: vscode.ConfigurationScope | null): ConfigValue;
 
 	readonly fs: VSCodeFileSystem;

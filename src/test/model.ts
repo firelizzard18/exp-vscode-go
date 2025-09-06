@@ -1,4 +1,4 @@
-import { ConfigurationChangeEvent, Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
+import { Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
 import { Commands, Context } from '../utils/testing';
 import { ItemEvent, ItemSet } from './itemSet';
 import deepEqual from 'deep-equal';
@@ -9,180 +9,15 @@ import { WeakMapWithDefault } from '../utils/map';
 
 export type GoTestItem = Module | Workspace | Package | TestFile | TestCase;
 
-export class GoTestItemProvider {
+export class GoTestItemResolver {
 	readonly #context;
-	readonly #pkgRel = new WeakMapWithDefault<Workspace | Module, RelationMap<Package, Package | undefined>>(
-		() => new RelationMap(),
-	);
-	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
-		() => new RelationMap(),
-	);
-	readonly #workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
-	readonly #config = new WeakMap<Workspace, WorkspaceConfig>();
-	readonly #requested = new WeakSet<Workspace | Module | Package>();
+	readonly #config;
+	readonly #provider;
 
-	constructor(context: Context) {
+	constructor(context: Context, config: WorkspaceConfig, provider: GoTestItemProvider) {
 		this.#context = context;
-	}
-
-	didChangeConfiguration(e: ConfigurationChangeEvent) {
-		// Invalidate cached configuration values for all workspaces. It would
-		// be better to directly iterate over the config cache, but weak maps
-		// can't be iterated.
-		for (const ws of this.#workspaces) {
-			this.#config.get(ws)?.invalidate(e);
-		}
-	}
-
-	labelFor(item: GoTestItem) {
-		switch (item.kind) {
-			case 'workspace':
-				return `${item.ws.name} (workspace)`;
-			case 'module':
-				return item.path;
-
-			case 'package': {
-				const config = this.#configFor(item);
-				const pkgParent = this.#pkgRel.get(item.parent).getParent(item);
-				if (pkgParent && config.nestPackages.get()) {
-					return item.path.substring(pkgParent.path.length + 1);
-				}
-				if (item.parent instanceof Module && item.path.startsWith(`${item.parent.path}/`)) {
-					return item.path.substring(item.parent.path.length + 1);
-				}
-				return item.path;
-			}
-
-			case 'file':
-				return path.basename(item.uri.fsPath);
-
-			default: {
-				// If we are a subtest, remove the parent's name from the label
-				const parent = this.getParent(item);
-				if (parent instanceof TestCase) {
-					return item.name.replace(`${parent.name}/`, '');
-				}
-				return item.name;
-			}
-		}
-	}
-
-	getParent(item: GoTestItem): GoTestItem | undefined {
-		switch (item.kind) {
-			case 'workspace':
-			case 'module':
-				// Modules are root items in the view.
-				return undefined;
-
-			case 'package': {
-				const config = this.#configFor(item);
-				if (!config.nestPackages.get()) {
-					return item.parent;
-				}
-				return this.#pkgRel.get(item.parent).getParent(item) || item.parent;
-			}
-
-			case 'file': {
-				if (item.package.isRootPkg) {
-					return this.getParent(item.package);
-				}
-				return item.package;
-			}
-
-			default: {
-				const config = this.#configFor(item);
-				const parentTest = config.nestSubtests.get() && this.#testRel.get(item.file.package).getParent(item);
-				if (parentTest) {
-					return parentTest;
-				}
-				if (config.showFiles.get()) {
-					return item.file;
-				}
-				return this.getParent(item.file);
-			}
-		}
-	}
-
-	hasChildren(item: GoTestItem) {
-		switch (item.kind) {
-			case 'workspace':
-			case 'module':
-			case 'package':
-			case 'file':
-				return true;
-
-			default:
-				return this.getChildren(item).length > 0;
-		}
-	}
-
-	getChildren(item?: GoTestItem): GoTestItem[] {
-		if (!item) {
-			const children = [];
-			for (const ws of this.#workspaces) {
-				// If the workspace has discovery disabled and has _not_
-				// been requested (e.g. by opening a file), skip it.
-				const mode = this.#configFor(ws).discovery.get();
-				if (mode !== 'on' && this.#requested.has(ws)) {
-					continue;
-				}
-
-				// If the workspace has packages (outside of a module),
-				// include it as a root.
-				if (ws.packages.size > 0) {
-					children.push(ws);
-				}
-
-				// Include any modules as roots.
-				children.push(...ws.modules);
-			}
-			return children;
-		}
-
-		switch (item.kind) {
-			case 'workspace':
-			case 'module':
-				return [...item.packages];
-
-			case 'package': {
-				const config = this.#configFor(item);
-				const children: GoTestItem[] = [];
-				const tests = config.showFiles.get()
-					? [...item.files]
-					: [...item.files].flatMap((x) => this.getChildren(x));
-				if (config.nestPackages.get()) {
-					children.push(...(this.#pkgRel.get(item.parent).getChildren(item) || []));
-				}
-
-				children.push(...tests);
-
-				// if (this.profiles.hasChildren) {
-				// 	children.push(this.profiles);
-				// }
-				return children;
-			}
-
-			case 'file': {
-				const config = this.#configFor(item);
-				if (config.nestSubtests.get()) {
-					return [...item.tests].filter((x) => !this.#testRel.get(item.package).getParent(x));
-				}
-				return [...item.tests];
-			}
-
-			default: {
-				const config = this.#configFor(item);
-				const children: TestCase[] = [];
-				// if (this instanceof StaticTestCase && this.profiles.hasChildren) {
-				// 	children.push(this.profiles);
-				// }
-				if (config.nestSubtests.get()) {
-					children.push(...(this.#testRel.get(item.file.package).getChildren(item) || []));
-				}
-
-				return children;
-			}
-		}
+		this.#config = config;
+		this.#provider = provider;
 	}
 
 	/** Reloads workspaces and modules. */
@@ -192,15 +27,11 @@ export class GoTestItemProvider {
 		}
 
 		// Update the workspace item set.
-		this.#workspaces.update(
-			this.#context.workspace.workspaceFolders,
-			(ws) => new Workspace(ws),
-			() => [], // Nothing to update
-		);
+		this.#provider.updateWorkspaces(this.#context.workspace.workspaceFolders);
 
 		// Query gopls.
 		const results = await Promise.all(
-			[...this.#workspaces].map(async (ws) => {
+			[...this.#provider.workspaces].map(async (ws) => {
 				const r = await this.#context.commands.modules({
 					Dir: `${ws.uri}`,
 					MaxDepth: -1,
@@ -213,7 +44,7 @@ export class GoTestItemProvider {
 		for (const [ws, { Modules }] of results) {
 			if (!Modules) continue;
 
-			const config = this.#configFor(ws);
+			const config = this.#config.for(ws);
 			const exclude = config.exclude.get() || [];
 			ws.updateModules(
 				Modules.filter((m) => {
@@ -238,18 +69,12 @@ export class GoTestItemProvider {
 
 		// Update.
 		root.updatePackages(packages);
-		this.#rebuildRelations(root);
+		this.#provider.rebuildRelations(root);
 	}
 
 	async didUpdateFile(wsf: WorkspaceFolder, file: Uri, ranges: Record<string, Range[]> = {}) {
-		// Resolve or create the workspace.
-		let ws = this.#workspaces.get(wsf);
-		if (!ws) {
-			ws = new Workspace(wsf);
-			this.#workspaces.add(ws);
-		}
-
 		// Query gopls.
+		const ws = this.#provider.getWorkspace(wsf);
 		const packages = this.#consolidatePackages(
 			ws,
 			await this.#context.commands.packages({
@@ -300,14 +125,14 @@ export class GoTestItemProvider {
 			updated.push(...pkg.update(src, ranges));
 
 			// Mark the root and the package as requested.
-			this.#requested.add(root);
-			this.#requested.add(pkg);
+			this.#provider.markRequested(root);
+			this.#provider.markRequested(pkg);
 		}
 
 		// If anything changed, rebuild relations.
 		if (updated.length > 0) {
 			for (const root of roots) {
-				this.#rebuildRelations(root);
+				this.#provider.rebuildRelations(root);
 			}
 		}
 
@@ -329,7 +154,7 @@ export class GoTestItemProvider {
 	#consolidatePackages(ws: Workspace, { Packages: all = [] }: Commands.PackagesResults) {
 		if (!all) return [];
 
-		const exclude = this.#configFor(ws).exclude.get() || [];
+		const exclude = this.#config.for(ws).exclude.get() || [];
 		const paths = new Set(all.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
 		const results: Commands.Package[] = [];
 		for (const pkgPath of paths) {
@@ -351,9 +176,202 @@ export class GoTestItemProvider {
 		}
 		return results;
 	}
+}
+
+export class GoTestItemProvider {
+	readonly #config;
+	readonly #pkgRel = new WeakMapWithDefault<Workspace | Module, RelationMap<Package, Package | undefined>>(
+		() => new RelationMap(),
+	);
+	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
+		() => new RelationMap(),
+	);
+	readonly #workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
+	readonly #requested = new WeakSet<Workspace | Module | Package>();
+
+	constructor(config: WorkspaceConfig) {
+		this.#config = config;
+	}
+
+	get workspaces() {
+		return this.#workspaces[Symbol.iterator]();
+	}
+
+	markRequested(item: Workspace | Module | Package) {
+		this.#requested.add(item);
+	}
+
+	labelFor(item: GoTestItem) {
+		switch (item.kind) {
+			case 'workspace':
+				return `${item.ws.name} (workspace)`;
+			case 'module':
+				return item.path;
+
+			case 'package': {
+				const config = this.#config.for(item);
+				const pkgParent = this.#pkgRel.get(item.parent).getParent(item);
+				if (pkgParent && config.nestPackages.get()) {
+					return item.path.substring(pkgParent.path.length + 1);
+				}
+				if (item.parent instanceof Module && item.path.startsWith(`${item.parent.path}/`)) {
+					return item.path.substring(item.parent.path.length + 1);
+				}
+				return item.path;
+			}
+
+			case 'file':
+				return path.basename(item.uri.fsPath);
+
+			default: {
+				// If we are a subtest, remove the parent's name from the label
+				const parent = this.getParent(item);
+				if (parent instanceof TestCase) {
+					return item.name.replace(`${parent.name}/`, '');
+				}
+				return item.name;
+			}
+		}
+	}
+
+	getParent(item: GoTestItem): GoTestItem | undefined {
+		switch (item.kind) {
+			case 'workspace':
+			case 'module':
+				// Modules are root items in the view.
+				return undefined;
+
+			case 'package': {
+				const config = this.#config.for(item);
+				if (!config.nestPackages.get()) {
+					return item.parent;
+				}
+				return this.#pkgRel.get(item.parent).getParent(item) || item.parent;
+			}
+
+			case 'file': {
+				if (item.package.isRootPkg) {
+					return this.getParent(item.package);
+				}
+				return item.package;
+			}
+
+			default: {
+				const config = this.#config.for(item);
+				const parentTest = config.nestSubtests.get() && this.#testRel.get(item.file.package).getParent(item);
+				if (parentTest) {
+					return parentTest;
+				}
+				if (config.showFiles.get()) {
+					return item.file;
+				}
+				return this.getParent(item.file);
+			}
+		}
+	}
+
+	hasChildren(item: GoTestItem) {
+		switch (item.kind) {
+			case 'workspace':
+			case 'module':
+			case 'package':
+			case 'file':
+				return true;
+
+			default:
+				return this.getChildren(item).length > 0;
+		}
+	}
+
+	getChildren(item?: GoTestItem): GoTestItem[] {
+		if (!item) {
+			const children = [];
+			for (const ws of this.#workspaces) {
+				// If the workspace has discovery disabled and has _not_
+				// been requested (e.g. by opening a file), skip it.
+				const mode = this.#config.for(ws).discovery.get();
+				if (mode !== 'on' && this.#requested.has(ws)) {
+					continue;
+				}
+
+				// If the workspace has packages (outside of a module),
+				// include it as a root.
+				if (ws.packages.size > 0) {
+					children.push(ws);
+				}
+
+				// Include any modules as roots.
+				children.push(...ws.modules);
+			}
+			return children;
+		}
+
+		switch (item.kind) {
+			case 'workspace':
+			case 'module':
+				return [...item.packages];
+
+			case 'package': {
+				const config = this.#config.for(item);
+				const children: GoTestItem[] = [];
+				const tests = config.showFiles.get()
+					? [...item.files]
+					: [...item.files].flatMap((x) => this.getChildren(x));
+				if (config.nestPackages.get()) {
+					children.push(...(this.#pkgRel.get(item.parent).getChildren(item) || []));
+				}
+
+				children.push(...tests);
+
+				// if (this.profiles.hasChildren) {
+				// 	children.push(this.profiles);
+				// }
+				return children;
+			}
+
+			case 'file': {
+				const config = this.#config.for(item);
+				if (config.nestSubtests.get()) {
+					return [...item.tests].filter((x) => !this.#testRel.get(item.package).getParent(x));
+				}
+				return [...item.tests];
+			}
+
+			default: {
+				const config = this.#config.for(item);
+				const children: TestCase[] = [];
+				// if (this instanceof StaticTestCase && this.profiles.hasChildren) {
+				// 	children.push(this.profiles);
+				// }
+				if (config.nestSubtests.get()) {
+					children.push(...(this.#testRel.get(item.file.package).getChildren(item) || []));
+				}
+
+				return children;
+			}
+		}
+	}
+
+	getWorkspace(wsf: WorkspaceFolder) {
+		// Resolve or create a Workspace.
+		let ws = this.#workspaces.get(wsf);
+		if (ws) return ws;
+
+		ws = new Workspace(wsf);
+		this.#workspaces.add(ws);
+		return ws;
+	}
+
+	updateWorkspaces(wsf: readonly WorkspaceFolder[]) {
+		this.#workspaces.update(
+			wsf,
+			(ws) => new Workspace(ws),
+			() => [], // Nothing to update
+		);
+	}
 
 	/** Rebuilds the package and test relations maps. */
-	#rebuildRelations(root: Workspace | Module) {
+	rebuildRelations(root: Workspace | Module) {
 		const pkgs = [...root.packages];
 		this.#pkgRel.get(root).replace(
 			pkgs.map((pkg): [Package, Package | undefined] => {
@@ -414,37 +432,6 @@ export class GoTestItemProvider {
 		// Remove this item.
 		parent.file.tests.remove(parent);
 		rel.removeChild(parent);
-	}
-
-	/** Returns a {@link TestConfig} for the workspace of the given item. */
-	#configFor(item: GoTestItem) {
-		for (;;) {
-			switch (item.kind) {
-				case 'workspace':
-					break;
-
-				case 'module':
-					item = item.workspace;
-					continue;
-				case 'package':
-					item = item.parent;
-					continue;
-				case 'file':
-					item = item.package;
-					continue;
-				default:
-					item = item.file;
-					continue;
-			}
-
-			// Cache config objects.
-			const existing = this.#config.get(item);
-			if (existing) return existing;
-
-			const config = new WorkspaceConfig(this.#context.workspace, item.ws);
-			this.#config.set(item, config);
-			return config;
-		}
 	}
 }
 
