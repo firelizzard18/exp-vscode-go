@@ -7,58 +7,13 @@ import { GoTestItem, Workspace } from './model';
 
 const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 
-export class WorkspaceConfig {
-	readonly #vsc;
-	readonly #workspaces = new WeakMap<Workspace, ConfigSet>();
-
-	constructor(workspace: VSCodeWorkspace) {
-		this.#vsc = workspace;
-	}
-
-	/** Returns a {@link TestConfig} for the workspace of the given item. */
-	for(item: GoTestItem) {
-		for (;;) {
-			switch (item.kind) {
-				case 'workspace':
-					break;
-
-				case 'module':
-					item = item.workspace;
-					continue;
-				case 'package':
-					item = item.parent;
-					continue;
-				case 'file':
-					item = item.package;
-					continue;
-				case 'profile-container':
-				case 'profile-set':
-				case 'profile':
-					item = item.parent;
-					continue;
-				default:
-					item = item.file;
-					continue;
-			}
-
-			// Cache config objects.
-			const existing = this.#workspaces.get(item);
-			if (existing) return existing;
-
-			const config = new ConfigSet(this.#vsc, item.ws);
-			this.#workspaces.set(item, config);
-			return config;
-		}
-	}
-}
-
 class ConfigSet {
-	readonly #workspace;
+	protected readonly vsc;
 	readonly #scope;
 	readonly #items: Item<unknown>[] = [];
 
 	constructor(workspace: VSCodeWorkspace, scope?: ConfigurationScope) {
-		this.#workspace = workspace;
+		this.vsc = workspace;
 		this.#scope = scope;
 
 		// Subscribe to config changes, and unsubscribe when the Workspace is
@@ -77,7 +32,7 @@ class ConfigSet {
 	}
 
 	#config<T>(section: string, name: string) {
-		const item = new ConfigItem<T>(this.#workspace, this.#scope, section, name);
+		const item = new ConfigItem<T>(this.vsc, this.#scope, section, name);
 		this.#items.push(item);
 		return item;
 	}
@@ -134,9 +89,9 @@ class ConfigSet {
 			// Determine the workspace folder from the scope.
 			const wsf =
 				this.#scope instanceof Uri
-					? this.#workspace.getWorkspaceFolder(this.#scope)
+					? this.vsc.getWorkspaceFolder(this.#scope)
 					: this.#scope?.uri
-						? this.#workspace.getWorkspaceFolder(this.#scope.uri)
+						? this.vsc.getWorkspaceFolder(this.#scope.uri)
 						: undefined;
 
 			// Convert to an object.
@@ -168,9 +123,9 @@ class ConfigSet {
 		// Determine the workspace folder from the scope.
 		const wsf =
 			this.#scope instanceof Uri
-				? this.#workspace.getWorkspaceFolder(this.#scope)
+				? this.vsc.getWorkspaceFolder(this.#scope)
 				: this.#scope?.uri
-					? this.#workspace.getWorkspaceFolder(this.#scope.uri)
+					? this.vsc.getWorkspaceFolder(this.#scope.uri)
 					: undefined;
 
 		// Merge everything.
@@ -182,6 +137,50 @@ class ConfigSet {
 		}
 
 		return env;
+	}
+}
+
+export class WorkspaceConfig extends ConfigSet {
+	readonly #workspaces = new WeakMap<Workspace, ConfigSet>();
+
+	constructor(workspace: VSCodeWorkspace) {
+		super(workspace);
+	}
+
+	/** Returns a {@link TestConfig} for the workspace of the given item. */
+	for(item: GoTestItem) {
+		for (;;) {
+			switch (item.kind) {
+				case 'workspace':
+					break;
+
+				case 'module':
+					item = item.workspace;
+					continue;
+				case 'package':
+					item = item.parent;
+					continue;
+				case 'file':
+					item = item.package;
+					continue;
+				case 'profile-container':
+				case 'profile-set':
+				case 'profile':
+					item = item.parent;
+					continue;
+				default:
+					item = item.file;
+					continue;
+			}
+
+			// Cache config objects.
+			const existing = this.#workspaces.get(item);
+			if (existing) return existing;
+
+			const config = new ConfigSet(this.vsc, item.ws);
+			this.#workspaces.set(item, config);
+			return config;
+		}
 	}
 }
 
