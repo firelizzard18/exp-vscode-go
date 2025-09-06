@@ -1,6 +1,6 @@
 import { expect, jest } from '@jest/globals';
-import { Workspace } from '../../utils/txtar';
-import { TestHost, withCommands, withSetupArgs, withWorkspace } from './host';
+import { Workspace } from '@/test/utils/txtar';
+import { TestHost, withCommands, withSetupArgs, withWorkspace } from '@/test/utils/host';
 
 describe('Test manager', () => {
 	const ws = Workspace.setup(

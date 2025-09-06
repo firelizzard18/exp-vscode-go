@@ -16,22 +16,22 @@ import type {
 	WorkspaceFolder,
 } from 'vscode';
 import { Uri } from 'vscode';
-import { Commands, ConfigValue, Context, TestController, Workspace, FileSystem } from '../../../src/test/testing';
-import { CommandInvocation, GoExtensionAPI } from '../../../src/vscode-go';
-import { Spawner } from '../../../src/test/utils';
-import { TestManager } from '../../../src/test/manager';
+import { Commands, ConfigValue, Context, TestController, VSCodeWorkspace, VSCodeFileSystem } from '@/src/utils/testing';
+import { CommandInvocation, GoExtensionAPI } from '@/src/vscode-go';
+import { Spawner } from '@/src/test/utils';
+import { TestManager } from '@/src/test/manager';
 import cp from 'node:child_process';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import pkg from '../../../package.json';
+import pkg from '@/package.json';
 
 const config = pkg.contributes.configuration.properties;
 
 export type SetupArgs = Parameters<TestManager['setup']>[0];
 
 interface Configuration {
-	enable: boolean;
+	enable: boolean | 'boolean';
 	exclude: Record<string, boolean>;
 	discovery: 'on' | 'off';
 	showFiles: boolean;
@@ -125,10 +125,10 @@ class TestCommands implements Commands {
 	};
 }
 
-class TestWorkspace implements Workspace {
+class TestWorkspace implements VSCodeWorkspace {
 	readonly workspaceFolders: WorkspaceFolder[] = [];
 	readonly config: Configuration = {
-		enable: config['exp-vscode-go.testExplorer.enable'].default,
+		enable: config['exp-vscode-go.testExplorer.enable'].default as any,
 		exclude: config['exp-vscode-go.testExplorer.exclude'].default,
 		discovery: config['exp-vscode-go.testExplorer.discovery'].default as any,
 		showFiles: config['exp-vscode-go.testExplorer.showFiles'].default,
@@ -165,7 +165,7 @@ class TestWorkspace implements Workspace {
 	}
 }
 
-class MockFileSystem implements FileSystem {
+class MockFileSystem implements VSCodeFileSystem {
 	async delete(uri: Uri, options?: { recursive?: boolean; useTrash?: boolean }): Promise<void> {
 		await fs.rm(uri.fsPath, { recursive: options?.recursive });
 	}

@@ -1,5 +1,5 @@
 import { Uri } from 'vscode';
-import { TxTar } from '../utils/txtar';
+import { TxTar } from './txtar';
 import { expect } from '@jest/globals';
 
 const src = `

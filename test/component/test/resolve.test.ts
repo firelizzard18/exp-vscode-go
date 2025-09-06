@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable n/no-unpublished-import */
-import { TestHost, withConfiguration, withWorkspace } from './host';
+import { TestHost, withConfiguration, withWorkspace } from '@/test/utils/host';
 import { expect } from '@jest/globals';
-import './expect';
+import '@/test/utils/expect';
 import { Uri } from 'vscode';
-import { Workspace } from '../../utils/txtar';
-import { Module, Package, TestCase } from '../../../src/test/item';
+import { Workspace } from '@/test/utils/txtar';
+import { Module, Package, TestCase } from '@/src/test/item';
 import { TestRun } from 'vscode';
 
 describe('Test resolver', () => {
