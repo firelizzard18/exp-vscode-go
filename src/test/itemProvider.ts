@@ -1,6 +1,6 @@
 import { TestRun, Uri, WorkspaceFolder } from 'vscode';
 import { ItemSet } from './itemSet';
-import { RelationMap } from '../utils/relationMap';
+import { RelationMap } from '../utils/map';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';

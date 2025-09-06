@@ -1,20 +1,46 @@
-import { Range, Uri, WorkspaceFolder } from 'vscode';
-import { Commands, Context } from '../utils/testing';
+import { Range, TestItem, Uri, WorkspaceFolder } from 'vscode';
+import { Commands, Context, TestController } from '../utils/testing';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
-import { Module, Package, Workspace } from './model';
+import { GoTestItem, Module, Package, TestCase, TestFile, Workspace } from './model';
 import { GoTestItemProvider } from './itemProvider';
+import { EventEmitter } from '../utils/eventEmitter';
+import { BiMap } from '../utils/map';
 
 export class GoTestItemResolver {
+	readonly #didChangeTestItem = new EventEmitter<(items: Iterable<GoTestItem>) => void>();
+	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
+	readonly #didInvalidateTestResults = new EventEmitter<(items: Iterable<TestCase | TestFile>) => void>();
+	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
+
 	readonly #context;
 	readonly #config;
 	readonly #provider;
+	readonly #ctrl;
+	readonly #items = new BiMap<TestItem, GoTestItem>();
 
-	constructor(context: Context, config: WorkspaceConfig, provider: GoTestItemProvider) {
+	constructor(context: Context, config: WorkspaceConfig, provider: GoTestItemProvider, ctrl: TestController) {
 		this.#context = context;
 		this.#config = config;
 		this.#provider = provider;
+		this.#ctrl = ctrl;
 	}
+
+	/**
+	 * Entry points:
+	 * - config change
+	 * - explorer
+	 *   - resolve roots
+	 *   - resolve children
+	 *   - refresh all
+	 *   - refresh item
+	 * - file
+	 *   - open
+	 *   - modify
+	 *   - create/delete
+	 *   - code lens
+	 * - runner
+	 */
 
 	/** Reloads workspaces and modules. */
 	async resolveRoots() {
