@@ -8,7 +8,7 @@ import { TestConfig } from './config';
 import deepEqual from 'deep-equal';
 import { ProfileContainer } from './profile';
 import { ItemEvent, ItemSet } from './itemSet';
-import { RelationMap } from './relationMap';
+import { RelationMap } from '../utils/relationMap';
 
 export namespace GoTestItem {
 	/**
