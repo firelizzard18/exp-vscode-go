@@ -9,8 +9,10 @@
 		"esModuleInterop": true,
 		"resolveJsonModule": true,
 		"noEmit": true,
-    "paths": {
-      "@/*": ["./*"],
-    },
-	}
+		"paths": {
+			"@/*": [
+				"./*"
+			],
+		},
+	},
 }
