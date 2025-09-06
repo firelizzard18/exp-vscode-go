@@ -21,12 +21,12 @@ import {
 	CustomDocumentEditEvent,
 	EventEmitter,
 } from 'vscode';
-import type { GoTestItem } from './item';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
 import { Context, doSafe } from '../utils/testing';
 import moment from 'moment';
 import { HoverEvent, Message } from '../../webview/pprof/messages';
+import type { GoTestItem } from './model';
 
 export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
 	const command = (name: string, fn: (...args: any[]) => any) => {
@@ -66,26 +66,13 @@ export function makeProfileTypeSet() {
 	];
 }
 
-export class ProfileContainer implements GoTestItem {
+export class ProfileContainer {
 	readonly kind = 'profile-container';
-	readonly label = 'Profiles';
 	readonly parent: GoTestItem;
 	readonly profiles = new Map<number, ProfileSet>();
 
 	constructor(parent: GoTestItem) {
 		this.parent = parent;
-	}
-
-	get hasChildren() {
-		return this.getChildren().length > 0;
-	}
-
-	getParent() {
-		return this.parent;
-	}
-
-	getChildren() {
-		return [...this.profiles.values()].filter((x) => x.hasChildren);
 	}
 
 	async addProfile(dir: Uri, type: ProfileType, time: Date): Promise<CapturedProfile> {
@@ -105,7 +92,7 @@ export class ProfileContainer implements GoTestItem {
 	}
 }
 
-export class ProfileSet implements GoTestItem {
+export class ProfileSet {
 	readonly kind = 'profile-set';
 	readonly time: Date;
 	readonly parent: ProfileContainer;
@@ -115,35 +102,12 @@ export class ProfileSet implements GoTestItem {
 		this.parent = parent;
 		this.time = time;
 	}
-
-	get label() {
-		const now = new Date();
-		if (now.getFullYear() !== this.time.getFullYear()) {
-			return moment(this.time).format('YYYY-MM-DD HH:mm:ss');
-		}
-		if (now.getMonth() !== this.time.getMonth() || now.getDate() !== this.time.getDate()) {
-			return moment(this.time).format('MM-DD HH:mm:ss');
-		}
-		return moment(this.time).format('HH:mm:ss');
-	}
-
-	get hasChildren() {
-		return this.profiles.size > 0;
-	}
-
-	getParent() {
-		return this.parent;
-	}
-
-	getChildren() {
-		return [...this.profiles];
-	}
 }
 
 /**
  * Represents a captured profile.
  */
-export class CapturedProfile implements GoTestItem {
+export class CapturedProfile {
 	readonly kind = 'profile';
 	readonly type: ProfileType;
 	readonly uri: Uri;
@@ -163,18 +127,6 @@ export class CapturedProfile implements GoTestItem {
 
 	get key() {
 		return `${this.uri}`;
-	}
-
-	get label() {
-		return this.type.label;
-	}
-
-	getParent() {
-		return this.parent;
-	}
-
-	getChildren() {
-		return [];
 	}
 }
 

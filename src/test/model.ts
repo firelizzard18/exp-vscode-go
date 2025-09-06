@@ -6,8 +6,18 @@ import { RelationMap } from './relationMap';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';
+import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
+import moment from 'moment';
 
-export type GoTestItem = Module | Workspace | Package | TestFile | TestCase;
+export type GoTestItem =
+	| Module
+	| Workspace
+	| Package
+	| TestFile
+	| TestCase
+	| ProfileContainer
+	| ProfileSet
+	| CapturedProfile;
 
 export class GoTestItemResolver {
 	readonly #context;
@@ -205,6 +215,7 @@ export class GoTestItemProvider {
 		switch (item.kind) {
 			case 'workspace':
 				return `${item.ws.name} (workspace)`;
+
 			case 'module':
 				return item.path;
 
@@ -231,6 +242,23 @@ export class GoTestItemProvider {
 				}
 				return item.name;
 			}
+
+			case 'profile-container':
+				return 'Profiles';
+
+			case 'profile-set': {
+				const now = new Date();
+				if (now.getFullYear() !== item.time.getFullYear()) {
+					return moment(item.time).format('YYYY-MM-DD HH:mm:ss');
+				}
+				if (now.getMonth() !== item.time.getMonth() || now.getDate() !== item.time.getDate()) {
+					return moment(item.time).format('MM-DD HH:mm:ss');
+				}
+				return moment(item.time).format('HH:mm:ss');
+			}
+
+			case 'profile':
+				return item.type.label;
 		}
 	}
 
@@ -256,6 +284,11 @@ export class GoTestItemProvider {
 				return item.package;
 			}
 
+			case 'profile-container':
+			case 'profile-set':
+			case 'profile':
+				return item.parent;
+
 			default: {
 				const config = this.#config.for(item);
 				const parentTest = config.nestSubtests.get() && this.#testRel.get(item.file.package).getParent(item);
@@ -277,7 +310,8 @@ export class GoTestItemProvider {
 			case 'package':
 			case 'file':
 				return true;
-
+			case 'profile':
+				return false;
 			default:
 				return this.getChildren(item).length > 0;
 		}
@@ -323,9 +357,9 @@ export class GoTestItemProvider {
 
 				children.push(...tests);
 
-				// if (this.profiles.hasChildren) {
-				// 	children.push(this.profiles);
-				// }
+				if (this.hasChildren(item.profiles)) {
+					children.push(item.profiles);
+				}
 				return children;
 			}
 
@@ -337,12 +371,21 @@ export class GoTestItemProvider {
 				return [...item.tests];
 			}
 
+			case 'profile-container':
+				return [...item.profiles.values()].filter((x) => this.hasChildren(x));
+
+			case 'profile-set':
+				return [...item.profiles];
+
+			case 'profile':
+				return [];
+
 			default: {
 				const config = this.#config.for(item);
-				const children: TestCase[] = [];
-				// if (this instanceof StaticTestCase && this.profiles.hasChildren) {
-				// 	children.push(this.profiles);
-				// }
+				const children = [];
+				if (item instanceof StaticTestCase && this.hasChildren(item.profiles)) {
+					children.push(item.profiles);
+				}
 				if (config.nestSubtests.get()) {
 					children.push(...(this.#testRel.get(item.file.package).getChildren(item) || []));
 				}
@@ -510,6 +553,7 @@ export class Package {
 	readonly uri;
 	readonly path;
 	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
+	readonly profiles = new ProfileContainer(this);
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package) {
 		this.parent = parent;
@@ -603,6 +647,7 @@ export abstract class TestCase {
 }
 
 export class StaticTestCase extends TestCase {
+	readonly profiles = new ProfileContainer(this);
 	range?: Range;
 	#src;
 
