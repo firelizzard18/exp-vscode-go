@@ -196,6 +196,9 @@ export class GoTestItemProvider {
 	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
 		() => new RelationMap(),
 	);
+	readonly #profiles = new WeakMapWithDefault<Package | StaticTestCase, ProfileContainer>(
+		(x) => new ProfileContainer(x),
+	);
 	readonly #workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
@@ -357,8 +360,8 @@ export class GoTestItemProvider {
 
 				children.push(...tests);
 
-				if (this.hasChildren(item.profiles)) {
-					children.push(item.profiles);
+				if (this.hasChildren(this.#profiles.get(item))) {
+					children.push(this.#profiles.get(item));
 				}
 				return children;
 			}
@@ -383,8 +386,8 @@ export class GoTestItemProvider {
 			default: {
 				const config = this.#config.for(item);
 				const children = [];
-				if (item instanceof StaticTestCase && this.hasChildren(item.profiles)) {
-					children.push(item.profiles);
+				if (item instanceof StaticTestCase && this.hasChildren(this.#profiles.get(item))) {
+					children.push(this.#profiles.get(item));
 				}
 				if (config.nestSubtests.get()) {
 					children.push(...(this.#testRel.get(item.file.package).getChildren(item) || []));
@@ -553,7 +556,6 @@ export class Package {
 	readonly uri;
 	readonly path;
 	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
-	readonly profiles = new ProfileContainer(this);
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package) {
 		this.parent = parent;
@@ -647,7 +649,6 @@ export abstract class TestCase {
 }
 
 export class StaticTestCase extends TestCase {
-	readonly profiles = new ProfileContainer(this);
 	range?: Range;
 	#src;
 
