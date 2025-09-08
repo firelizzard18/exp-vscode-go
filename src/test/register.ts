@@ -69,7 +69,10 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	};
 
 	// [Command] Refresh
-	command('goExp.testExplorer.refresh', (item: TestItem) => manager.enabled && manager.reloadViewItem(item));
+	command(
+		'goExp.testExplorer.refresh',
+		(item: TestItem) => manager.enabled && manager.resolver?.updateViewModel(item, { recurse: true }),
+	);
 
 	// [Command] Run Test, Debug Test
 	command('goExp.test.run', (...item: TestItem[]) => manager.enabled && manager.runTests(...item));
@@ -100,7 +103,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			config.nestPackages.isAffected(e) ||
 			config.nestSubtests.isAffected(e)
 		) {
-			await manager.reloadView();
+			await manager.resolver?.updateViewModel(null, { recurse: true });
 		}
 	});
 
@@ -163,11 +166,11 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	});
 
 	// [Event] Workspace change
-	event(
-		workspace.onDidChangeWorkspaceFolders,
-		'changed workspace',
-		async () => manager.enabled && manager.reloadView(),
-	);
+	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => {
+		if (manager.enabled) {
+			manager.resolver?.updateViewModel(null);
+		}
+	});
 
 	// [Event] File created/deleted
 	const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);

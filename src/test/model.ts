@@ -35,22 +35,6 @@ export class Workspace {
 	get key() {
 		return `${this.uri}`;
 	}
-
-	updateModules(modules: Commands.Module[]) {
-		this.modules.update(
-			modules,
-			(x) => new Module(this, x),
-			() => [], // Nothing to update
-		);
-	}
-
-	updatePackages(packages: Commands.Package[]) {
-		this.packages.update(
-			packages,
-			(x) => new Package(this, x),
-			(x, pkg) => pkg.update(x, {}),
-		);
-	}
 }
 
 export class Module {
@@ -72,14 +56,6 @@ export class Module {
 
 	get key() {
 		return this.path;
-	}
-
-	updatePackages(packages: Commands.Package[]) {
-		this.packages.update(
-			packages,
-			(x) => new Package(this, x),
-			(x, pkg) => pkg.update(x, {}),
-		);
 	}
 }
 
@@ -107,24 +83,6 @@ export class Package {
 		return `${this.uri}` === `${this.parent.dir}`;
 	}
 
-	/**
-	 * Updates the package with data from gopls.
-	 * @param src The data from gopls.
-	 * @param ranges Modified file ranges.
-	 * @returns Update events. See {@link ItemEvent}.
-	 */
-	update(src: Commands.Package, ranges: Record<string, Range[]>) {
-		const changes = this.files.update(
-			src.TestFiles!.filter((x) => x.Tests.length),
-			(src) => new TestFile(this, src),
-			(src, file) => file.update(src, ranges[`${file.uri}`] || []),
-		);
-		if (!changes.length) {
-			return [];
-		}
-		return changes;
-	}
-
 	*allTests() {
 		for (const file of this.files) {
 			yield* file.tests;
@@ -145,21 +103,6 @@ export class TestFile {
 
 	get key() {
 		return `${this.uri}`;
-	}
-
-	/**
-	 * Updates the file with data from gopls.
-	 * @param src The data from gopls.
-	 * @param ranges Modified file ranges.
-	 * @returns Update events. See {@link ItemEvent}.
-	 */
-	update(src: Commands.TestFile, ranges: Range[]) {
-		return this.tests.update(
-			src.Tests,
-			(src) => new StaticTestCase(this, src),
-			(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges) : []),
-			(test) => test instanceof DynamicTestCase,
-		);
 	}
 }
 

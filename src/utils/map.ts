@@ -23,8 +23,8 @@ export class BiMap<A, B> {
 		return this.#a2b.has(v as any) || this.#b2a.has(v as any);
 	}
 
-	get(a: A): B;
-	get(b: B): A;
+	get(a: A): B | undefined;
+	get(b: B): A | undefined;
 	get(v: A | B) {
 		return (this.#a2b.get(v as any) ?? this.#b2a.get(v as any)) as any;
 	}

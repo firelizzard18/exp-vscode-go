@@ -90,7 +90,7 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 	update<SS extends S, R>(
 		src: readonly SS[],
 		make: (_: SS) => T,
-		update: (_1: SS, _2: T) => Iterable<ItemEvent<R>>,
+		update: (_1: SS, _2: T) => Iterable<ItemEvent<R>> = () => [],
 		keep: (_: T) => boolean = () => false,
 	): ItemEvent<T | R>[] {
 		// Delete items that are no longer present

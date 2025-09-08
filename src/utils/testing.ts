@@ -78,7 +78,11 @@ export namespace Commands {
 	export interface PackagesArgs {
 		Files: lsp.URI[];
 		Recursive?: boolean;
-		Mode?: number;
+		Mode?: PackagesMode;
+	}
+
+	export enum PackagesMode {
+		NeedTests = 1,
 	}
 
 	export interface PackagesResults {
@@ -101,7 +105,7 @@ export namespace Commands {
 
 	export interface TestFile {
 		URI: lsp.URI;
-		Tests: TestCase[];
+		Tests?: TestCase[];
 	}
 
 	export interface TestCase {

@@ -12,6 +12,9 @@ import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
 import { TestConfig } from './config';
 import { RunConfig } from './runConfig';
+import { GoTestItemResolver } from './itemResolver';
+import { GoTestItemProvider } from './itemProvider';
+import { WorkspaceConfig } from './workspaceConfig';
 
 /**
  * Entry point for the test explorer implementation.
@@ -38,7 +41,11 @@ export class TestManager {
 	}
 
 	#ctrl?: TestController;
-	#resolver?: TestResolver;
+	#resolver?: GoTestItemResolver;
+
+	get resolver() {
+		return this.#resolver;
+	}
 
 	/**
 	 * Whether the test explorer is enabled.
@@ -64,15 +71,17 @@ export class TestManager {
 
 		// Set up the test controller and resolver
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new TestResolver(this.context, ctrl);
+		const config = new WorkspaceConfig(this.context.workspace);
+		const provider = new GoTestItemProvider(config);
+		const resolver = new GoTestItemResolver(this.context, config, provider, ctrl);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#disposable.push(ctrl);
 
 		// Set up resolve/refresh handlers
-		ctrl.resolveHandler = (item) =>
-			doSafe(this.context, 'resolve test', () => (item ? resolver.reloadViewItem(item) : resolver.reloadView()));
-		ctrl.refreshHandler = () => doSafe(this.context, 'refresh tests', () => resolver.reloadView());
+		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.updateViewModel(item));
+		ctrl.refreshHandler = () =>
+			doSafe(this.context, 'refresh tests', () => resolver.updateViewModel(null, { recurse: true }));
 
 		// Reload code lenses whenever test items change
 		resolver.onDidChangeTestItem(() => this.#codeLens.reload());
@@ -196,20 +205,6 @@ export class TestManager {
 	}
 
 	/**
-	 * Calls {@link TestResolver.reloadView}.
-	 */
-	async reloadView(...args: Parameters<TestResolver['reloadView']>) {
-		await this.#resolver?.reloadView(...args);
-	}
-
-	/**
-	 * Calls {@link TestResolver.reloadViewItem}.
-	 */
-	async reloadViewItem(...args: Parameters<TestResolver['reloadViewItem']>) {
-		await this.#resolver?.reloadViewItem(...args);
-	}
-
-	/**
 	 * Calls {@link TestResolver.reloadUri}.
 	 */
 	async reloadUri(...args: Tail<Parameters<TestResolver['reloadUri']>>) {
@@ -244,17 +239,6 @@ export class TestManager {
 	 */
 	didSave(uri: Uri) {
 		this.#didSave.fire(uri);
-	}
-
-	resolveTestItem(goItem: GoTestItem): Promise<TestItem | undefined>;
-	resolveTestItem(goItem: GoTestItem, opts: ResolveOptions & { create: true }): Promise<TestItem>;
-	resolveTestItem(goItem: GoTestItem, opts: ResolveOptions & { children: true }): Promise<TestItem[]>;
-	resolveTestItem(goItem: GoTestItem, opts?: ResolveOptions) {
-		return this.#resolver!.resolveViewItems(goItem, opts);
-	}
-
-	resolveGoTestItem(id: string) {
-		return this.#resolver?.getGoItem(id);
 	}
 
 	get rootTestItems() {

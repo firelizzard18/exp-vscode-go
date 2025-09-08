@@ -18,6 +18,7 @@ import {
 } from './model';
 
 export class GoTestItemProvider {
+	readonly kind = '(root)';
 	readonly #config;
 	readonly #pkgRel = new WeakMapWithDefault<Workspace | Module, RelationMap<Package, Package | undefined>>(
 		() => new RelationMap(),
@@ -245,8 +246,11 @@ export class GoTestItemProvider {
 		);
 	}
 
-	/** Rebuilds the package and test relations maps. */
-	rebuildRelations(root: Workspace | Module) {
+	/**
+	 * The packages of a {@link Workspace} or {@link Module} were updated, so
+	 * package relations should be rebuilt.
+	 */
+	didUpdatePackages(root: Workspace | Module) {
 		const pkgs = [...root.packages];
 		this.#pkgRel.get(root).replace(
 			pkgs.map((pkg): [Package, Package | undefined] => {
@@ -255,11 +259,15 @@ export class GoTestItemProvider {
 				return [pkg, ancestors[0]];
 			}),
 		);
+	}
 
-		for (const pkg of pkgs) {
-			const tests = [...pkg.allTests()];
-			this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(tests, test.name)]));
-		}
+	/**
+	 * The files and tests of a {@link Package} were updated, so test relations
+	 * should be rebuilt.
+	 */
+	didUpdateTests(pkg: Package) {
+		const tests = [...pkg.allTests()];
+		this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(tests, test.name)]));
 	}
 
 	/**
