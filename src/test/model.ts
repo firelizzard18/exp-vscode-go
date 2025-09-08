@@ -218,3 +218,44 @@ export function findParentTestCase(allTests: TestCase[], name: string) {
 		}
 	}
 }
+
+export function idFor(item: GoTestItem): Uri {
+	switch (item.kind) {
+		case 'workspace':
+		case 'module':
+		case 'package':
+		case 'file':
+			return item.uri.with({ query: `kind=${item.kind}` });
+
+		case 'profile-container':
+			return idFor(item.parent).with({ fragment: 'profiles' });
+
+		case 'profile-set': {
+			const base = idFor(item.parent);
+			return base.with({ query: `${base.query}&at=${item.time.getTime()}` });
+		}
+
+		case 'profile': {
+			const base = idFor(item.parent);
+			return base.with({ query: `${base.query}&profile=${item.type.id}` });
+		}
+
+		default:
+			return item.uri.with({ query: `kind=${item.kind}&name=${item.name}` });
+	}
+}
+
+export function parseID(id: string | Uri) {
+	if (typeof id === 'string') {
+		id = Uri.parse(id);
+	}
+	const query = new URLSearchParams(id.query);
+	if (query.has('kind')) throw new Error('Invalid ID');
+	return {
+		path: id.path,
+		kind: query.get('kind')!,
+		name: query.get('name') ?? undefined,
+		at: query.has('at') ? new Date(query.get('at')!) : undefined,
+		profile: query.get('profile') ?? id.fragment === 'profiles',
+	};
+}

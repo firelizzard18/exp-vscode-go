@@ -13,7 +13,7 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { TestConfig } from './config';
 import { RunConfig } from './runConfig';
 import { GoTestItemResolver } from './itemResolver';
-import { GoTestItemProvider } from './itemProvider';
+import { GoTestItemPresenter } from './itemPresenter';
 import { WorkspaceConfig } from './workspaceConfig';
 
 /**
@@ -72,16 +72,22 @@ export class TestManager {
 		// Set up the test controller and resolver
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
 		const config = new WorkspaceConfig(this.context.workspace);
-		const provider = new GoTestItemProvider(config);
-		const resolver = new GoTestItemResolver(this.context, config, provider, ctrl);
+		const presenter = new GoTestItemPresenter(config);
+		const resolver = new GoTestItemResolver(this.context, config, presenter, ctrl);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#disposable.push(ctrl);
 
 		// Set up resolve/refresh handlers
-		ctrl.resolveHandler = (item) => doSafe(this.context, 'resolve test', () => resolver.updateViewModel(item));
+		ctrl.resolveHandler = (item) =>
+			doSafe(this.context, 'resolve test', () => {
+				if (item) resolver.markResolved(item);
+				resolver.updateViewModel(item);
+			});
 		ctrl.refreshHandler = () =>
-			doSafe(this.context, 'refresh tests', () => resolver.updateViewModel(null, { recurse: true }));
+			doSafe(this.context, 'refresh tests', () => {
+				resolver.updateViewModel(null, { recurse: true });
+			});
 
 		// Reload code lenses whenever test items change
 		resolver.onDidChangeTestItem(() => this.#codeLens.reload());

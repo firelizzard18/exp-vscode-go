@@ -2,10 +2,19 @@ import { Range, TestItem, Uri, WorkspaceFolder } from 'vscode';
 import { Commands, Context, TestController } from '../utils/testing';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
-import { DynamicTestCase, GoTestItem, Module, Package, StaticTestCase, TestCase, TestFile, Workspace } from './model';
-import { GoTestItemProvider } from './itemProvider';
+import {
+	DynamicTestCase,
+	GoTestItem,
+	idFor,
+	Module,
+	Package,
+	StaticTestCase,
+	TestCase,
+	TestFile,
+	Workspace,
+} from './model';
+import { GoTestItemPresenter } from './itemPresenter';
 import { EventEmitter } from '../utils/eventEmitter';
-import { BiMap } from '../utils/map';
 
 export class GoTestItemResolver {
 	readonly #didChangeTestItem = new EventEmitter<(items: Iterable<GoTestItem>) => void>();
@@ -15,14 +24,15 @@ export class GoTestItemResolver {
 
 	readonly #context;
 	readonly #config;
-	readonly #provider;
+	readonly #presenter;
 	readonly #ctrl;
-	readonly #items = new BiMap<TestItem, GoTestItem>();
+	readonly #items = new Map<string, GoTestItem>();
+	readonly #resolved = new WeakSet<GoTestItem>();
 
-	constructor(context: Context, config: WorkspaceConfig, provider: GoTestItemProvider, ctrl: TestController) {
+	constructor(context: Context, config: WorkspaceConfig, presenter: GoTestItemPresenter, ctrl: TestController) {
 		this.#context = context;
 		this.#config = config;
-		this.#provider = provider;
+		this.#presenter = presenter;
 		this.#ctrl = ctrl;
 	}
 
@@ -45,30 +55,98 @@ export class GoTestItemResolver {
 	 *     - may require resolving tests and/or creating dynamic subtests
 	 */
 
+	markResolved(item: string | TestItem | GoTestItem) {
+		// TODO: Mark the roots as resolved
+		if (typeof item === 'object' && !('kind' in item)) {
+			item = item.id;
+		}
+		if (typeof item === 'string') {
+			item = this.#items.get(item)!;
+			if (!item) return;
+		}
+		this.#resolved.add(item);
+	}
+
 	/**
 	 * Update the view model. If `view` is null/undefined, the roots are
 	 * updated. Otherwise the given item and it's children are updated.
 	 */
-	async updateViewModel(view?: TestItem | null, options: { recurse?: boolean } = {}) {
-		const go = view && (await this.#update(view));
-		if (view && !go) {
-			this.#delete(view);
+	async updateViewModel(item?: TestItem | GoTestItem | null, options: { recurse?: boolean } = {}) {
+		// Update the data model.
+		const go = item && (await this.#updateDataModel(item));
+		if (item && !go && !('kind' in item)) {
+			this.#delete(item);
 			return;
 		}
 
-		if (options.recurse) {
-			// TODO: Do a full sync. This can be called when the user clicks
-			// refresh, or when the config changes. In either case, determine
-			// what view model nodes have already been expanded and synchronize
-			// the two models.
-		} else {
-			// TODO: Go -> view model
+		// Resolve the view item.
+		const view = item && ('kind' in item ? this.#getViewItem(item) : item);
+		if (item && !view) {
+			// TODO: Create a new view item
+			throw new Error('TODO');
+		}
+
+		// TODO: Go -> view model
+
+		// Should we recurse? If the user has not expanded a given item, do not
+		// update it.
+		if (!options.recurse) return;
+		if (go && !this.#resolved.has(go)) return;
+
+		switch (go?.kind) {
+			case undefined:
+				// It seems like it would make sense to update workspaces here
+				// and update the modules in the workspace case. However,
+				// workspaces and modules are sibilings in the view, so this
+				// better matches how the view behaves.
+				for (const ws of this.#presenter.workspaces) {
+					await this.updateViewModel(ws);
+					for (const mod of ws.modules) {
+						await this.updateViewModel(mod);
+					}
+				}
+				break;
+
+			case 'workspace':
+			case 'module':
+				for (const pkg of go.packages) {
+					await this.updateViewModel(pkg);
+				}
+				break;
+
+			case 'package':
+				for (const file of go.files) {
+					await this.updateViewModel(file);
+				}
+				break;
 		}
 	}
 
+	#getViewItem(item: string | GoTestItem): TestItem | undefined {
+		if (typeof item === 'string') {
+			item = this.#items.get(item)!;
+			if (!item) return;
+		}
+
+		// If the item has no (view) parent, check the root.
+		const parent = this.#presenter.getParent(item);
+		if (!parent) {
+			return this.#ctrl.items.get(`${idFor(item)}`);
+		}
+
+		// Otherwise, check the parent's children.
+		return this.#getViewItem(parent)?.children.get(`${idFor(item)}`);
+	}
+
 	async didUpdateFile(wsf: WorkspaceFolder, file: Uri, ranges: Record<string, Range[]> = {}) {
+		// Resolve or create a Workspace.
+		let ws = this.#presenter.workspaces.get(wsf);
+		if (!ws) {
+			ws = new Workspace(wsf);
+			this.#presenter.workspaces.add(ws);
+		}
+
 		// Query gopls.
-		const ws = this.#provider.getWorkspace(wsf);
 		const packages = this.#consolidatePackages(
 			ws,
 			await this.#context.commands.packages({
@@ -119,14 +197,14 @@ export class GoTestItemResolver {
 			updated.push(...pkg.update(src, ranges));
 
 			// Mark the root and the package as requested.
-			this.#provider.markRequested(root);
-			this.#provider.markRequested(pkg);
+			this.#presenter.markRequested(root);
+			this.#presenter.markRequested(pkg);
 		}
 
 		// If anything changed, rebuild relations.
 		if (updated.length > 0) {
 			for (const root of roots) {
-				this.#provider.rebuildRelations(root);
+				this.#presenter.didUpdatePackages(root);
 			}
 		}
 
@@ -134,15 +212,18 @@ export class GoTestItemResolver {
 	}
 
 	/**
-	 * Updates the given view item, or the roots.
+	 * Updates the data model. If `item` is a data model item, it is updated. If
+	 * `item` is a view model item, it's corresponding data model item is
+	 * updated. If `view` is null/undefined, the list of roots (workspaces and
+	 * modules) is updated.
 	 */
-	async #update(view?: TestItem | null) {
-		if (!view) {
+	async #updateDataModel(item?: TestItem | GoTestItem | null) {
+		if (!item) {
 			await this.#loadRoots();
 			return;
 		}
 
-		const go = this.#items.get(view);
+		const go = 'kind' in item ? item : this.#items.get(item.id);
 		if (!go) return;
 
 		// Use gopls to update.
@@ -161,16 +242,15 @@ export class GoTestItemResolver {
 	}
 
 	/**
-	 * Syncs the list of workspaces with VSCode's workspace folders and loads
-	 * modules for each workspace.
+	 * Updates the list of workspaces, and loads the modules of each workspace.
 	 */
 	async #loadRoots() {
 		// Update the workspace item set.
-		this.#provider.updateWorkspaces(this.#context.workspace.workspaceFolders ?? []);
+		this.#presenter.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
 
 		// Query gopls.
 		const results = await Promise.all(
-			[...this.#provider.workspaces].map(async (ws) => {
+			[...this.#presenter.workspaces].map(async (ws) => {
 				const r = await this.#context.commands.modules({
 					Dir: `${ws.uri}`,
 					MaxDepth: -1,
@@ -196,7 +276,7 @@ export class GoTestItemResolver {
 	}
 
 	/**
-	 * Loads a {@link Workspace}'s or {@link Module}'s list of packages.
+	 * Loads the packages of a workspace or module.
 	 */
 	async #loadPackages(root: Workspace | Module) {
 		// Query gopls.
@@ -214,9 +294,12 @@ export class GoTestItemResolver {
 		root.packages.update(packages, (src) => new Package(root, src));
 
 		// Notify the provider that we updated the workspace/module's packages.
-		this.#provider.didUpdatePackages(root);
+		this.#presenter.didUpdatePackages(root);
 	}
 
+	/**
+	 * Loads the tests (and files) of a package.
+	 */
 	async #loadTests(pkg: Package) {
 		// Query gopls.
 		const r = await this.#context.commands.packages({
@@ -241,7 +324,7 @@ export class GoTestItemResolver {
 		);
 
 		// Notify the provider that we updated the package's tests.
-		this.#provider.didUpdateTests(pkg);
+		this.#presenter.didUpdateTests(pkg);
 	}
 
 	/**
@@ -288,6 +371,6 @@ export class GoTestItemResolver {
 		} else {
 			this.#ctrl.items.delete(item.id);
 		}
-		this.#items.delete(item);
+		this.#items.delete(item.id);
 	}
 }

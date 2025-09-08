@@ -17,8 +17,10 @@ import {
 	findParentTestCase,
 } from './model';
 
-export class GoTestItemProvider {
+export class GoTestItemPresenter {
 	readonly kind = '(root)';
+	readonly workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
+
 	readonly #config;
 	readonly #pkgRel = new WeakMapWithDefault<Workspace | Module, RelationMap<Package, Package | undefined>>(
 		() => new RelationMap(),
@@ -29,15 +31,10 @@ export class GoTestItemProvider {
 	readonly #profiles = new WeakMapWithDefault<Package | StaticTestCase, ProfileContainer>(
 		(x) => new ProfileContainer(x),
 	);
-	readonly #workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
 	constructor(config: WorkspaceConfig) {
 		this.#config = config;
-	}
-
-	get workspaces() {
-		return this.#workspaces[Symbol.iterator]();
 	}
 
 	markRequested(item: Workspace | Module | Package) {
@@ -153,7 +150,7 @@ export class GoTestItemProvider {
 	getChildren(item?: GoTestItem): GoTestItem[] {
 		if (!item) {
 			const children = [];
-			for (const ws of this.#workspaces) {
+			for (const ws of this.workspaces) {
 				// If the workspace has discovery disabled and has _not_
 				// been requested (e.g. by opening a file), skip it.
 				const mode = this.#config.for(ws).discovery.get();
@@ -226,24 +223,6 @@ export class GoTestItemProvider {
 				return children;
 			}
 		}
-	}
-
-	getWorkspace(wsf: WorkspaceFolder) {
-		// Resolve or create a Workspace.
-		let ws = this.#workspaces.get(wsf);
-		if (ws) return ws;
-
-		ws = new Workspace(wsf);
-		this.#workspaces.add(ws);
-		return ws;
-	}
-
-	updateWorkspaces(wsf: readonly WorkspaceFolder[]) {
-		this.#workspaces.update(
-			wsf,
-			(ws) => new Workspace(ws),
-			() => [], // Nothing to update
-		);
 	}
 
 	/**
