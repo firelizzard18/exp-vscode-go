@@ -1,4 +1,4 @@
-import { Range, TestItem, Uri, WorkspaceFolder } from 'vscode';
+import { Range, TestItem, TestItemCollection, Uri, WorkspaceFolder } from 'vscode';
 import { Commands, Context, TestController } from '../utils/testing';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
@@ -29,6 +29,8 @@ export class GoTestItemResolver {
 	readonly #items = new Map<string, GoTestItem>();
 	readonly #resolved = new WeakSet<GoTestItem>();
 
+	#resolvedRoots = false;
+
 	constructor(context: Context, config: WorkspaceConfig, presenter: GoTestItemPresenter, ctrl: TestController) {
 		this.#context = context;
 		this.#config = config;
@@ -54,89 +56,6 @@ export class GoTestItemResolver {
 	 *   - view -> go for logging
 	 *     - may require resolving tests and/or creating dynamic subtests
 	 */
-
-	markResolved(item: string | TestItem | GoTestItem) {
-		// TODO: Mark the roots as resolved
-		if (typeof item === 'object' && !('kind' in item)) {
-			item = item.id;
-		}
-		if (typeof item === 'string') {
-			item = this.#items.get(item)!;
-			if (!item) return;
-		}
-		this.#resolved.add(item);
-	}
-
-	/**
-	 * Update the view model. If `view` is null/undefined, the roots are
-	 * updated. Otherwise the given item and it's children are updated.
-	 */
-	async updateViewModel(item?: TestItem | GoTestItem | null, options: { recurse?: boolean } = {}) {
-		// Update the data model.
-		const go = item && (await this.#updateDataModel(item));
-		if (item && !go && !('kind' in item)) {
-			this.#delete(item);
-			return;
-		}
-
-		// Resolve the view item.
-		const view = item && ('kind' in item ? this.#getViewItem(item) : item);
-		if (item && !view) {
-			// TODO: Create a new view item
-			throw new Error('TODO');
-		}
-
-		// TODO: Go -> view model
-
-		// Should we recurse? If the user has not expanded a given item, do not
-		// update it.
-		if (!options.recurse) return;
-		if (go && !this.#resolved.has(go)) return;
-
-		switch (go?.kind) {
-			case undefined:
-				// It seems like it would make sense to update workspaces here
-				// and update the modules in the workspace case. However,
-				// workspaces and modules are sibilings in the view, so this
-				// better matches how the view behaves.
-				for (const ws of this.#presenter.workspaces) {
-					await this.updateViewModel(ws);
-					for (const mod of ws.modules) {
-						await this.updateViewModel(mod);
-					}
-				}
-				break;
-
-			case 'workspace':
-			case 'module':
-				for (const pkg of go.packages) {
-					await this.updateViewModel(pkg);
-				}
-				break;
-
-			case 'package':
-				for (const file of go.files) {
-					await this.updateViewModel(file);
-				}
-				break;
-		}
-	}
-
-	#getViewItem(item: string | GoTestItem): TestItem | undefined {
-		if (typeof item === 'string') {
-			item = this.#items.get(item)!;
-			if (!item) return;
-		}
-
-		// If the item has no (view) parent, check the root.
-		const parent = this.#presenter.getParent(item);
-		if (!parent) {
-			return this.#ctrl.items.get(`${idFor(item)}`);
-		}
-
-		// Otherwise, check the parent's children.
-		return this.#getViewItem(parent)?.children.get(`${idFor(item)}`);
-	}
 
 	async didUpdateFile(wsf: WorkspaceFolder, file: Uri, ranges: Record<string, Range[]> = {}) {
 		// Resolve or create a Workspace.
@@ -209,6 +128,180 @@ export class GoTestItemResolver {
 		}
 
 		return updated;
+	}
+
+	markResolved(item: string | TestItem | GoTestItem | '(roots)') {
+		if (item === '(roots)') {
+			this.#resolvedRoots = true;
+			return;
+		}
+
+		if (typeof item === 'object' && !('kind' in item)) {
+			item = item.id;
+		}
+		if (typeof item === 'string') {
+			item = this.#items.get(item)!;
+			if (!item) return;
+		}
+		this.#resolved.add(item);
+	}
+
+	/**
+	 * Update the view model. If `view` is null/undefined, the roots are
+	 * updated. Otherwise the given item and it's children are updated.
+	 */
+	async updateViewModel(item?: TestItem | GoTestItem | null, options: { recurse?: boolean } = {}) {
+		// Update the data model.
+		const go = item && (await this.#updateDataModel(item));
+		if (item && !go && !('kind' in item)) {
+			this.#delete(item);
+			return;
+		}
+
+		// Resolve or create the view item.
+		let view = item && ('kind' in item ? this.#getViewItem(item) : item);
+		if (go && !view) {
+			view = this.#buildViewModel(go);
+		}
+
+		// Ensure mutable properties are synced.
+		if (go instanceof StaticTestCase) {
+			view!.range = go.range;
+		}
+
+		// Should we update children? If the user has not expanded a given item
+		// (including the roots), do not update it.
+		if (go && !this.#resolved.has(go)) return;
+		if (!go && !this.#resolvedRoots) return;
+
+		// Delete unwanted items.
+		const goChildren = this.#presenter.getChildren(go);
+		const viewChildren = view ? view.children : this.#ctrl.items;
+		const want = new Set(goChildren.map((x) => `${idFor(x)}`));
+		for (const [id, item] of viewChildren) {
+			if (!want.has(id)) {
+				this.#delete(item);
+			}
+		}
+
+		// Add missing items.
+		for (const go of goChildren) {
+			const id = `${idFor(go)}`;
+			if (!viewChildren.get(id)) {
+				this.#buildViewModel(go);
+			}
+		}
+
+		// Should we recurse?
+		if (!options.recurse) return;
+
+		switch (go?.kind) {
+			case undefined:
+				// It seems like it would make sense to update workspaces here
+				// and update the modules in the workspace case. However,
+				// workspaces and modules are sibilings in the view, so this
+				// better matches how the view behaves.
+				for (const ws of this.#presenter.workspaces) {
+					await this.updateViewModel(ws);
+					for (const mod of ws.modules) {
+						await this.updateViewModel(mod);
+					}
+				}
+				break;
+
+			case 'workspace':
+			case 'module':
+				for (const pkg of go.packages) {
+					await this.updateViewModel(pkg);
+				}
+				break;
+
+			case 'package':
+				for (const file of go.files) {
+					await this.updateViewModel(file);
+				}
+				break;
+		}
+	}
+
+	#buildViewModel(go: GoTestItem) {
+		// Push the ancestry chain.
+		const stack = [go];
+		for (;;) {
+			const item = this.#presenter.getParent(stack[stack.length - 1]);
+			if (!item) break;
+			stack.push(item);
+		}
+
+		// Pop down the chain, starting from the roots.
+		let items = this.#ctrl.items;
+		for (;;) {
+			// Retrieve or create a view item.
+			const go = stack.pop()!;
+			const view = create.call(this, go, items);
+
+			// If the stack is empty, return the view item.
+			if (stack.length === 0) {
+				return view;
+			}
+
+			// Otherwise, update the item set.
+			items = view.children;
+		}
+
+		function create(this: GoTestItemResolver, go: GoTestItem, items: TestItemCollection) {
+			// Check for an existing item.
+			const id = `${idFor(go)}`;
+			let view = items.get(id);
+			if (view) return view;
+
+			// Create a new one.
+			view = this.#ctrl.createTestItem(id, this.#presenter.labelFor(go), 'uri' in go ? go.uri : undefined);
+
+			// Add it to the parent's children.
+			items.add(view);
+
+			// Other metadata.
+			view.canResolveChildren = this.#presenter.hasChildren(go);
+
+			if (go instanceof StaticTestCase) {
+				view.range = go.range;
+			}
+
+			switch (go.kind) {
+				case 'workspace':
+				case 'module':
+					view.tags = [{ id: 'canRun' }];
+					break;
+
+				case 'package':
+				case 'file':
+				case 'test':
+				case 'benchmark':
+				case 'example':
+				case 'fuzz':
+					view.tags = [{ id: 'canRun' }, { id: 'canDebug' }];
+					break;
+			}
+
+			return view;
+		}
+	}
+
+	#getViewItem(item: string | GoTestItem): TestItem | undefined {
+		if (typeof item === 'string') {
+			item = this.#items.get(item)!;
+			if (!item) return;
+		}
+
+		// If the item has no (view) parent, check the root.
+		const parent = this.#presenter.getParent(item);
+		if (!parent) {
+			return this.#ctrl.items.get(`${idFor(item)}`);
+		}
+
+		// Otherwise, check the parent's children.
+		return this.#getViewItem(parent)?.children.get(`${idFor(item)}`);
 	}
 
 	/**

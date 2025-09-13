@@ -147,7 +147,7 @@ export class GoTestItemPresenter {
 		}
 	}
 
-	getChildren(item?: GoTestItem): GoTestItem[] {
+	getChildren(item?: GoTestItem | null): GoTestItem[] {
 		if (!item) {
 			const children = [];
 			for (const ws of this.workspaces) {
