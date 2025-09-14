@@ -11,8 +11,9 @@ import { CodeLens, TextDocument, Range } from 'vscode';
  * those.
  */
 export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
-	readonly #didChangeCodeLenses = new EventEmitter<() => void>();
-	readonly onDidChangeCodeLenses = this.#didChangeCodeLenses.event;
+	// We only need to implement `onDidChangeCodeLenses?: Event<void>` if tests
+	// are changing for reasons other than the files changing. VSCode detects
+	// when the file changes and automatically updates the code lenses.
 
 	readonly #context: Context;
 	readonly #manager: TestManager;
@@ -20,13 +21,6 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	constructor(context: Context, manager: TestManager) {
 		this.#context = context;
 		this.#manager = manager;
-	}
-
-	/**
-	 * Tell the editor to reload code lenses.
-	 */
-	async reload() {
-		await this.#didChangeCodeLenses.fire();
 	}
 
 	/**

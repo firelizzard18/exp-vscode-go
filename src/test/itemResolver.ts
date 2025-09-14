@@ -15,13 +15,11 @@ import {
 } from './model';
 import { GoTestItemPresenter } from './itemPresenter';
 import { EventEmitter } from '../utils/eventEmitter';
+import { ItemEvent } from './itemSet';
+
+export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
 export class GoTestItemResolver {
-	readonly #didChangeTestItem = new EventEmitter<(items: Iterable<GoTestItem>) => void>();
-	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
-	readonly #didInvalidateTestResults = new EventEmitter<(items: Iterable<TestCase | TestFile>) => void>();
-	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
-
 	readonly #context;
 	readonly #config;
 	readonly #presenter;
@@ -50,19 +48,23 @@ export class GoTestItemResolver {
 	 *     - may require resolving tests and/or creating dynamic subtests
 	 */
 
-	async updateFile(wsf: WorkspaceFolder, uri: Uri, opts: { invalidate?: boolean }) {
+	async updateFile(wsf: WorkspaceFolder, uri: Uri, opts: { modified?: Range[] }): Promise<ModelUpdateEvent[]> {
+		const updates: ModelUpdateEvent[] = [];
+
 		// Resolve or create a Workspace.
 		let ws = this.#presenter.workspaces.get(wsf);
 		if (!ws) {
 			ws = new Workspace(wsf);
 			this.#presenter.workspaces.add(ws);
+			const view = this.#getViewItem(ws) || this.#buildViewModel(ws);
+			updates.push({ item: ws, type: 'added', view });
 		}
 
 		// If the path is outside of the workspace, ignore it.
 		const config = this.#config.for(ws);
 		const exclude = config.exclude.get() || [];
 		const rel = path.relative(ws.uri.fsPath, uri.fsPath);
-		if (exclude.some((x) => x.match(rel))) return;
+		if (exclude.some((x) => x.match(rel))) return [];
 
 		// Query gopls.
 		const r = await this.#context.commands.packages({
@@ -89,6 +91,8 @@ export class GoTestItemResolver {
 			if (!mod) {
 				mod = new Module(ws, src);
 				ws.modules.add(mod);
+				const view = this.#getViewItem(mod) || this.#buildViewModel(mod);
+				updates.push({ item: mod, type: 'added', view });
 			}
 			mods.set(src.Path, mod);
 		}
@@ -110,13 +114,14 @@ export class GoTestItemResolver {
 
 			// Get or create the package.
 			let pkg = root.packages.get(src);
+			const didAdd = !pkg;
 			if (!pkg) {
 				pkg = new Package(root, src);
 				root.packages.add(pkg);
 			}
 
 			// Update the package's files.
-			this.#updateFiles(pkg, src.TestFiles);
+			const fileUpdates = this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
 
 			// Mark the root and the package as requested.
 			this.#presenter.markRequested(root);
@@ -125,25 +130,16 @@ export class GoTestItemResolver {
 			// Synchronize the view model.
 			const pkgView = this.#updateViewModel(pkg, undefined, {});
 
-			// Invalidate test results.
-			if (opts.invalidate && this.#ctrl.invalidateTestResults) {
-				// Get the test view items. They must exist.
-				const tests = this.#presenter.getChildren(pkg).flatMap((go) => {
-					const view = pkgView.children.get(`${idFor(go)}`);
-					if (!view) throw new Error('An internal error occurred');
-					if (go.kind !== 'file') return [view];
-
-					// If files are shown, get the file's tests.
-					const tests = this.#presenter.getChildren(go).map((x) => view.children.get(`${idFor(x)}`));
-					if (tests.some((x) => !x)) throw new Error('An internal error occurred');
-					return tests as TestItem[];
-				});
-
-				// Invalidate.
-				this.#ctrl.invalidateTestResults(tests);
-				this.#didInvalidateTestResults.fire(pkg.files);
+			// Record updates. A file may not have a view item.
+			if (didAdd) {
+				updates.push({ item: pkg, type: 'added', view: pkgView });
+			}
+			for (const update of fileUpdates) {
+				const view = this.#getViewItem(update.item);
+				updates.push({ ...update, view });
 			}
 		}
+		return updates;
 	}
 
 	/**
@@ -156,19 +152,22 @@ export class GoTestItemResolver {
 	 * this will simply synchronize the view model with the data model without
 	 * updating the latter.
 	 */
-	async updateViewModel(item?: TestItem | GoTestItem | null, options: { resolve?: boolean; recurse?: boolean } = {}) {
+	async updateViewModel(
+		item?: TestItem | GoTestItem | null,
+		options: { resolve?: boolean; recurse?: boolean } = {},
+	): Promise<ItemEvent<GoTestItem>[]> {
 		// Load the roots and update the view model.
 		if (!item) {
 			if (!this.#didLoadRoots && !options.resolve) {
-				return;
+				return [];
 			}
 
-			await this.#loadRoots();
+			const updates = await this.#loadRoots();
 			for (const go of this.#presenter.getChildren()) {
 				const view = this.#ctrl.items.get(`${idFor(go)}`);
 				this.#updateViewModel(go, view, options);
 			}
-			return;
+			return updates;
 		}
 
 		// Determine if `item` is a data or view model item. If it's the latter,
@@ -183,26 +182,28 @@ export class GoTestItemResolver {
 			go = this.#items.get(view.id);
 			if (!go) {
 				this.#delete(view);
-				return;
+				return [];
 			}
 		}
 
 		// If it's a Workspace, Module, or Package, load its children.
+		let updates: ItemEvent<Package | TestFile | TestCase>[] = [];
 		if (options.resolve || this.#didLoadChildren.has(go)) {
 			switch (go.kind) {
 				case 'workspace':
 				case 'module':
-					await this.#loadPackages(go);
+					updates = await this.#loadPackages(go);
 					break;
 
 				case 'package':
-					await this.#loadTests(go);
+					updates = await this.#loadTests(go);
 					break;
 			}
 		}
 
 		// Update the view model.
 		this.#updateViewModel(go, view, options);
+		return updates;
 	}
 
 	/**
@@ -351,7 +352,8 @@ export class GoTestItemResolver {
 		this.#presenter.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
 
 		// Update the workspaces' modules list.
-		await Promise.all([...this.#presenter.workspaces].map(async (ws) => this.#loadModules(ws)));
+		const updates = await Promise.all([...this.#presenter.workspaces].map(async (ws) => this.#loadModules(ws)));
+		return updates.flat();
 	}
 
 	/**
@@ -362,11 +364,11 @@ export class GoTestItemResolver {
 			Dir: `${ws.uri}`,
 			MaxDepth: -1,
 		});
-		if (!Modules) return;
+		if (!Modules) return [];
 
 		const config = this.#config.for(ws);
 		const exclude = config.exclude.get() || [];
-		ws.modules.update(
+		return ws.modules.update(
 			Modules.filter((m) => {
 				const uri = Uri.parse(m.GoMod);
 				const p = path.relative(ws.uri.fsPath, path.dirname(uri.fsPath));
@@ -395,10 +397,12 @@ export class GoTestItemResolver {
 
 		// Update. But don't update the packages' list of files, because we
 		// didn't ask for tests so we can't properly filter the list of files.
-		root.packages.update(packages, (src) => new Package(root, src));
+		const updates = root.packages.update(packages, (src) => new Package(root, src));
 
 		// Notify the provider that we updated the workspace/module's packages.
 		this.#presenter.didUpdatePackages(root);
+
+		return updates;
 	}
 
 	/**
@@ -413,30 +417,32 @@ export class GoTestItemResolver {
 			Files: [`${pkg.uri}`],
 			Mode: Commands.PackagesMode.NeedTests,
 		});
-		if (!Packages) return;
+		if (!Packages) return [];
 
 		// Update files and their tests.
-		this.#updateFiles(
+		const updates = this.#updateFiles(
 			pkg,
 			Packages.flatMap((x) => x.TestFiles ?? []),
 		);
 
 		// Notify the provider that we updated the package's tests.
 		this.#presenter.didUpdateTests(pkg);
+
+		return updates;
 	}
 
 	/**
 	 * Updates the files and tests of a package using the provided data.
 	 */
-	#updateFiles(pkg: Package, files: Commands.TestFile[]) {
-		pkg.files.update(
+	#updateFiles(pkg: Package, files: Commands.TestFile[], ranges?: Record<string, Range[] | undefined>) {
+		const updates = pkg.files.update(
 			files.filter((x) => x.Tests && x.Tests.length > 0),
 			(src) => new TestFile(pkg, src),
 			(src, file) =>
 				file.tests.update(
 					src.Tests ?? [],
 					(src) => new StaticTestCase(file, src),
-					(src, test) => (test instanceof StaticTestCase ? test.update(src) : []),
+					(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges?.[`${file.uri}`]) : []),
 					// Don't erase dynamic test cases.
 					(test) => test instanceof DynamicTestCase,
 				),
@@ -444,6 +450,8 @@ export class GoTestItemResolver {
 
 		// Notify the provider that we updated the package's tests.
 		this.#presenter.didUpdateTests(pkg);
+
+		return updates;
 	}
 
 	/**

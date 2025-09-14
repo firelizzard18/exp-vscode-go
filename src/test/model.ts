@@ -146,15 +146,18 @@ export class StaticTestCase extends TestCase {
 	 * @param ranges Modified file ranges.
 	 * @returns Update events. See {@link ItemEvent}.
 	 */
-	update(src: Commands.TestCase): Iterable<ItemEvent<TestCase>> {
-		if (deepEqual(src, this.#src)) return [];
+	update(src: Commands.TestCase, ranges?: Range[]): Iterable<ItemEvent<TestCase>> {
+		const moved = !deepEqual(src, this.#src);
+		const contains = ranges?.some((x) => this.contains(x));
 
-		const { start, end } = src.Loc.range;
-		this.#src = src;
-		this.range = new Range(start.line, start.character, end.line, end.character);
+		if (moved) {
+			const { start, end } = src.Loc.range;
+			this.#src = src;
+			this.range = new Range(start.line, start.character, end.line, end.character);
+		}
 
-		// Return the appropriate event
-		return [{ item: this, type: 'moved' }];
+		// Return the appropriate event. Modified is a larger change than moved.
+		return [{ item: this, type: contains ? 'modified' : 'moved' }];
 	}
 
 	/**

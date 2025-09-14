@@ -87,7 +87,7 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 	 * @param make A function that creates a new item from a source value.
 	 * @param update A function that updates an existing item with a source value.
 	 */
-	update<SS extends S, R>(
+	update<SS extends S, R = never>(
 		src: readonly SS[],
 		make: (_: SS) => T,
 		update: (_1: SS, _2: T) => Iterable<ItemEvent<R>> = () => [],

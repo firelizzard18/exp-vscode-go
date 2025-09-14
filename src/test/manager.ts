@@ -2,25 +2,27 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { TestRunProfileKind, Uri, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
 import type { CancellationToken, Disposable, TestItem, TestTag } from 'vscode';
-import type vscode from 'vscode';
+import vscode from 'vscode';
 import { Context, doSafe, Tail, TestController } from '../utils/testing';
 import { ResolveOptions, TestResolver } from './resolver';
-import { GoTestItem } from './item';
+import { GoTestItem, TestCase } from './model';
 import { TestRunner } from './runner';
 import { TestRunRequest } from './testRun';
 import { CodeLensProvider } from './codeLens';
 import { EventEmitter } from '../utils/eventEmitter';
 import { TestConfig } from './config';
 import { RunConfig } from './runConfig';
-import { GoTestItemResolver } from './itemResolver';
+import { GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
 import { GoTestItemPresenter } from './itemPresenter';
 import { WorkspaceConfig } from './workspaceConfig';
+import { ItemEvent } from './itemSet';
 
 /**
  * Entry point for the test explorer implementation.
  */
 export class TestManager {
 	readonly #didSave = new EventEmitter<(_: Uri) => void>();
+	readonly #didInvalidate = new EventEmitter<(_: TestCase[]) => void>();
 	readonly context: Context;
 	readonly #codeLens: CodeLensProvider;
 	readonly #disposable: Disposable[] = [];
@@ -80,16 +82,13 @@ export class TestManager {
 
 		// Set up resolve/refresh handlers
 		ctrl.resolveHandler = (item) =>
-			doSafe(this.context, 'resolve test', () => {
-				resolver.updateViewModel(item, { resolve: true });
+			doSafe(this.context, 'resolve test', async () => {
+				await this.#didUpdate(await resolver.updateViewModel(item, { resolve: true }));
 			});
 		ctrl.refreshHandler = () =>
-			doSafe(this.context, 'refresh tests', () => {
-				resolver.updateViewModel(null, { recurse: true });
+			doSafe(this.context, 'refresh tests', async () => {
+				await this.#didUpdate(await resolver.updateViewModel(null, { recurse: true }));
 			});
-
-		// Reload code lenses whenever test items change
-		resolver.onDidChangeTestItem(() => this.#codeLens.reload());
 
 		// Set up run profiles
 		const createRunProfile = (config: RunConfig) => {
@@ -154,6 +153,22 @@ export class TestManager {
 	}
 
 	/**
+	 * Process model update events.
+	 */
+	async #didUpdate(events: ModelUpdateEvent[], opts: { invalidate?: boolean } = {}) {
+		if (!this.#ctrl) return;
+
+		// Invalidate test results when tests are modified.
+		if (opts.invalidate) {
+			const tests = events.filter(
+				(x): x is ModelUpdateEvent<TestCase> => x.item instanceof TestCase && x.type === 'modified',
+			);
+			this.#ctrl.invalidateTestResults?.(tests.map((x) => x.view).filter((x) => !!x));
+			await this.#didInvalidate.fire(tests.map((x) => x.item));
+		}
+	}
+
+	/**
 	 * Execute a test run.
 	 * @param config - The config for the run.
 	 * @param rq - The test run request.
@@ -198,9 +213,7 @@ export class TestManager {
 		}
 
 		// When a test's result is invalidated, queue it for running.
-		const s1 = this.#resolver.onDidInvalidateTestResults(
-			async (items) => items && (await runner.queueForContinuousRun(items)),
-		);
+		const s1 = this.#didInvalidate.event(async (items) => items && (await runner.queueForContinuousRun(items)));
 
 		// When a file is saved, run the queued tests in that file.
 		const s2 = this.#didSave.event((e) => doSafe(this.context, 'run continuous', () => runner.runContinuous(e)));

@@ -230,6 +230,7 @@ export class GoTestItemPresenter {
 	 * package relations should be rebuilt.
 	 */
 	didUpdatePackages(root: Workspace | Module) {
+		// TODO: Can we handle this by listening for item events instead?
 		const pkgs = [...root.packages];
 		this.#pkgRel.get(root).replace(
 			pkgs.map((pkg): [Package, Package | undefined] => {
@@ -245,6 +246,7 @@ export class GoTestItemPresenter {
 	 * should be rebuilt.
 	 */
 	didUpdateTests(pkg: Package) {
+		// TODO: Can we handle this by listening for item events instead?
 		const tests = [...pkg.allTests()];
 		this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(tests, test.name)]));
 	}
