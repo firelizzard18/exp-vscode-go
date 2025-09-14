@@ -19,6 +19,7 @@ import { registerProfileEditor } from './profile';
 import { Context, helpers } from '../utils/testing';
 import { TestConfig } from './config';
 import { WorkspaceConfig } from './workspaceConfig';
+import { GoTestItem } from './model';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -69,14 +70,11 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	};
 
 	// [Command] Refresh
-	command(
-		'goExp.testExplorer.refresh',
-		(item: TestItem) => manager.enabled && manager.resolver?.updateViewModel(item, { recurse: true }),
-	);
+	command('goExp.testExplorer.refresh', (item: TestItem) => manager.enabled && manager.refresh(item));
 
 	// [Command] Run Test, Debug Test
-	command('goExp.test.run', (...item: TestItem[]) => manager.enabled && manager.runTests(...item));
-	command('goExp.test.debug', (...item: TestItem[]) => manager.enabled && manager.debugTests(...item));
+	command('goExp.test.run', (...item: TestItem[] | GoTestItem[]) => manager.enabled && manager.runTests(...item));
+	command('goExp.test.debug', (...item: TestItem[] | GoTestItem[]) => manager.enabled && manager.debugTests(...item));
 
 	// [Command] Browser navigation
 	command('goExp.browser.back', () => Browser.active?.back());
@@ -103,7 +101,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			config.nestPackages.isAffected(e) ||
 			config.nestSubtests.isAffected(e)
 		) {
-			await manager.resolver?.updateViewModel(null, { recurse: true });
+			await manager.refresh();
 		}
 	});
 
@@ -165,10 +163,11 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 		manager.didSave(e.uri);
 	});
 
-	// [Event] Workspace change
+	// [Event] Workspace change.
 	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => {
 		if (manager.enabled) {
-			manager.resolver?.updateViewModel(null);
+			// Update roots without recursing.
+			manager.refresh(undefined, { recurse: false });
 		}
 	});
 

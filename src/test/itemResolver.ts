@@ -48,23 +48,33 @@ export class GoTestItemResolver {
 	 *     - may require resolving tests and/or creating dynamic subtests
 	 */
 
-	async updateFile(wsf: WorkspaceFolder, uri: Uri, opts: { modified?: Range[] }): Promise<ModelUpdateEvent[]> {
-		const updates: ModelUpdateEvent[] = [];
+	workspaceFor(uri: Uri) {
+		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
+		if (!wsf) return;
 
 		// Resolve or create a Workspace.
 		let ws = this.#presenter.workspaces.get(wsf);
 		if (!ws) {
 			ws = new Workspace(wsf);
 			this.#presenter.workspaces.add(ws);
-			const view = this.#getViewItem(ws) || this.#buildViewModel(ws);
-			updates.push({ item: ws, type: 'added', view });
 		}
 
-		// If the path is outside of the workspace, ignore it.
+		// If the path is excluded, ignore it.
 		const config = this.#config.for(ws);
 		const exclude = config.exclude.get() || [];
 		const rel = path.relative(ws.uri.fsPath, uri.fsPath);
-		if (exclude.some((x) => x.match(rel))) return [];
+		if (exclude.some((x) => x.match(rel))) return;
+
+		return ws;
+	}
+
+	async updateFile(uri: Uri, opts: { modified?: Range[] } = {}) {
+		const updates: ModelUpdateEvent[] = [];
+		const resolved: TestFile[] = [];
+
+		// We don't handle external files (those outside of a workspace).
+		const ws = this.workspaceFor(uri);
+		if (!ws) return { updates, resolved };
 
 		// Query gopls.
 		const r = await this.#context.commands.packages({
@@ -75,6 +85,8 @@ export class GoTestItemResolver {
 
 		// Map modules.
 		const mods = new Map<string, Module>();
+		const config = this.#config.for(ws);
+		const exclude = config.exclude.get() || [];
 		for (const src of Object.values(r.Module ?? {})) {
 			// If the path is outside of the workspace, ignore it.
 			const uri = Uri.parse(src.GoMod);
@@ -122,6 +134,7 @@ export class GoTestItemResolver {
 
 			// Update the package's files.
 			const fileUpdates = this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
+			resolved.push(...[...pkg.files].filter((x) => `${x.uri}` === `${uri}`));
 
 			// Mark the root and the package as requested.
 			this.#presenter.markRequested(root);
@@ -139,7 +152,7 @@ export class GoTestItemResolver {
 				updates.push({ ...update, view });
 			}
 		}
-		return updates;
+		return { updates, resolved };
 	}
 
 	/**
@@ -153,7 +166,7 @@ export class GoTestItemResolver {
 	 * updating the latter.
 	 */
 	async updateViewModel(
-		item?: TestItem | GoTestItem | null,
+		item?: TestItem | GoTestItem,
 		options: { resolve?: boolean; recurse?: boolean } = {},
 	): Promise<ItemEvent<GoTestItem>[]> {
 		// Load the roots and update the view model.

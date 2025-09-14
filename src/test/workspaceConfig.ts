@@ -7,6 +7,8 @@ import { GoTestItem, Workspace } from './model';
 
 const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 
+export type ConfigValue = { [K in keyof ConfigSet]: ConfigSet[K] extends Item<infer T> ? T : never };
+
 class ConfigSet {
 	protected readonly vsc;
 	readonly #scope;
@@ -54,17 +56,18 @@ class ConfigSet {
 	readonly dynamicSubtestLimit = this.#config<number>('exp-vscode-go', 'testExplorer.dynamicSubtestLimit');
 
 	/** `go.toolsEnvVars` with `${...}` expressions resolved. */
-	readonly toolsEnvVars = () =>
-		this.#calc((x) => this.#resolve(x), this.#config<Record<string, string>>('go', 'toolsEnvVars'));
+	readonly toolsEnvVars = this.#calc(
+		(x) => this.#resolve(x),
+		this.#config<Record<string, string>>('go', 'toolsEnvVars'),
+	);
 
 	/** `go.testEnvVars` and `go.toolsEnvVars` (merged) with `${...}`
 	 *  expressions resolved. */
-	readonly testEnvVars = () =>
-		this.#calc(
-			(test, tools) => this.#resolve(test, tools),
-			this.#config<Record<string, string>>('go', 'testEnvVars'),
-			this.#config<Record<string, string>>('go', 'toolsEnvVars'),
-		);
+	readonly testEnvVars = this.#calc(
+		(test, tools) => this.#resolve(test, tools),
+		this.#config<Record<string, string>>('go', 'testEnvVars'),
+		this.#config<Record<string, string>>('go', 'toolsEnvVars'),
+	);
 
 	/** An array of compiled minimatch patterns from
 	 *  `exp-vscode-go.testExplorer.exclude` and `files.exclude`. */

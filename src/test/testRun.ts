@@ -85,7 +85,7 @@ export class TestRunRequest {
 			// If a package is selected, all tests within it will be run so ignore
 			// explicit requests for a test if its package is selected. Do the same
 			// for benchmarks, if shouldRunBenchmarks.
-			if (item.kind !== 'benchmark' || shouldRunBenchmarks(manager.context.workspace, pkg)) {
+			if (item.kind !== 'benchmark' || shouldRunBenchmarks(manager.#context.workspace, pkg)) {
 				tests.delete(item);
 			}
 		}

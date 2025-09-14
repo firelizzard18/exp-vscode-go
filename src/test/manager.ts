@@ -23,8 +23,7 @@ import { ItemEvent } from './itemSet';
 export class TestManager {
 	readonly #didSave = new EventEmitter<(_: Uri) => void>();
 	readonly #didInvalidate = new EventEmitter<(_: TestCase[]) => void>();
-	readonly context: Context;
-	readonly #codeLens: CodeLensProvider;
+	readonly #context: Context;
 	readonly #disposable: Disposable[] = [];
 	readonly #run: RunConfig;
 	readonly #debug: RunConfig;
@@ -32,8 +31,7 @@ export class TestManager {
 	readonly #coverage: RunConfig;
 
 	constructor(context: Context) {
-		this.context = context;
-		this.#codeLens = new CodeLensProvider(context, this);
+		this.#context = context;
 		this.#run = new RunConfig(context, 'Run', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
 		this.#debug = new RunConfig(context, 'Debug', TestRunProfileKind.Debug, true, { id: 'canDebug' });
 		this.#coverage = new RunConfig(context, 'Coverage', TestRunProfileKind.Coverage, true, { id: 'canRun' });
@@ -44,10 +42,6 @@ export class TestManager {
 
 	#ctrl?: TestController;
 	#resolver?: GoTestItemResolver;
-
-	get resolver() {
-		return this.#resolver;
-	}
 
 	/**
 	 * Whether the test explorer is enabled.
@@ -66,28 +60,30 @@ export class TestManager {
 				createTestController(id: string, label: string): TestController;
 			},
 	) {
+		const config = new WorkspaceConfig(this.#context.workspace);
+		const presenter = new GoTestItemPresenter(config);
+		const ctrl = args.createTestController('goExp', 'Go (experimental)');
+		const resolver = new GoTestItemResolver(this.#context, config, presenter, ctrl);
+		const codeLens = new CodeLensProvider(config, resolver);
+
 		// Register the legacy code lens provider
 		this.#disposable.push(
-			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, this.#codeLens),
+			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, codeLens),
 		);
 
 		// Set up the test controller and resolver
-		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const config = new WorkspaceConfig(this.context.workspace);
-		const presenter = new GoTestItemPresenter(config);
-		const resolver = new GoTestItemResolver(this.context, config, presenter, ctrl);
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#disposable.push(ctrl);
 
 		// Set up resolve/refresh handlers
 		ctrl.resolveHandler = (item) =>
-			doSafe(this.context, 'resolve test', async () => {
+			doSafe(this.#context, 'resolve test', async () => {
 				await this.#didUpdate(await resolver.updateViewModel(item, { resolve: true }));
 			});
 		ctrl.refreshHandler = () =>
-			doSafe(this.context, 'refresh tests', async () => {
-				await this.#didUpdate(await resolver.updateViewModel(null, { recurse: true }));
+			doSafe(this.#context, 'refresh tests', async () => {
+				await this.refresh();
 			});
 
 		// Set up run profiles
@@ -105,7 +101,7 @@ export class TestManager {
 			createRunProfile(this.#rrDebug);
 		}
 
-		if (this.context.testing || isCoverageSupported(ctrl)) {
+		if (this.#context.testing || isCoverageSupported(ctrl)) {
 			createRunProfile(this.#coverage);
 		}
 
@@ -113,7 +109,7 @@ export class TestManager {
 		// edit).
 		this.#disposable.push(
 			this.#didSave.event((uri) => {
-				const cfg = new TestConfig(this.context.workspace, uri);
+				const cfg = new TestConfig(this.#context.workspace, uri);
 				if (cfg.update() === 'on-save') {
 					this.reloadUri(uri, [], true);
 				}
@@ -141,15 +137,25 @@ export class TestManager {
 	/**
 	 * Run a test.
 	 */
-	runTests(...items: TestItem[]) {
+	runTests(...items: TestItem[] | GoTestItem[]) {
 		this.#executeTestRun(this.#run, new VSCTestRunRequest(items));
 	}
 
 	/**
 	 * Debug a test.
 	 */
-	debugTests(...items: TestItem[]) {
+	debugTests(...items: TestItem[] | GoTestItem[]) {
 		this.#executeTestRun(this.#debug, new VSCTestRunRequest(items));
+	}
+
+	/**
+	 * Refreshes a test item and its descendants, or the entire tree if called
+	 * without an item. Unless `options.recurse` is disabled, in which case only
+	 * the item itself and it's direct children are updated.
+	 */
+	async refresh(item?: TestItem, options: { recurse?: boolean } = { recurse: true }) {
+		if (!this.#resolver) return;
+		await this.#didUpdate(await this.#resolver.updateViewModel(item, options));
 	}
 
 	/**
@@ -195,7 +201,7 @@ export class TestManager {
 
 		// Set up the runner.
 		const runner = new TestRunner(
-			this.context,
+			this.#context,
 			this.#resolver,
 			config,
 			(rq) => this.#ctrl!.createTestRun(rq.source),
@@ -216,7 +222,7 @@ export class TestManager {
 		const s1 = this.#didInvalidate.event(async (items) => items && (await runner.queueForContinuousRun(items)));
 
 		// When a file is saved, run the queued tests in that file.
-		const s2 = this.#didSave.event((e) => doSafe(this.context, 'run continuous', () => runner.runContinuous(e)));
+		const s2 = this.#didSave.event((e) => doSafe(this.#context, 'run continuous', () => runner.runContinuous(e)));
 
 		// Cleanup when the run is canceled
 		token.onCancellationRequested(() => (s1?.dispose(), s2.dispose()));
@@ -244,7 +250,7 @@ export class TestManager {
 
 		// Ignore anything that's not in a workspace. TODO(ethan.reesor): Is it
 		// reasonable to change this?
-		const ws = this.context.workspace.getWorkspaceFolder(uri);
+		const ws = this.#context.workspace.getWorkspaceFolder(uri);
 		if (!ws) {
 			return;
 		}
@@ -257,14 +263,6 @@ export class TestManager {
 	 */
 	didSave(uri: Uri) {
 		this.#didSave.fire(uri);
-	}
-
-	get rootTestItems() {
-		return this.#resolver?.viewRoots || [];
-	}
-
-	get rootGoTestItems() {
-		return (async () => (await this.#resolver?.goRoots) || [])();
 	}
 }
 
