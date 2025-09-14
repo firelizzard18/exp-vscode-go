@@ -24,8 +24,6 @@ export class TestRunner {
 	readonly #request: TestRunRequest;
 	readonly #token: CancellationToken;
 
-	readonly #continuous = new Set<TestCase | TestFile>();
-
 	constructor(
 		context: Context,
 		provider: TestResolver,
@@ -49,23 +47,8 @@ export class TestRunner {
 		await this.#run(this.#request);
 	}
 
-	async queueForContinuousRun(items: Iterable<TestCase | TestFile>) {
-		for (const item of items) {
-			this.#continuous.add(item);
-		}
-	}
-
-	async runContinuous(uri: Uri) {
-		const items = new Set<TestCase | TestFile>();
-		for (const item of this.#continuous) {
-			const file = item instanceof TestFile ? item : item.file;
-			if (`${file.uri}` === `${uri}`) {
-				items.add(item);
-				this.#continuous.delete(item);
-			}
-		}
-
-		if (items.size) {
+	async runContinuous(items: TestCase[]) {
+		if (items.length) {
 			await this.#run(await this.#request.with(items), true);
 		}
 	}

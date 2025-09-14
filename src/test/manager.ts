@@ -11,34 +11,41 @@ import { RunConfig } from './runConfig';
 import { GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
 import { GoTestItemPresenter } from './itemPresenter';
 import { WorkspaceConfig } from './workspaceConfig';
+import { MapWithDefault } from '../utils/map';
 
 /**
  * Entry point for the test explorer implementation.
  */
 export class TestManager {
-	readonly #didInvalidate = new EventEmitter<(_: TestCase[]) => void>();
+	readonly #disposable: Disposable[] = [];
 	readonly #context: Context;
 	readonly #config: WorkspaceConfig;
-	readonly #disposable: Disposable[] = [];
+
+	// Run configurations.
 	readonly #run: RunConfig;
 	readonly #debug: RunConfig;
 	readonly #rrDebug: RunConfig;
 	readonly #coverage: RunConfig;
+
+	// Events.
 	readonly #docVersion = new Map<string, number>();
+	readonly #uncommittedUpdates = new MapWithDefault<string, TestCase[]>(() => []);
+	readonly #didCommitUpdates = new EventEmitter<(_: TestCase[]) => void>();
+
+	// Transients.
+	#ctrl?: TestController;
+	#resolver?: GoTestItemResolver;
 
 	constructor(context: Context) {
 		this.#context = context;
 		this.#config = new WorkspaceConfig(context.workspace);
+
 		this.#run = new RunConfig(context, 'Run', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
 		this.#debug = new RunConfig(context, 'Debug', TestRunProfileKind.Debug, true, { id: 'canDebug' });
 		this.#coverage = new RunConfig(context, 'Coverage', TestRunProfileKind.Coverage, true, { id: 'canRun' });
-
 		this.#rrDebug = new RunConfig(context, 'Debug with RR', TestRunProfileKind.Debug, false, { id: 'canDebug' });
 		this.#rrDebug.options.backend = 'rr';
 	}
-
-	#ctrl?: TestController;
-	#resolver?: GoTestItemResolver;
 
 	/**
 	 * Whether the test explorer is enabled.
@@ -75,7 +82,7 @@ export class TestManager {
 		// Set up resolve/refresh handlers
 		ctrl.resolveHandler = (item) =>
 			doSafe(this.#context, 'resolve test', async () => {
-				await this.#didUpdate(await resolver.updateViewModel(item, { resolve: true }));
+				await resolver.updateViewModel(item, { resolve: true });
 			});
 		ctrl.refreshHandler = () =>
 			doSafe(this.#context, 'refresh tests', async () => {
@@ -140,23 +147,7 @@ export class TestManager {
 	 */
 	async refresh(item?: TestItem, options: { recurse?: boolean } = { recurse: true }) {
 		if (!this.#resolver) return;
-		await this.#didUpdate(await this.#resolver.updateViewModel(item, options));
-	}
-
-	/**
-	 * Process model update events.
-	 */
-	async #didUpdate(events: ModelUpdateEvent[], opts: { invalidate?: boolean } = {}) {
-		if (!this.#ctrl) return;
-
-		// Invalidate test results when tests are modified.
-		if (opts.invalidate) {
-			const tests = events.filter(
-				(x): x is ModelUpdateEvent<TestCase> => x.item instanceof TestCase && x.type === 'modified',
-			);
-			this.#ctrl.invalidateTestResults?.(tests.map((x) => x.view).filter((x) => !!x));
-			await this.#didInvalidate.fire(tests.map((x) => x.item));
-		}
+		await this.#resolver.updateViewModel(item, options);
 	}
 
 	/**
@@ -203,14 +194,13 @@ export class TestManager {
 			return;
 		}
 
-		// When a test's result is invalidated, queue it for running.
-		const s1 = this.#didInvalidate.event(async (items) => items && (await runner.queueForContinuousRun(items)));
-
-		// When a file is saved, run the queued tests in that file.
-		const s2 = this.#didSave.event((e) => doSafe(this.#context, 'run continuous', () => runner.runContinuous(e)));
+		// Trigger a run when updates are committed (edits are saved).
+		const s = this.#didCommitUpdates.event((items) =>
+			doSafe(this.#context, 'run continuous', () => runner.runContinuous(items)),
+		);
 
 		// Cleanup when the run is canceled
-		token.onCancellationRequested(() => (s1?.dispose(), s2.dispose()));
+		token.onCancellationRequested(() => s.dispose());
 	}
 
 	/**
@@ -274,15 +264,42 @@ export class TestManager {
 			case 'changed':
 				if (mode != 'on-edit') return;
 				options.modified = event.ranges;
-				return;
+				break;
 
 			default:
 				options.invalidate = false;
 				break;
 		}
 
+		// Update the file.
 		const { updates } = await this.#resolver.updateFile(uri, options);
-		await this.#didUpdate(updates, options);
+
+		switch (event?.type) {
+			case 'changed':
+				// Track uncommitted updates (unsaved changes).
+				this.#uncommittedUpdates
+					.get(`${uri}`)
+					.push(...updates.map((x) => x.item).filter((x) => x instanceof TestCase));
+				break;
+
+			case 'saved':
+				// Fire an event when those changes are committed.
+				const key = `${uri}`;
+				if (this.#uncommittedUpdates.has(key)) {
+					this.#didCommitUpdates.fire(this.#uncommittedUpdates.get(key));
+					this.#uncommittedUpdates.delete(key);
+				}
+				break;
+		}
+
+		// Invalidate test results when tests are modified.
+		if (options.invalidate && this.#ctrl?.invalidateTestResults) {
+			const tests = updates
+				.filter((x) => x.item instanceof TestCase && x.type === 'modified')
+				.map((x) => x.view)
+				.filter((x) => !!x);
+			this.#ctrl.invalidateTestResults(tests);
+		}
 	}
 }
 
