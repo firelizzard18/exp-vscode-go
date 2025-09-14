@@ -50,24 +50,7 @@ export class GoTestItemResolver {
 	 *     - may require resolving tests and/or creating dynamic subtests
 	 */
 
-	markResolved(item: string | TestItem | GoTestItem | '(roots)') {
-		// TODO: Remove.
-		if (item === '(roots)') {
-			this.#didLoadRoots = true;
-			return;
-		}
-
-		if (typeof item === 'object' && !('kind' in item)) {
-			item = item.id;
-		}
-		if (typeof item === 'string') {
-			item = this.#items.get(item)!;
-			if (!item) return;
-		}
-		this.#didLoadChildren.add(item);
-	}
-
-	async updateFile(wsf: WorkspaceFolder, uri: Uri, opts: { modified?: Range[]; invalidate?: boolean }) {
+	async updateFile(wsf: WorkspaceFolder, uri: Uri, opts: { invalidate?: boolean }) {
 		// Resolve or create a Workspace.
 		let ws = this.#presenter.workspaces.get(wsf);
 		if (!ws) {
@@ -133,21 +116,17 @@ export class GoTestItemResolver {
 			}
 
 			// Update the package's files.
-			this.#updateFiles(pkg, src.TestFiles, opts.modified ?? []);
+			this.#updateFiles(pkg, src.TestFiles);
 
 			// Mark the root and the package as requested.
 			this.#presenter.markRequested(root);
 			this.#presenter.markRequested(pkg);
 
 			// Synchronize the view model.
-			await this.updateViewModel(pkg);
+			const pkgView = this.#updateViewModel(pkg, undefined, {});
 
 			// Invalidate test results.
 			if (opts.invalidate && this.#ctrl.invalidateTestResults) {
-				// Get the package view item. It must exist.
-				const pkgView = this.#getViewItem(pkg);
-				if (!pkgView) throw new Error('An internal error occurred');
-
 				// Get the test view items. They must exist.
 				const tests = this.#presenter.getChildren(pkg).flatMap((go) => {
 					const view = pkgView.children.get(`${idFor(go)}`);
@@ -168,38 +147,96 @@ export class GoTestItemResolver {
 	}
 
 	/**
-	 * Update the view model. If `view` is null/undefined, the roots are
+	 * Update the view model. If `item` is null/undefined, the roots are
 	 * updated. Otherwise the given item and it's children are updated.
+	 *
+	 * If `options.resolve` is set or the roots or item's children have already
+	 * been loaded, they will be (re)loaded. If neither is true, and `item` is
+	 * null/undefined, this has no effect. Otherwise (when neither is true),
+	 * this will simply synchronize the view model with the data model without
+	 * updating the latter.
 	 */
-	async updateViewModel(item?: TestItem | GoTestItem | null, options: { recurse?: boolean } = {}) {
-		// Update the data model.
-		const go = item && (await this.#updateDataModel(item));
-		if (item && !go && !('kind' in item)) {
-			this.#delete(item);
+	async updateViewModel(item?: TestItem | GoTestItem | null, options: { resolve?: boolean; recurse?: boolean } = {}) {
+		// Load the roots and update the view model.
+		if (!item) {
+			if (!this.#didLoadRoots && !options.resolve) {
+				return;
+			}
+
+			await this.#loadRoots();
+			for (const go of this.#presenter.getChildren()) {
+				const view = this.#ctrl.items.get(`${idFor(go)}`);
+				this.#updateViewModel(go, view, options);
+			}
 			return;
 		}
 
-		// Resolve or create the view item.
-		let view = item && ('kind' in item ? this.#getViewItem(item) : item);
-		if (go && !view) {
-			view = this.#buildViewModel(go);
+		// Determine if `item` is a data or view model item. If it's the latter,
+		// find the data model item. If there is no data model item, delete the
+		// view model item.
+		let go: GoTestItem | undefined;
+		let view: TestItem | undefined;
+		if ('kind' in item) {
+			go = item;
+		} else {
+			view = item;
+			go = this.#items.get(view.id);
+			if (!go) {
+				this.#delete(view);
+				return;
+			}
 		}
+
+		// If it's a Workspace, Module, or Package, load its children.
+		if (options.resolve || this.#didLoadChildren.has(go)) {
+			switch (go.kind) {
+				case 'workspace':
+				case 'module':
+					await this.#loadPackages(go);
+					break;
+
+				case 'package':
+					await this.#loadTests(go);
+					break;
+			}
+		}
+
+		// Update the view model.
+		this.#updateViewModel(go, view, options);
+	}
+
+	/**
+	 * Create or update the view model item for the given data model item. If
+	 * the item's children have been loaded previously, they will be updated. If
+	 * `options.recurse` is set, this will recurse on the item's children.
+	 *
+	 * **This must not be async.** This method being async would cause serious
+	 * performance issues for large projects.
+	 */
+	#updateViewModel(go: GoTestItem, view: TestItem | undefined, options: { recurse?: boolean }) {
+		// Resolve or create the view item.
+		view = view ?? this.#getViewItem(go) ?? this.#buildViewModel(go);
 
 		// Ensure mutable properties are synced.
 		if (go instanceof StaticTestCase) {
-			view!.range = go.range;
+			view.range = go.range;
 		}
 
-		// Should we update children? If the user has not expanded a given item
-		// (including the roots), do not update it.
-		if (go && !this.#didLoadChildren.has(go)) return;
-		if (!go && !this.#didLoadRoots) return;
+		// Should we update children? If the item is a workspace, module, or
+		// package that has not yet had its children loaded, do not update them.
+		switch (go.kind) {
+			case 'workspace':
+			case 'module':
+			case 'package':
+				if (!this.#didLoadChildren.has(go)) {
+					return view;
+				}
+		}
 
 		// Delete unwanted items.
 		const goChildren = this.#presenter.getChildren(go);
-		const viewChildren = view ? view.children : this.#ctrl.items;
 		const want = new Set(goChildren.map((x) => `${idFor(x)}`));
-		for (const [id, item] of viewChildren) {
+		for (const [id, item] of view.children) {
 			if (!want.has(id)) {
 				this.#delete(item);
 			}
@@ -208,17 +245,19 @@ export class GoTestItemResolver {
 		// Add missing items.
 		for (const go of goChildren) {
 			const id = `${idFor(go)}`;
-			if (!viewChildren.get(id)) {
+			if (!view.children.get(id)) {
 				this.#buildViewModel(go);
 			}
 		}
 
-		// Should we recurse? Always recurse on files.
-		if (options.recurse || go?.kind === 'file') {
-			for (const item of goChildren) {
-				await this.updateViewModel(item);
+		// Recurse.
+		if (options.recurse) {
+			for (const go of goChildren) {
+				this.#updateViewModel(go, view.children.get(`${idFor(go)}`), options);
 			}
 		}
+
+		return view;
 	}
 
 	#buildViewModel(go: GoTestItem) {
@@ -299,36 +338,6 @@ export class GoTestItemResolver {
 
 		// Otherwise, check the parent's children.
 		return this.#getViewItem(parent)?.children.get(`${idFor(item)}`);
-	}
-
-	/**
-	 * Updates the data model. If `item` is a data model item, it is updated. If
-	 * `item` is a view model item, it's corresponding data model item is
-	 * updated. If `view` is null/undefined, the list of roots (workspaces and
-	 * modules) is updated.
-	 */
-	async #updateDataModel(item?: TestItem | GoTestItem | null) {
-		if (!item) {
-			await this.#loadRoots();
-			return;
-		}
-
-		const go = 'kind' in item ? item : this.#items.get(item.id);
-		if (!go) return;
-
-		// Use gopls to update.
-		switch (go.kind) {
-			case 'workspace':
-			case 'module':
-				await this.#loadPackages(go);
-				break;
-
-			case 'package':
-				await this.#loadTests(go);
-				break;
-		}
-
-		return go;
 	}
 
 	/**
@@ -416,7 +425,10 @@ export class GoTestItemResolver {
 		this.#presenter.didUpdateTests(pkg);
 	}
 
-	#updateFiles(pkg: Package, files: Commands.TestFile[], modified: Range[] = []) {
+	/**
+	 * Updates the files and tests of a package using the provided data.
+	 */
+	#updateFiles(pkg: Package, files: Commands.TestFile[]) {
 		pkg.files.update(
 			files.filter((x) => x.Tests && x.Tests.length > 0),
 			(src) => new TestFile(pkg, src),
@@ -424,7 +436,7 @@ export class GoTestItemResolver {
 				file.tests.update(
 					src.Tests ?? [],
 					(src) => new StaticTestCase(file, src),
-					(src, test) => (test instanceof StaticTestCase ? test.update(src, modified) : []),
+					(src, test) => (test instanceof StaticTestCase ? test.update(src) : []),
 					// Don't erase dynamic test cases.
 					(test) => test instanceof DynamicTestCase,
 				),

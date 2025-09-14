@@ -81,8 +81,7 @@ export class TestManager {
 		// Set up resolve/refresh handlers
 		ctrl.resolveHandler = (item) =>
 			doSafe(this.context, 'resolve test', () => {
-				resolver.markResolved(item ?? '(roots)');
-				resolver.updateViewModel(item);
+				resolver.updateViewModel(item, { resolve: true });
 			});
 		ctrl.refreshHandler = () =>
 			doSafe(this.context, 'refresh tests', () => {
