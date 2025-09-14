@@ -53,7 +53,9 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			showQuickPick: window.showQuickPick,
 			showWarningMessage: window.showWarningMessage,
 		});
-		window.visibleTextEditors.forEach((x) => manager.reloadUri(x.document.uri));
+		for (const editor of window.visibleTextEditors) {
+			await manager.updateFile(editor.document.uri);
+		}
 	};
 	ctx.subscriptions.push(manager);
 
@@ -112,10 +114,10 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// [Event] The user opened a file in an editor
 	let seenDocuments = new Set<string>();
-	event(window.onDidChangeVisibleTextEditors, 'opened document', (editors) => {
+	event(window.onDidChangeVisibleTextEditors, 'opened document', async (editors) => {
 		for (const editor of editors) {
 			if (seenDocuments.has(`${editor.document.uri}`)) continue;
-			manager.reloadUri(editor.document.uri);
+			await manager.updateFile(editor.document.uri);
 		}
 
 		seenDocuments = new Set(editors.map((x) => `${x.document.uri}`));
@@ -123,23 +125,11 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// [Event] File change
 	event(workspace.onDidChangeTextDocument, 'updated document', async (e) => {
-		const cfg = new TestConfig(workspace, e.document.uri);
-		if (!manager.enabled || cfg.update() !== 'on-edit') {
-			return;
-		}
-
-		// Ignore events that don't include changes. I don't know what
-		// conditions trigger this, but we only care about actual changes.
-		if (e.contentChanges.length === 0) {
-			return;
-		}
-
 		const start = performance.now();
-		await manager.reloadUri(
-			e.document.uri,
-			e.contentChanges.map((x) => x.range),
-			true,
-		);
+		await manager.didChangeTextDocument(e);
+
+		// If the update took too long, warn the user they might want to disable
+		// on-edit updates.
 		const duration = performance.now() - start;
 		if (duration > 500) {
 			await badReloadPerformanceNotification(ctx.workspaceState);
@@ -149,21 +139,9 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	});
 
 	// [Event] File save
-	//
-	// Only fire when the document changed. This logic is based on vscode-go's
-	// GoPackageOutlineProvider. vscode-go also filters out changes to documents
-	// that are not the active document, but I prefer not to because that could
-	// have false negatives.
-	const previousVersion = new Map<string, number>();
-	event(workspace.onDidSaveTextDocument, 'saved document', (e) => {
-		const uri = `${e.uri}`;
-		if (!manager.enabled) return;
-		if (e.version === previousVersion.get(uri)) return;
-		previousVersion.set(uri, e.version);
-		manager.didSave(e.uri);
-	});
+	event(workspace.onDidSaveTextDocument, 'saved document', (e) => manager.didSaveTextDocument(e));
 
-	// [Event] Workspace change.
+	// [Event] Workspace change
 	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => {
 		if (manager.enabled) {
 			// Update roots without recursing.
@@ -174,8 +152,16 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	// [Event] File created/deleted
 	const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);
 	ctx.subscriptions.push(watcher);
-	event(watcher.onDidCreate, 'created file', async (e) => manager.enabled && manager.reloadUri(e));
-	event(watcher.onDidDelete, 'deleted file', async (e) => manager.enabled && manager.reloadUri(e));
+	event(
+		watcher.onDidCreate,
+		'created file',
+		async (e) => manager.enabled && manager.updateFile(e, { type: 'created' }),
+	);
+	event(
+		watcher.onDidDelete,
+		'deleted file',
+		async (e) => manager.enabled && manager.updateFile(e, { type: 'deleted' }),
+	);
 
 	// Setup the controller (if enabled)
 	if (await isEnabled(ctx.globalState)) {
