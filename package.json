@@ -32,11 +32,12 @@
   "scripts": {
     "bundle": "esbuild main=src/extension.ts pprof=webview/pprof/App.tsx --bundle --outdir=dist --external:vscode --external:react/jsx-runtime --format=cjs --platform=node --loader:.frag=text --loader:.vert=text",
     "watch": "yarn run bundle -- --sourcemap=inline --watch",
+    "watch:types": "tsc --watch",
     "package": "vsce package",
     "lint": "eslint src --ext ts",
     "tests": "yarn run jest",
     "clean": "rimraf dist out",
-    "check-types": "tsc -p src && tsc -p webview",
+    "check-types": "tsc",
     "vscode:prepublish": "yarn run check-types && yarn run lint && yarn run bundle"
   },
   "contributes": {
