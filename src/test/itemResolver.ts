@@ -27,9 +27,9 @@ export class GoTestItemResolver {
 	readonly #presenter;
 	readonly #ctrl;
 	readonly #items = new Map<string, GoTestItem>();
-	readonly #resolved = new WeakSet<GoTestItem>();
+	readonly #didLoadChildren = new WeakSet<GoTestItem>();
 
-	#resolvedRoots = false;
+	#didLoadRoots = false;
 
 	constructor(context: Context, config: WorkspaceConfig, presenter: GoTestItemPresenter, ctrl: TestController) {
 		this.#context = context;
@@ -41,15 +41,8 @@ export class GoTestItemResolver {
 	/**
 	 * Entry points:
 	 * - config change
-	 * - explorer
-	 *   - resolve roots
-	 *   - resolve children
-	 *   - refresh all
-	 *   - refresh item
 	 * - file
-	 *   - open
-	 *   - modify
-	 *   - create/delete
+	 *   - delete
 	 *   - code lens
 	 * - runner
 	 *   - view -> go for executing
@@ -57,82 +50,10 @@ export class GoTestItemResolver {
 	 *     - may require resolving tests and/or creating dynamic subtests
 	 */
 
-	async didUpdateFile(wsf: WorkspaceFolder, file: Uri, ranges: Record<string, Range[]> = {}) {
-		// Resolve or create a Workspace.
-		let ws = this.#presenter.workspaces.get(wsf);
-		if (!ws) {
-			ws = new Workspace(wsf);
-			this.#presenter.workspaces.add(ws);
-		}
-
-		// Query gopls.
-		const packages = this.#consolidatePackages(
-			ws,
-			await this.#context.commands.packages({
-				Files: [`${file}`],
-				Mode: 1,
-			}),
-		);
-
-		// A helper to get the root for a package. If the package belongs to a
-		// module and there is no corresponding module, try reloading. Fallback
-		// to the workspace, for example when the workspace is a subdirectory of
-		// a module.
-		let didReload = false;
-		const getRoot = async (pkg: Commands.Package) => {
-			if (!pkg.ModulePath) return ws;
-
-			const mod = ws.modules.get(pkg.ModulePath);
-			if (mod || didReload) return mod ?? ws;
-
-			// Try reloading, maybe the module will appear.
-			didReload = true;
-			await this.resolveRoots();
-			return ws.modules.get(pkg.ModulePath) ?? ws;
-		};
-
-		// Process packages. An alternative build system may allow a file to be
-		// part of multiple packages, so we can't assume there's only one
-		// package.
-		const updated = [];
-		const roots = new Set<Workspace | Module>([ws]);
-		for (const src of packages) {
-			// Sanity check.
-			if (!src.TestFiles?.length) continue;
-
-			// Get the workspace or module that owns this package.
-			const root = await getRoot(src);
-			roots.add(root);
-
-			// Get or create the package.
-			let pkg = root.packages.get(src);
-			if (!pkg) {
-				pkg = new Package(root, src);
-				root.packages.add(pkg);
-				updated.push({ item: pkg, type: 'added' });
-			}
-
-			// Update the package.
-			updated.push(...pkg.update(src, ranges));
-
-			// Mark the root and the package as requested.
-			this.#presenter.markRequested(root);
-			this.#presenter.markRequested(pkg);
-		}
-
-		// If anything changed, rebuild relations.
-		if (updated.length > 0) {
-			for (const root of roots) {
-				this.#presenter.didUpdatePackages(root);
-			}
-		}
-
-		return updated;
-	}
-
 	markResolved(item: string | TestItem | GoTestItem | '(roots)') {
+		// TODO: Remove.
 		if (item === '(roots)') {
-			this.#resolvedRoots = true;
+			this.#didLoadRoots = true;
 			return;
 		}
 
@@ -143,7 +64,107 @@ export class GoTestItemResolver {
 			item = this.#items.get(item)!;
 			if (!item) return;
 		}
-		this.#resolved.add(item);
+		this.#didLoadChildren.add(item);
+	}
+
+	async updateFile(wsf: WorkspaceFolder, uri: Uri, opts: { modified?: Range[]; invalidate?: boolean }) {
+		// Resolve or create a Workspace.
+		let ws = this.#presenter.workspaces.get(wsf);
+		if (!ws) {
+			ws = new Workspace(wsf);
+			this.#presenter.workspaces.add(ws);
+		}
+
+		// If the path is outside of the workspace, ignore it.
+		const config = this.#config.for(ws);
+		const exclude = config.exclude.get() || [];
+		const rel = path.relative(ws.uri.fsPath, uri.fsPath);
+		if (exclude.some((x) => x.match(rel))) return;
+
+		// Query gopls.
+		const r = await this.#context.commands.packages({
+			Files: [`${uri}`],
+			Mode: Commands.PackagesMode.NeedTests,
+		});
+		const packages = this.#consolidatePackages(ws, r);
+
+		// Map modules.
+		const mods = new Map<string, Module>();
+		for (const src of Object.values(r.Module ?? {})) {
+			// If the path is outside of the workspace, ignore it.
+			const uri = Uri.parse(src.GoMod);
+			const rel = path.relative(ws.uri.fsPath, uri.fsPath);
+			if (path.isAbsolute(rel)) continue; // Deal with Windows drive letters.
+			if (rel.startsWith('..' + path.sep)) continue;
+
+			// If the path is excluded, ignore it.
+			const dir = path.dirname(rel);
+			if (exclude.some((x) => x.match(dir))) continue;
+
+			// Get or create the module.
+			let mod = ws.modules.get(src.Path);
+			if (!mod) {
+				mod = new Module(ws, src);
+				ws.modules.add(mod);
+			}
+			mods.set(src.Path, mod);
+		}
+
+		// Process packages. An alternative build system may allow a file to be
+		// part of multiple packages, so we can't assume there's only one
+		// package.
+		for (const src of packages) {
+			// Skip packages that don't have tests.
+			if (!src.TestFiles?.length) continue;
+
+			// Get the workspace or module for this package. If the package is
+			// part of a module but that module is not part of this workspace,
+			// use the workspace as the root.
+			let root: Workspace | Module = ws;
+			if (src.ModulePath) {
+				root = mods.get(src.ModulePath) ?? ws;
+			}
+
+			// Get or create the package.
+			let pkg = root.packages.get(src);
+			if (!pkg) {
+				pkg = new Package(root, src);
+				root.packages.add(pkg);
+			}
+
+			// Update the package's files.
+			this.#updateFiles(pkg, src.TestFiles, opts.modified ?? []);
+
+			// Mark the root and the package as requested.
+			this.#presenter.markRequested(root);
+			this.#presenter.markRequested(pkg);
+
+			// Synchronize the view model.
+			await this.updateViewModel(pkg);
+
+			// Invalidate test results.
+			if (opts.invalidate && this.#ctrl.invalidateTestResults) {
+				// Get the package view item. It must exist.
+				const pkgView = this.#getViewItem(pkg);
+				if (!pkgView) throw new Error('An internal error occurred');
+
+				// Get the test view items. They must exist.
+				const tests = this.#presenter.getChildren(pkg).flatMap((go) => {
+					const view = pkgView.children.get(`${idFor(go)}`);
+					if (!view) throw new Error('An internal error occurred');
+					if (go.kind !== 'file') return [view];
+
+					// If files are shown, get the file's tests.
+					const tests = this.#presenter.getChildren(go).map((x) => view.children.get(`${idFor(x)}`));
+					if (tests.some((x) => !x)) throw new Error('An internal error occurred');
+					return tests as TestItem[];
+				});
+
+				// Invalidate.
+				this.#ctrl.invalidateTestResults(tests);
+				this.#didInvalidateTestResults.fire(pkg.files);
+			}
+		}
 	}
 
 	/**
@@ -171,8 +192,8 @@ export class GoTestItemResolver {
 
 		// Should we update children? If the user has not expanded a given item
 		// (including the roots), do not update it.
-		if (go && !this.#resolved.has(go)) return;
-		if (!go && !this.#resolvedRoots) return;
+		if (go && !this.#didLoadChildren.has(go)) return;
+		if (!go && !this.#didLoadRoots) return;
 
 		// Delete unwanted items.
 		const goChildren = this.#presenter.getChildren(go);
@@ -192,35 +213,11 @@ export class GoTestItemResolver {
 			}
 		}
 
-		// Should we recurse?
-		if (!options.recurse) return;
-
-		switch (go?.kind) {
-			case undefined:
-				// It seems like it would make sense to update workspaces here
-				// and update the modules in the workspace case. However,
-				// workspaces and modules are sibilings in the view, so this
-				// better matches how the view behaves.
-				for (const ws of this.#presenter.workspaces) {
-					await this.updateViewModel(ws);
-					for (const mod of ws.modules) {
-						await this.updateViewModel(mod);
-					}
-				}
-				break;
-
-			case 'workspace':
-			case 'module':
-				for (const pkg of go.packages) {
-					await this.updateViewModel(pkg);
-				}
-				break;
-
-			case 'package':
-				for (const file of go.files) {
-					await this.updateViewModel(file);
-				}
-				break;
+		// Should we recurse? Always recurse on files.
+		if (options.recurse || go?.kind === 'file') {
+			for (const item of goChildren) {
+				await this.updateViewModel(item);
+			}
 		}
 	}
 
@@ -338,40 +335,45 @@ export class GoTestItemResolver {
 	 * Updates the list of workspaces, and loads the modules of each workspace.
 	 */
 	async #loadRoots() {
+		// Remember that we've loaded the roots.
+		this.#didLoadRoots = true;
+
 		// Update the workspace item set.
 		this.#presenter.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
 
-		// Query gopls.
-		const results = await Promise.all(
-			[...this.#presenter.workspaces].map(async (ws) => {
-				const r = await this.#context.commands.modules({
-					Dir: `${ws.uri}`,
-					MaxDepth: -1,
-				});
-				return [ws, r] as const;
-			}),
-		);
-
 		// Update the workspaces' modules list.
-		for (const [ws, { Modules }] of results) {
-			if (!Modules) continue;
+		await Promise.all([...this.#presenter.workspaces].map(async (ws) => this.#loadModules(ws)));
+	}
 
-			const config = this.#config.for(ws);
-			const exclude = config.exclude.get() || [];
-			ws.modules.update(
-				Modules.filter((m) => {
-					const p = path.relative(ws.uri.fsPath, m.Path);
-					return !exclude.some((x) => x.match(p));
-				}),
-				(src) => new Module(ws, src),
-			);
-		}
+	/**
+	 * Updates the modules of a workspace.
+	 */
+	async #loadModules(ws: Workspace) {
+		const { Modules } = await this.#context.commands.modules({
+			Dir: `${ws.uri}`,
+			MaxDepth: -1,
+		});
+		if (!Modules) return;
+
+		const config = this.#config.for(ws);
+		const exclude = config.exclude.get() || [];
+		ws.modules.update(
+			Modules.filter((m) => {
+				const uri = Uri.parse(m.GoMod);
+				const p = path.relative(ws.uri.fsPath, path.dirname(uri.fsPath));
+				return !exclude.some((x) => x.match(p));
+			}),
+			(src) => new Module(ws, src),
+		);
 	}
 
 	/**
 	 * Loads the packages of a workspace or module.
 	 */
 	async #loadPackages(root: Workspace | Module) {
+		// Remember that we've loaded the root's packages.
+		this.#didLoadChildren.add(root);
+
 		// Query gopls.
 		const r = await this.#context.commands.packages({
 			Files: [`${root.dir}`],
@@ -394,15 +396,27 @@ export class GoTestItemResolver {
 	 * Loads the tests (and files) of a package.
 	 */
 	async #loadTests(pkg: Package) {
+		// Remember that we've loaded the package's files.
+		this.#didLoadChildren.add(pkg);
+
 		// Query gopls.
-		const r = await this.#context.commands.packages({
+		const { Packages } = await this.#context.commands.packages({
 			Files: [`${pkg.uri}`],
 			Mode: Commands.PackagesMode.NeedTests,
 		});
-
-		const files = (r.Packages ?? []).flatMap((x) => x.TestFiles ?? []);
+		if (!Packages) return;
 
 		// Update files and their tests.
+		this.#updateFiles(
+			pkg,
+			Packages.flatMap((x) => x.TestFiles ?? []),
+		);
+
+		// Notify the provider that we updated the package's tests.
+		this.#presenter.didUpdateTests(pkg);
+	}
+
+	#updateFiles(pkg: Package, files: Commands.TestFile[], modified: Range[] = []) {
 		pkg.files.update(
 			files.filter((x) => x.Tests && x.Tests.length > 0),
 			(src) => new TestFile(pkg, src),
@@ -410,7 +424,7 @@ export class GoTestItemResolver {
 				file.tests.update(
 					src.Tests ?? [],
 					(src) => new StaticTestCase(file, src),
-					(src, test) => (test instanceof StaticTestCase ? test.update(src, []) : []),
+					(src, test) => (test instanceof StaticTestCase ? test.update(src, modified) : []),
 					// Don't erase dynamic test cases.
 					(test) => test instanceof DynamicTestCase,
 				),
