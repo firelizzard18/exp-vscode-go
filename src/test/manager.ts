@@ -104,7 +104,10 @@ export class TestManager {
 			createRunProfile(this.#rrDebug);
 		}
 
-		if (this.#context.testing || isCoverageSupported(ctrl)) {
+// Check if coverage is supported.
+		const testRun = ctrl.createTestRun({ include: [], exclude: [], profile: undefined });
+		testRun.end();
+		if (this.#context.testing || 'addCoverage' in testRun) {
 			createRunProfile(this.#coverage);
 		}
 	}
