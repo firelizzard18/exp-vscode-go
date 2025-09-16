@@ -243,11 +243,21 @@ export function parseID(id: string | Uri) {
 	}
 	const query = new URLSearchParams(id.query);
 	if (query.has('kind')) throw new Error('Invalid ID');
-	return {
+	const obj = {
 		path: id.path,
-		kind: query.get('kind')!,
+		kind: query.get('kind')! as Exclude<GoTestItem['kind'], 'profile-container' | 'profile-set' | 'profile'>,
 		name: query.get('name') ?? undefined,
 		at: query.has('at') ? new Date(query.get('at')!) : undefined,
 		profile: query.get('profile') ?? id.fragment === 'profiles',
 	};
+
+	switch (obj.kind) {
+		case 'test':
+		case 'benchmark':
+		case 'example':
+		case 'fuzz':
+			if (!obj.name) throw new Error('Invalid test ID: missing name');
+	}
+
+	return obj;
 }

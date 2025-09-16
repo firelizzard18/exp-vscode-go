@@ -225,6 +225,10 @@ export class GoTestItemPresenter {
 		}
 	}
 
+	getProfiles(item: GoTestItem) {
+		return this.#profiles.get(item as any);
+	}
+
 	/**
 	 * The packages of a {@link Workspace} or {@link Module} were updated, so
 	 * package relations should be rebuilt.

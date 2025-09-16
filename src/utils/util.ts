@@ -9,6 +9,18 @@ import { promisify } from 'node:util';
 import { execFile, ExecFileOptions } from 'node:child_process';
 import { Context } from './testing';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { Uri } from 'vscode';
+
+export function pathContains(a: string | Uri, b: string | Uri) {
+	if (typeof a !== 'string') a = a.fsPath;
+	if (typeof b !== 'string') b = b.fsPath;
+
+	// A contains B if and only if the relative path does not start with ../.
+	// Additionally - on Windows - if A and B have different drive letters than
+	// the 'relative' path will still be absolute.
+	const rel = path.relative(a, b);
+	return !(path.isAbsolute(rel) || rel.startsWith('..' + path.sep));
+}
 
 export function timeit<R>(display: string, fn: () => R) {
 	const prefix = timeit.store.getStore() ?? '';

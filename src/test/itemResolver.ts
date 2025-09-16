@@ -8,14 +8,15 @@ import {
 	idFor,
 	Module,
 	Package,
+	parseID,
 	StaticTestCase,
 	TestCase,
 	TestFile,
 	Workspace,
 } from './model';
 import { GoTestItemPresenter } from './itemPresenter';
-import { EventEmitter } from '../utils/eventEmitter';
 import { ItemEvent } from './itemSet';
+import { pathContains } from '../utils/util';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -24,7 +25,6 @@ export class GoTestItemResolver {
 	readonly #config;
 	readonly #presenter;
 	readonly #ctrl;
-	readonly #items = new Map<string, GoTestItem>();
 	readonly #didLoadChildren = new WeakSet<GoTestItem>();
 
 	#didLoadRoots = false;
@@ -90,13 +90,11 @@ export class GoTestItemResolver {
 		for (const src of Object.values(r.Module ?? {})) {
 			// If the path is outside of the workspace, ignore it.
 			const uri = Uri.parse(src.GoMod);
-			const rel = path.relative(ws.uri.fsPath, uri.fsPath);
-			if (path.isAbsolute(rel)) continue; // Deal with Windows drive letters.
-			if (rel.startsWith('..' + path.sep)) continue;
+			if (!pathContains(ws.uri, uri)) continue;
 
 			// If the path is excluded, ignore it.
-			const dir = path.dirname(rel);
-			if (exclude.some((x) => x.match(dir))) continue;
+			const relDir = path.relative(ws.uri.fsPath, path.dirname(uri.fsPath));
+			if (exclude.some((x) => x.match(relDir))) continue;
 
 			// Get or create the module.
 			let mod = ws.modules.get(src.Path);
@@ -192,7 +190,7 @@ export class GoTestItemResolver {
 			go = item;
 		} else {
 			view = item;
-			go = this.#items.get(view.id);
+			go = this.#getGoItem(view);
 			if (!go) {
 				this.#delete(view);
 				return [];
@@ -338,12 +336,84 @@ export class GoTestItemResolver {
 		}
 	}
 
-	#getViewItem(item: string | GoTestItem): TestItem | undefined {
+	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {
 		if (typeof item === 'string') {
-			item = this.#items.get(item)!;
-			if (!item) return;
+			item = Uri.parse(item);
+		} else if (!(item instanceof Uri)) {
+			item = Uri.parse(item.id);
 		}
 
+		// Parse the ID.
+		const id = parseID(item);
+
+		// If it's a profile, find the containing item.
+		if (id.profile) {
+			const { fragment: _, ...parts } = item;
+			const parent = this.#getGoItem(Uri.from(parts));
+			if (!parent) return;
+
+			const container = this.#presenter.getProfiles(parent);
+			if (!container || !id.at) return container;
+
+			const set = container.profiles.get(id.at.getTime());
+			if (!set || typeof id.profile === 'boolean') return set;
+
+			for (const profile of set.profiles) {
+				if (profile.type.id === id.profile) {
+					return profile;
+				}
+			}
+			return;
+		}
+
+		// Create a URI with the query and fragment removed.
+		const uri = Uri.from({
+			scheme: item.scheme,
+			authority: item.authority,
+			path: item.path,
+		});
+
+		// Get the workspace.
+		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
+		if (!wsf) return;
+		const ws = this.#presenter.workspaces.get(wsf);
+		if (!ws || id.kind === 'workspace') return ws;
+
+		// Scan all the modules.
+		for (const mod of ws.modules) {
+			// If we're looking for a module, return or skip. Otherwise, check
+			// if the module contains the path.
+			if (id.kind === 'module') {
+				if (`${mod.uri}` === `${uri}`) {
+					return mod;
+				}
+				continue;
+			} else if (!pathContains(mod.uri, uri)) {
+				continue;
+			}
+
+			// Look for a package who's URI matches the target directory.
+			const dir = id.kind === 'package' ? uri : Uri.joinPath(uri, '..');
+			for (const pkg of mod.packages) {
+				// If it matches and we want a package, return it.
+				if (`${pkg.uri}` !== `${dir}`) continue;
+				if (id.kind === 'package') return pkg;
+
+				// Does the package have the file?
+				const file = pkg.files.get(`${uri}`);
+				if (!file) continue;
+
+				// If we're looking for a file and it matches, return it.
+				if (id.kind === 'file') return file;
+
+				// If we found the file and it doesn't have the test, the
+				// test doesn't exist.
+				return file.tests.get(id.name!);
+			}
+		}
+	}
+
+	#getViewItem(item: GoTestItem): TestItem | undefined {
 		// If the item has no (view) parent, check the root.
 		const parent = this.#presenter.getParent(item);
 		if (!parent) {
@@ -511,6 +581,5 @@ export class GoTestItemResolver {
 		} else {
 			this.#ctrl.items.delete(item.id);
 		}
-		this.#items.delete(item.id);
 	}
 }
