@@ -252,17 +252,12 @@ export class GoTestItemPresenter {
 	didUpdateTests(pkg: Package) {
 		// TODO: Can we handle this by listening for item events instead?
 		const tests = [...pkg.allTests()];
-		this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(tests, test.name)]));
+		this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(pkg, test.name)]));
 	}
 
-	/**
-	 * Adds a new {@link DynamicTestCase dynamic subtest}.
-	 */
-	addTestCase(parent: TestCase, name: string, run: TestRun) {
-		const child = new DynamicTestCase(parent, name, run);
-		parent.file.tests.add(child);
-		this.#testRel.get(parent.file.package).add(parent, child);
-		return child;
+	didAddTest(parent: TestCase, test: DynamicTestCase) {
+		// TODO: Can we handle this by listening for item events instead?
+		this.#testRel.get(parent.file.package).add(parent, test);
 	}
 
 	/**

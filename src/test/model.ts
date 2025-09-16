@@ -198,12 +198,12 @@ export class DynamicTestCase extends TestCase {
  * Searches a set of tests for a test case that is the parent of the given test
  * name.
  */
-export function findParentTestCase(allTests: TestCase[], name: string) {
+export function findParentTestCase(pkg: Package, name: string) {
 	for (;;) {
 		const i = name.lastIndexOf('/');
 		if (i < 0) return;
 		name = name.substring(0, i);
-		for (const test of allTests) {
+		for (const test of pkg.allTests()) {
 			if (test.name === name) {
 				return test;
 			}

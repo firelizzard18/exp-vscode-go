@@ -1,9 +1,10 @@
-import { Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri, WorkspaceFolder } from 'vscode';
+import { Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri, WorkspaceFolder } from 'vscode';
 import { Commands, Context, TestController } from '../utils/testing';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import {
 	DynamicTestCase,
+	findParentTestCase,
 	GoTestItem,
 	idFor,
 	Module,
@@ -18,6 +19,7 @@ import { GoTestItemPresenter } from './itemPresenter';
 import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
 import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
+import { TestEvent } from './testEvent';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -446,23 +448,81 @@ export class GoTestItemResolver {
 			excludeForPackage.get(pkg)!.push(item);
 		}
 
-		const get = (x: GoTestItem) => this.#getViewItem(x) ?? this.#buildViewItem(x);
-		const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, get(x)]));
 		return {
 			size: packages.size,
-			*packages(run: TestRun) {
-				for (const pkg of packages) {
-					// If the package is explicitly included, execute all tests
-					// (and the map should contain all tests).
-					const mode = include.includes(pkg) ? 'all' : 'specific';
-					const tests = include.includes(pkg)
-						? map([...pkg.allTests()])
-						: map(testsForPackage.get(pkg) ?? [...pkg.allTests()]);
-					const exclude = map(excludeForPackage.get(pkg) ?? []);
-					yield new PackageTestRun(run, mode, pkg, get(pkg), tests, exclude);
-				}
-			},
+			packages: (run: TestRun) =>
+				this.#makePkgTestRuns(
+					run,
+					packages,
+					new Map(include.filter((x) => x.kind === 'package').map((x) => [x, 'all'])),
+					testsForPackage,
+					excludeForPackage,
+				),
 		};
+	}
+
+	*#makePkgTestRuns(
+		run: TestRun,
+		packages: Set<Package>,
+		modeFor: Map<Package, 'all' | 'specific'>,
+		include: Map<Package, TestCase[]>,
+		exclude: Map<Package, TestCase[]>,
+	) {
+		const get = (x: GoTestItem) => this.#getViewItem(x) ?? this.#buildViewItem(x);
+		const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, get(x)]));
+
+		for (const pkg of packages) {
+			const mode = modeFor.get(pkg) ?? 'specific';
+			yield new PackageTestRun({
+				run,
+				mode,
+				goItem: pkg,
+				testItem: get(pkg),
+				tests: mode === 'all' ? map([...pkg.allTests()]) : map(include.get(pkg) ?? []),
+				exclude: map(exclude.get(pkg) ?? []),
+				testFor: (event) => this.#testForEvent(pkg, run, event),
+			});
+		}
+	}
+
+	#testForEvent(pkg: Package, run: TestRun, event: TestEvent | Location) {
+		// If the event is a location, find the file and find a test that
+		// contains the specified range.
+		if (event instanceof Location) {
+			const file = pkg.files.get(`${event.uri}`);
+			if (!file) return;
+
+			for (const test of file.tests) {
+				if (test instanceof StaticTestCase && test.range && test.range.contains(event.range)) {
+					return this.#getViewItem(test) ?? this.#buildViewItem(test);
+				}
+			}
+			return;
+		}
+
+		if (!event.Test) return;
+
+		// Check for an exact match.
+		for (const file of pkg.files) {
+			const test = file.tests.get(event.Test);
+			if (!test) continue;
+
+			// Reassociate with the current run.
+			if (test instanceof DynamicTestCase) {
+				test.run = run;
+			}
+
+			return this.#getViewItem(test) ?? this.#buildViewItem(test);
+		}
+
+		// Create a dynamic subtest.
+		const parent = findParentTestCase(pkg, event.Test);
+		if (!parent) return;
+
+		const child = new DynamicTestCase(parent, test.name, run);
+		parent.file.tests.add(child);
+		this.#presenter.didAddTest(parent, child);
+		return this.#getViewItem(child) ?? this.#buildViewItem(child);
 	}
 
 	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {

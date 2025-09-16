@@ -1,5 +1,5 @@
 import { Location, Position, TestItem, TestMessage, TestRun, Uri } from 'vscode';
-import { GoTestItem, Package, StaticTestCase, TestCase } from './model';
+import { Package, parseID, StaticTestCase, TestCase } from './model';
 import { TestEvent } from './testEvent';
 import path from 'node:path';
 
@@ -8,37 +8,37 @@ export interface ResolvedRunRequest {
 	packages(run: TestRun): Iterable<PackageTestRun>;
 }
 
+interface TestResolver {
+	(event: TestEvent | Location): TestItem | undefined;
+}
+
 export class PackageTestRun {
-	readonly run;
-	readonly mode;
-	readonly goItem;
-	readonly testItem;
-	readonly tests;
-	readonly exclude;
+	readonly run: TestRun;
+	readonly mode: 'all' | 'specific';
+	readonly goItem: Package;
+	readonly testItem: TestItem;
+	readonly tests: Map<TestCase, TestItem>;
+	readonly exclude: Map<TestCase, TestItem>;
+	readonly #testFor: TestResolver;
+
+	readonly stderr: string[] = [];
+	readonly output = new Map<string, { output: string[]; item: TestItem }>();
+	readonly currentLocation = new Map<string, Location>();
+
 	#buildFailed = false;
 
 	constructor(
-		run: TestRun,
-		mode: 'all' | 'specific',
-		goItem: Package,
-		testItem: TestItem,
-		tests: Map<TestCase, TestItem>,
-		exclude: Map<TestCase, TestItem>,
+		args: Pick<PackageTestRun, 'run' | 'mode' | 'goItem' | 'testItem' | 'tests' | 'exclude'> & {
+			testFor: TestResolver;
+		},
 	) {
-		this.run = run;
-		this.mode = mode;
-		this.goItem = goItem;
-		this.testItem = testItem;
-		this.tests = tests;
-		this.exclude = exclude;
-	}
-
-	readonly stderr: string[] = [];
-	readonly output = new Map<string, { output: string[]; item: TestItem; test?: TestCase }>();
-	readonly currentLocation = new Map<string, Location>();
-
-	get uri() {
-		return this.goItem.uri;
+		this.run = args.run;
+		this.mode = args.mode;
+		this.goItem = args.goItem;
+		this.testItem = args.testItem;
+		this.tests = args.tests;
+		this.exclude = args.exclude;
+		this.#testFor = args.testFor;
 	}
 
 	get buildFailed() {
@@ -59,18 +59,16 @@ export class PackageTestRun {
 			return;
 		}
 
-		// Resolve the named test case and its associated test item
-		const test = msg.Test ? this.goItem.findTest(msg.Test, true, this.run) : undefined;
-		const item = test && (await this.#request.manager.resolveTestItem(test, { create: true }));
-		await this.#onEvent(test, item, msg);
+		const item = this.#testFor(msg);
+		await this.#onEvent(item, msg);
 	}
 
-	async #onEvent(test: TestCase | undefined, item: TestItem | undefined, msg: TestEvent) {
+	async #onEvent(item: TestItem | undefined, msg: TestEvent) {
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
 			case 'output':
 			case 'build-output':
-				await this.#onOutput(test, item, msg);
+				await this.#onOutput(item, msg);
 				break;
 
 			case 'build-fail': {
@@ -127,8 +125,8 @@ export class PackageTestRun {
 						this.output.get(this.testItem.id)?.output || [],
 						this.stderr,
 					);
-				} else if (item && test) {
-					const messages = parseTestFailure(test, this.output.get(item.id)?.output || []);
+				} else if (item) {
+					const messages = parseTestFailure(item, this.output.get(item.id)?.output || []);
 					this.run.failed(item, messages, elapsed);
 				}
 				break;
@@ -140,7 +138,7 @@ export class PackageTestRun {
 		}
 	}
 
-	async #onOutput(test: TestCase | undefined, item: TestItem | undefined, msg: TestEvent) {
+	async #onOutput(item: TestItem | undefined, msg: TestEvent) {
 		if (!msg.Output) {
 			return;
 		}
@@ -151,7 +149,6 @@ export class PackageTestRun {
 		let location = parsed.location;
 
 		const origItem = item;
-		const origTest = test;
 		item ??= this.testItem;
 
 		// The output location is only shown on the first line so remember what
@@ -163,9 +160,8 @@ export class PackageTestRun {
 		}
 
 		// Determine the test from the location
-		if (!origTest && location) {
-			test = this.goItem.findTestAt(location);
-			item = test ? await this.#request.manager.resolveTestItem(test, { create: true }) : item;
+		if (!origItem && location) {
+			item = this.#testFor(location) ?? item;
 		}
 
 		// Record the output
@@ -173,7 +169,7 @@ export class PackageTestRun {
 
 		// Track output for later detection of errors
 		if (!this.output.has(item.id)) {
-			this.output.set(item.id, { output: [], item, test });
+			this.output.set(item.id, { output: [], item });
 		}
 		this.output.get(item.id)!.output.push(msg.Output);
 
@@ -185,7 +181,7 @@ export class PackageTestRun {
 
 		if (msg.Output === `=== RUN   ${msg.Test}\n`) {
 			// === RUN   BenchmarkFooBar
-			this.#onEvent(origTest, origItem, {
+			this.#onEvent(origItem, {
 				...msg,
 				Action: 'run',
 			});
@@ -193,7 +189,7 @@ export class PackageTestRun {
 			msg.Output?.match(/^(?<name>Benchmark[/\w]+)-(?<procs>\d+)\s+(?<result>.*)(?:$|\n)/)?.[1] === msg.Test
 		) {
 			// BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op
-			this.#onEvent(origTest, origItem, {
+			this.#onEvent(origItem, {
 				...msg,
 				Action: 'pass',
 			});
@@ -275,20 +271,18 @@ function processPackageFailure(
  * Location info is inferred heuristically by applying a simple pattern matching
  * over the output strings from `go test -json` `output` type action events.
  */
-function parseTestFailure(test: GoTestItem, output: string[]): TestMessage[] {
-	switch (test.kind) {
-		case 'profile-container':
-		case 'profile-set':
-		case 'profile':
-			// This should never happen.
-			throw new Error('Internal error');
+function parseTestFailure(test: TestItem, output: string[]): TestMessage[] {
+	const id = parseID(test.id);
+	if (id.profile || !test.uri) {
+		// This should never happen.
+		throw new Error('Internal error');
 	}
 
 	const messages: TestMessage[] = [];
 
 	const gotI = output.indexOf('got:\n');
 	const wantI = output.indexOf('want:\n');
-	if (test.kind === 'example' && gotI >= 0 && wantI >= 0) {
+	if (id.kind === 'example' && gotI >= 0 && wantI >= 0) {
 		const got = output.slice(gotI + 1, wantI).join('');
 		const want = output.slice(wantI + 1).join('');
 		const message = TestMessage.diff('Output does not match', want, got);
