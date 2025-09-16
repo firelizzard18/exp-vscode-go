@@ -20,6 +20,7 @@ import { Context, helpers } from '../utils/testing';
 import { TestConfig } from './config';
 import { WorkspaceConfig } from './workspaceConfig';
 import { GoTestItem } from './model';
+import { Command } from './commands';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
 	const testCtx: Context = {
@@ -72,16 +73,16 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	};
 
 	// [Command] Refresh
-	command('goExp.testExplorer.refresh', (item: TestItem) => manager.enabled && manager.refresh(item));
+	command(Command.Refresh, (item: TestItem) => manager.enabled && manager.refresh(item));
 
 	// [Command] Run Test, Debug Test
-	command('goExp.test.run', (...item: TestItem[] | GoTestItem[]) => manager.enabled && manager.runTests(...item));
-	command('goExp.test.debug', (...item: TestItem[] | GoTestItem[]) => manager.enabled && manager.debugTests(...item));
+	command(Command.Test.Run, (...item: GoTestItem[]) => manager.enabled && manager.runTests(...item));
+	command(Command.Test.Debug, (...item: GoTestItem[]) => manager.enabled && manager.debugTests(...item));
 
 	// [Command] Browser navigation
-	command('goExp.browser.back', () => Browser.active?.back());
-	command('goExp.browser.refresh', () => Browser.active?.reload());
-	command('goExp.browser.forward', () => Browser.active?.forward());
+	command(Command.Browser.Back, () => Browser.active?.back());
+	command(Command.Browser.Refresh, () => Browser.active?.reload());
+	command(Command.Browser.Forward, () => Browser.active?.forward());
 
 	// [Command] Workaround for https://github.com/microsoft/vscode/issues/237106
 	command('goExp.configureCoverageRunProfile', () => manager.configureCoverageRunProfile(window));

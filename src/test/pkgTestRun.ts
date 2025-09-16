@@ -1,196 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import { TestItem } from 'vscode';
-import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
-import vscode from 'vscode';
-import { shouldRunBenchmarks } from './runner';
-import path from 'node:path';
-import { TestRun } from 'vscode';
-import { Location } from 'vscode';
-import { TestMessage } from 'vscode';
-import { Uri, Position } from 'vscode';
-import { TestManager } from './manager';
-import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
+import { Location, Position, TestItem, TestMessage, TestRun, Uri } from 'vscode';
+import { GoTestItem, Package, StaticTestCase, TestCase } from './model';
 import { TestEvent } from './testEvent';
+import path from 'node:path';
 
-export class TestRunRequest {
-	readonly manager: TestManager;
-	readonly source: vscode.TestRunRequest;
-	readonly #packages: Set<Package>;
-	readonly include: Map<Package, TestCase[]>;
-	readonly exclude: Map<Package, TestCase[]>;
-
-	private constructor(
-		manager: TestManager,
-		original: vscode.TestRunRequest,
-		packages: Set<Package>,
-		include: Map<Package, TestCase[]>,
-		exclude: Map<Package, TestCase[]>,
-	) {
-		this.manager = manager;
-		this.source = original;
-		this.#packages = packages;
-		this.include = include;
-		this.exclude = exclude;
-	}
-
-	/**
-	 * Constructs a {@link TestRunRequest} from a {@link vscode.TestRunRequest}.
-	 */
-	static async from(manager: TestManager, request: vscode.TestRunRequest) {
-		const include = (request.include || [...manager.rootTestItems]).map((x) => resolveGoItem(manager, x));
-		const exclude = request.exclude?.map((x) => resolveGoItem(manager, x)) || [];
-
-		// Get roots that aren't excluded
-		const roots = new Set(include.filter((x): x is RootItem => x instanceof RootItem));
-		exclude.forEach((x) => roots.delete(x as any));
-
-		// Get packages that aren't excluded
-		const packages = new Set(include.filter((x): x is Package => x instanceof Package));
-		await Promise.all(
-			[...roots].map(async (x) => {
-				for (const pkg of await x.getPackages()) {
-					packages.add(pkg);
-				}
-			}),
-		);
-		exclude.forEach((x) => packages.delete(x as any));
-
-		// Get explicitly requested test items that aren't excluded
-		const tests = new Set(testCases(include));
-		for (const test of testCases(exclude)) {
-			tests.delete(test);
-		}
-
-		// Remove redundant requests for specific tests
-		for (const item of tests) {
-			const pkg = item.file.package;
-			if (!packages.has(pkg)) {
-				continue;
-			}
-
-			// If a package is selected, all tests within it will be run so ignore
-			// explicit requests for a test if its package is selected. Do the same
-			// for benchmarks, if shouldRunBenchmarks.
-			if (item.kind !== 'benchmark' || shouldRunBenchmarks(manager.#context.workspace, pkg)) {
-				tests.delete(item);
-			}
-		}
-
-		// Record requests for specific tests
-		const testsForPackage = new Map<Package, TestCase[]>();
-		for (const item of tests) {
-			const pkg = item.file.package;
-			packages.add(pkg);
-
-			if (!testsForPackage.has(pkg)) {
-				testsForPackage.set(pkg, []);
-			}
-			testsForPackage.get(pkg)!.push(item);
-		}
-
-		// Tests that should be excluded for each package
-		const excludeForPackage = new Map<Package, TestCase[]>();
-		for (const item of testCases(exclude)) {
-			const pkg = item.file.package;
-			if (!packages.has(pkg)) continue;
-
-			if (!excludeForPackage.has(pkg)) {
-				excludeForPackage.set(pkg, []);
-			}
-			excludeForPackage.get(pkg)!.push(item);
-		}
-
-		return new this(manager, request, packages, testsForPackage, excludeForPackage);
-	}
-
-	/**
-	 * Constructs a new {@link TestRunRequest} with the intersection of the
-	 * receiver's included tests and the given tests.
-	 */
-	async with(tests: Iterable<TestCase | TestFile>) {
-		// Determine which tests cases may be included
-		const candidates = new Set<TestCase>();
-		for (const pkg of this.#packages) {
-			(this.include.get(pkg) || pkg.getTests()).forEach((x) => candidates.add(x));
-			(this.exclude.get(pkg) || []).forEach((x) => candidates.delete(x));
-		}
-
-		// Create the package and include sets for the new request
-		const packages = new Set<Package>();
-		const include = new Map<Package, TestCase[]>();
-		const add = (item: TestCase) => {
-			if (!candidates.has(item)) {
-				return;
-			}
-			const items = include.get(item.file.package) || [];
-			if (items.includes(item)) {
-				return;
-			}
-			packages.add(item.file.package);
-			items.push(item);
-			include.set(item.file.package, items);
-		};
-
-		for (const item of tests) {
-			if (item instanceof TestCase) {
-				add(item);
-			} else {
-				for (const test of item.tests) {
-					add(test);
-				}
-			}
-		}
-
-		// Resolve test items
-		const testItems: TestItem[] = [];
-		await Promise.all(
-			[...include.values()].map((x) =>
-				Promise.all(
-					x.map(async (y) => {
-						const item = await this.manager.resolveTestItem(y, { create: true });
-						testItems.push(item);
-					}),
-				),
-			),
-		);
-
-		return new TestRunRequest(
-			this.manager,
-			{
-				include: testItems,
-				exclude: [],
-				profile: this.source.profile,
-			},
-			packages,
-			include,
-			new Map(),
-		);
-	}
-
-	get size() {
-		return this.#packages.size;
-	}
-
-	async *packages(run: TestRun) {
-		for (const pkg of this.#packages) {
-			const pkgItem = await this.manager.resolveTestItem(pkg, { create: true });
-			const include = await this.#resolveTestItems(this.include.get(pkg) || pkg.getTests());
-			const exclude = await this.#resolveTestItems(this.exclude.get(pkg) || []);
-
-			yield new PackageTestRun(this, run, pkg, pkgItem, include, exclude);
-		}
-	}
-
-	async #resolveTestItems<T extends GoTestItem>(goItems: T[]) {
-		return new Map(
-			await Promise.all(
-				goItems.map(
-					async (x): Promise<[T, TestItem]> => [x, await this.manager.resolveTestItem(x, { create: true })],
-				),
-			),
-		);
-	}
+export interface ResolvedRunRequest {
+	size: number;
+	packages(run: TestRun): Iterable<PackageTestRun>;
 }
 
 export class PackageTestRun {
@@ -199,11 +14,9 @@ export class PackageTestRun {
 	readonly include: Map<TestCase, TestItem>;
 	readonly exclude: Map<TestCase, TestItem>;
 	readonly run: TestRun;
-	readonly #request: TestRunRequest;
 	#buildFailed = false;
 
 	constructor(
-		request: TestRunRequest,
 		run: TestRun,
 		goItem: Package,
 		testItem: TestItem,
@@ -215,7 +28,6 @@ export class PackageTestRun {
 		this.include = include;
 		this.exclude = exclude;
 		this.run = run;
-		this.#request = request;
 	}
 
 	readonly stderr: string[] = [];
@@ -417,29 +229,6 @@ export class PackageTestRun {
 	}
 }
 
-function* testCases(items: GoTestItem[]) {
-	for (const item of items) {
-		if (item instanceof TestCase) {
-			yield item;
-		}
-		if (item instanceof TestFile) {
-			yield* item.tests;
-		}
-	}
-}
-
-function resolveGoItem(manager: TestManager, item: TestItem) {
-	let pi = manager.resolveGoTestItem(item.id);
-	if (!pi) throw new Error(`Cannot find test item ${item.id}`);
-
-	// VSCode appears to have a bug where clicking {run} on a test item that
-	// has no children except `Profiles` selects the wrong item to run.
-	if (pi instanceof CapturedProfile) pi = pi.parent;
-	if (pi instanceof ProfileSet) pi = pi.parent;
-	if (pi instanceof ProfileContainer) pi = pi.parent;
-	return pi;
-}
-
 function processPackageFailure(
 	run: TestRun,
 	pkg: Package,
@@ -488,6 +277,14 @@ function processPackageFailure(
  * over the output strings from `go test -json` `output` type action events.
  */
 function parseTestFailure(test: GoTestItem, output: string[]): TestMessage[] {
+	switch (test.kind) {
+		case 'profile-container':
+		case 'profile-set':
+		case 'profile':
+			// This should never happen.
+			throw new Error('Internal error');
+	}
+
 	const messages: TestMessage[] = [];
 
 	const gotI = output.indexOf('got:\n');
@@ -496,7 +293,7 @@ function parseTestFailure(test: GoTestItem, output: string[]): TestMessage[] {
 		const got = output.slice(gotI + 1, wantI).join('');
 		const want = output.slice(wantI + 1).join('');
 		const message = TestMessage.diff('Output does not match', want, got);
-		if (test.uri && test.range) {
+		if (test instanceof StaticTestCase && test.range) {
 			message.location = new Location(test.uri, test.range.start);
 		}
 		messages.push(message);
@@ -505,7 +302,7 @@ function parseTestFailure(test: GoTestItem, output: string[]): TestMessage[] {
 
 	// TODO(hyangah): handle panic messages specially.
 
-	const dir = path.join(test.uri!.fsPath, '..');
+	const dir = path.join(test.uri.fsPath, '..');
 	output.forEach((line) => messages.push(parseOutputLocation(line, dir)));
 
 	return messages;

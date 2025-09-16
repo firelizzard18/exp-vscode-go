@@ -1,4 +1,4 @@
-import { Range, TestItem, TestItemCollection, Uri, WorkspaceFolder } from 'vscode';
+import { Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri, WorkspaceFolder } from 'vscode';
 import { Commands, Context, TestController } from '../utils/testing';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
@@ -17,6 +17,7 @@ import {
 import { GoTestItemPresenter } from './itemPresenter';
 import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
+import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -101,7 +102,7 @@ export class GoTestItemResolver {
 			if (!mod) {
 				mod = new Module(ws, src);
 				ws.modules.add(mod);
-				const view = this.#getViewItem(mod) || this.#buildViewModel(mod);
+				const view = this.#getViewItem(mod) || this.#buildViewItem(mod);
 				updates.push({ item: mod, type: 'added', view });
 			}
 			mods.set(src.Path, mod);
@@ -227,7 +228,7 @@ export class GoTestItemResolver {
 	 */
 	#updateViewModel(go: GoTestItem, view: TestItem | undefined, options: { recurse?: boolean }) {
 		// Resolve or create the view item.
-		view = view ?? this.#getViewItem(go) ?? this.#buildViewModel(go);
+		view = view ?? this.#getViewItem(go) ?? this.#buildViewItem(go);
 
 		// Ensure mutable properties are synced.
 		if (go instanceof StaticTestCase) {
@@ -258,7 +259,7 @@ export class GoTestItemResolver {
 		for (const go of goChildren) {
 			const id = `${idFor(go)}`;
 			if (!view.children.get(id)) {
-				this.#buildViewModel(go);
+				this.#buildViewItem(go);
 			}
 		}
 
@@ -272,7 +273,7 @@ export class GoTestItemResolver {
 		return view;
 	}
 
-	#buildViewModel(go: GoTestItem) {
+	#buildViewItem(go: GoTestItem) {
 		// Push the ancestry chain.
 		const stack = [go];
 		for (;;) {
@@ -334,6 +335,129 @@ export class GoTestItemResolver {
 
 			return view;
 		}
+	}
+
+	async resolveRunRequest(rq: TestRunRequest | GoTestItem[]): Promise<ResolvedRunRequest> {
+		// IDs of items to exclude. Don't try to resolve to test items because
+		// those might not have been loaded yet.
+		const exclude = new Set(rq instanceof Array ? [] : rq.exclude?.map((x) => x.id) ?? []);
+		const isExcluded = (item: GoTestItem) => exclude.has(`${idFor(item)}`);
+
+		// Ensure roots have been loaded.
+		if (!this.#didLoadRoots) {
+			await this.updateViewModel(undefined, { resolve: true });
+		}
+
+		// Resolve VSCode test items to Go test items.
+		let include: GoTestItem[];
+		if (rq instanceof Array) {
+			// The request specifies Go items, so we just need to execute those.
+			include = rq;
+		} else if (rq.include) {
+			// The request specifies view items so convert those to Go items.
+			// Silently ignore requests to execute test items that don't have a
+			// Go item.
+			include = rq.include.map((x) => this.#getGoItem(x.id)).filter((x) => !!x);
+		} else {
+			// If include is not specified, include all roots.
+			const workspaces = [...this.#presenter.workspaces];
+			include = [...workspaces, ...workspaces.flatMap((x) => [...x.modules])];
+		}
+
+		// Get roots that aren't excluded.
+		const roots = new Set(
+			include.filter(
+				(x): x is Workspace | Module => (x.kind === 'workspace' || x.kind === 'module') && !isExcluded(x),
+			),
+		);
+
+		// Ensure packages have been loaded.
+		for (const root of roots) {
+			if (!this.#didLoadChildren.has(root)) {
+				await this.updateViewModel(root, { resolve: true });
+			}
+		}
+
+		// Get packages that aren't excluded.
+		const packages = new Set(include.filter((x): x is Package => x.kind === 'package' && !isExcluded(x)));
+
+		// Ensure files and tests have been loaded.
+		for (const pkg of packages) {
+			if (!this.#didLoadChildren.has(pkg)) {
+				await this.updateViewModel(pkg, { resolve: true });
+			}
+		}
+
+		// Get explicitly requested test items that aren't excluded.
+		const tests = new Set(testCases(include, isExcluded));
+
+		// Remove redundant requests for specific tests.
+		for (const item of tests) {
+			const pkg = item.file.package;
+			if (!packages.has(pkg)) {
+				continue;
+			}
+
+			// If a package is selected, all tests within it will be run so ignore
+			// explicit requests for a test if its package is selected. Do the same
+			// for benchmarks, if shouldRunBenchmarks.
+			if (item.kind !== 'benchmark' || shouldRunBenchmarks(this.#config, pkg)) {
+				tests.delete(item);
+			}
+		}
+
+		// Record requests for specific tests.
+		const testsForPackage = new Map<Package, TestCase[]>();
+		for (const item of tests) {
+			const pkg = item.file.package;
+			packages.add(pkg);
+
+			if (!testsForPackage.has(pkg)) {
+				testsForPackage.set(pkg, []);
+			}
+			testsForPackage.get(pkg)!.push(item);
+		}
+
+		// Tests that should be excluded for each package. Ignore items that
+		// can't be resolved.
+		const excludeForPackage = new Map<Package, TestCase[]>();
+		const excludeItems = [...exclude].flatMap((x) => {
+			const id = parseID(x);
+			if (id.profile) return [];
+			switch (id.kind) {
+				case 'file':
+					return [...(this.#getGoItem(x) as TestFile)?.tests];
+				case 'test':
+				case 'benchmark':
+				case 'example':
+				case 'fuzz':
+					const item = this.#getGoItem(x) as TestCase;
+					return item ? [item] : [];
+			}
+			return [];
+		});
+		for (const item of excludeItems) {
+			const pkg = item.file.package;
+			if (!packages.has(pkg)) continue;
+
+			if (!excludeForPackage.has(pkg)) {
+				excludeForPackage.set(pkg, []);
+			}
+			excludeForPackage.get(pkg)!.push(item);
+		}
+
+		const get = (x: GoTestItem) => this.#getViewItem(x) ?? this.#buildViewItem(x);
+		const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, get(x)]));
+		return {
+			size: packages.size,
+			*packages(run: TestRun) {
+				for (const pkg of packages) {
+					const include = map(testsForPackage.get(pkg) ?? [...pkg.allTests()]);
+					const exclude = map(excludeForPackage.get(pkg) ?? []);
+					yield new PackageTestRun(run, pkg, get(pkg), include, exclude);
+				}
+			},
+		};
 	}
 
 	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {
@@ -582,4 +706,36 @@ export class GoTestItemResolver {
 			this.#ctrl.items.delete(item.id);
 		}
 	}
+}
+
+function* testCases(items: GoTestItem[], exclude: (test: TestCase) => boolean = () => false) {
+	for (const item of items) {
+		if (item instanceof TestCase) {
+			if (!exclude(item)) yield item;
+		}
+		if (item instanceof TestFile) {
+			for (const test of item.tests) {
+				if (!exclude(test)) yield test;
+			}
+		}
+	}
+}
+
+function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
+	// When the user clicks the run button on a package, they expect all of the
+	// tests within that package to run - they probably don't want to run the
+	// benchmarks. So if a benchmark is not explicitly selected, don't run
+	// benchmarks. But the user may disagree, so behavior can be changed with
+	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
+	// button on a file or package that contains benchmarks and nothing else,
+	// they likely expect those benchmarks to run.
+	if (config.for(pkg).runPackageBenchmarks.get()) {
+		return true;
+	}
+	for (const test of pkg.allTests()) {
+		if (test.kind !== 'benchmark') {
+			return false;
+		}
+	}
+	return true;
 }

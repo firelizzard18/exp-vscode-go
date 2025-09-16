@@ -2,7 +2,7 @@ import { TestRunProfileKind, Uri, TestRunRequest as VSCTestRunRequest, Cancellat
 import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode from 'vscode';
 import { Context, doSafe, TestController } from '../utils/testing';
-import { GoTestItem, TestCase } from './model';
+import { GoTestItem, Module, Package, TestCase, Workspace } from './model';
 import { TestRunner } from './runner';
 import { TestRunRequest } from './testRun';
 import { CodeLensProvider } from './codeLens';
@@ -35,6 +35,7 @@ export class TestManager {
 	// Transients.
 	#ctrl?: TestController;
 	#resolver?: GoTestItemResolver;
+	#presenter?: GoTestItemPresenter;
 
 	constructor(context: Context) {
 		this.#context = context;
@@ -64,22 +65,23 @@ export class TestManager {
 				createTestController(id: string, label: string): TestController;
 			},
 	) {
+		// Set up the components.
 		const presenter = new GoTestItemPresenter(this.#config);
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
 		const resolver = new GoTestItemResolver(this.#context, this.#config, presenter, ctrl);
 		const codeLens = new CodeLensProvider(this.#config, resolver);
 
-		// Register the legacy code lens provider
+		this.#ctrl = ctrl;
+		this.#resolver = resolver;
+		this.#presenter = presenter;
+		this.#disposable.push(ctrl);
+
+		// Register the legacy code lens provider.
 		this.#disposable.push(
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, codeLens),
 		);
 
-		// Set up the test controller and resolver
-		this.#ctrl = ctrl;
-		this.#resolver = resolver;
-		this.#disposable.push(ctrl);
-
-		// Set up resolve/refresh handlers
+		// Set up resolve/refresh handlers.
 		ctrl.resolveHandler = (item) =>
 			doSafe(this.#context, 'resolve test', async () => {
 				await resolver.updateViewModel(item, { resolve: true });
@@ -89,7 +91,7 @@ export class TestManager {
 				await this.refresh();
 			});
 
-		// Set up run profiles
+		// Set up run profiles.
 		const createRunProfile = (config: RunConfig) => {
 			const run = (rq: VSCTestRunRequest, token: CancellationToken) => this.#executeTestRun(config, rq, token);
 			const profile = config.createRunProfile(args, ctrl, run);
@@ -100,11 +102,11 @@ export class TestManager {
 		createRunProfile(this.#debug);
 
 		if (process.platform === 'linux') {
-			// RR is only supported on Linux
+			// RR is only supported on Linux.
 			createRunProfile(this.#rrDebug);
 		}
 
-// Check if coverage is supported.
+		// Check if coverage is supported.
 		const testRun = ctrl.createTestRun({ include: [], exclude: [], profile: undefined });
 		testRun.end();
 		if (this.#context.testing || 'addCoverage' in testRun) {
@@ -132,15 +134,15 @@ export class TestManager {
 	/**
 	 * Run a test.
 	 */
-	runTests(...items: TestItem[] | GoTestItem[]) {
-		this.#executeTestRun(this.#run, new VSCTestRunRequest(items));
+	runTests(...items: GoTestItem[]) {
+		this.#executeTestRun(this.#run, items);
 	}
 
 	/**
 	 * Debug a test.
 	 */
-	debugTests(...items: TestItem[] | GoTestItem[]) {
-		this.#executeTestRun(this.#debug, new VSCTestRunRequest(items));
+	debugTests(...items: GoTestItem[]) {
+		this.#executeTestRun(this.#debug, items);
 	}
 
 	/**
@@ -159,12 +161,12 @@ export class TestManager {
 	 * @param rq - The test run request.
 	 * @param token - A token for canceling the run.
 	 */
-	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest, token?: CancellationToken) {
-		if (!this.#resolver) {
-			return;
+	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | GoTestItem[], token?: CancellationToken) {
+		if (!this.#resolver || !this.#presenter) {
+			throw new Error('Cannot execute test run: test explorer is disabled');
 		}
 
-		if (!token && rq.continuous) {
+		if (!token && !(rq instanceof Array) && rq.continuous) {
 			throw new Error('Continuous test runs require a cancellation token');
 		}
 
@@ -175,13 +177,12 @@ export class TestManager {
 			token = cancel.token;
 		}
 
-		// Resolve VSCode test items to Go test items.
-		const request = await TestRunRequest.from(this, rq);
+		const request = await this.#resolver.resolveRunRequest(rq);
 
 		// Set up the runner.
 		const runner = new TestRunner(
 			this.#context,
-			this.#resolver,
+			resolver,
 			config,
 			(rq) => this.#ctrl!.createTestRun(rq.source),
 			request,
@@ -304,10 +305,4 @@ export class TestManager {
 			this.#ctrl.invalidateTestResults(tests);
 		}
 	}
-}
-
-function isCoverageSupported(ctrl: TestController) {
-	const testRun = ctrl.createTestRun({ include: [], exclude: [], profile: undefined });
-	testRun.end();
-	return 'addCoverage' in testRun;
 }

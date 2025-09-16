@@ -6,6 +6,7 @@ import { CodeLens, TextDocument, Range } from 'vscode';
 import { GoTestItem, StaticTestCase, TestCase, TestFile } from './model';
 import { GoTestItemResolver } from './itemResolver';
 import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
+import { Command } from './commands';
 
 /**
  * Provides CodeLenses for running and debugging tests for users who prefer
@@ -75,7 +76,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	async resolveCodeLens(lens: GoCodeLens): Promise<GoCodeLens> {
 		lens.command = {
 			title: `${lens.kind} ${lens.item.kind}`,
-			command: `goExp.test.${lens.kind}`,
+			command: lens.kind === 'run' ? Command.Test.Run : Command.Test.Debug,
 			arguments: [lens.item],
 		};
 		if (!(lens.item instanceof TestCase)) {
