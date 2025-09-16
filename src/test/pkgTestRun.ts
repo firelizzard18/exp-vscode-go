@@ -9,25 +9,28 @@ export interface ResolvedRunRequest {
 }
 
 export class PackageTestRun {
-	readonly goItem: Package;
-	readonly testItem: TestItem;
-	readonly include: Map<TestCase, TestItem>;
-	readonly exclude: Map<TestCase, TestItem>;
-	readonly run: TestRun;
+	readonly run;
+	readonly mode;
+	readonly goItem;
+	readonly testItem;
+	readonly tests;
+	readonly exclude;
 	#buildFailed = false;
 
 	constructor(
 		run: TestRun,
+		mode: 'all' | 'specific',
 		goItem: Package,
 		testItem: TestItem,
-		include: Map<TestCase, TestItem>,
+		tests: Map<TestCase, TestItem>,
 		exclude: Map<TestCase, TestItem>,
 	) {
+		this.run = run;
+		this.mode = mode;
 		this.goItem = goItem;
 		this.testItem = testItem;
-		this.include = include;
+		this.tests = tests;
 		this.exclude = exclude;
-		this.run = run;
 	}
 
 	readonly stderr: string[] = [];
@@ -36,10 +39,6 @@ export class PackageTestRun {
 
 	get uri() {
 		return this.goItem.uri;
-	}
-
-	get includeAll() {
-		return !this.#request.include.has(this.goItem);
 	}
 
 	get buildFailed() {
@@ -221,7 +220,7 @@ export class PackageTestRun {
 		};
 
 		fn(this.testItem);
-		for (const [goItem, item] of this.include) {
+		for (const [goItem, item] of this.tests) {
 			if (!this.exclude.has(goItem)) {
 				recurse(item, goItem);
 			}

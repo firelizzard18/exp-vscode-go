@@ -452,9 +452,14 @@ export class GoTestItemResolver {
 			size: packages.size,
 			*packages(run: TestRun) {
 				for (const pkg of packages) {
-					const include = map(testsForPackage.get(pkg) ?? [...pkg.allTests()]);
+					// If the package is explicitly included, execute all tests
+					// (and the map should contain all tests).
+					const mode = include.includes(pkg) ? 'all' : 'specific';
+					const tests = include.includes(pkg)
+						? map([...pkg.allTests()])
+						: map(testsForPackage.get(pkg) ?? [...pkg.allTests()]);
 					const exclude = map(excludeForPackage.get(pkg) ?? []);
-					yield new PackageTestRun(run, pkg, get(pkg), include, exclude);
+					yield new PackageTestRun(run, mode, pkg, get(pkg), tests, exclude);
 				}
 			},
 		};
