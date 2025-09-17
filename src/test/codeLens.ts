@@ -29,7 +29,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		const mode = ws && this.#config.for(ws).codeLens.get();
 		if (!mode) return [];
 
-		const { resolved } = await this.#resolver.updateFile(document.uri);
+		const resolved = await this.#resolver.updateFile(document.uri);
 		return resolved.flatMap((x) => [...this.#fileCodeLenses(mode, x)]);
 	}
 

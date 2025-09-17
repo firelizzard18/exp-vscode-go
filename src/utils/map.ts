@@ -74,7 +74,7 @@ export class RelationMap<Child, Parent> {
 
 	constructor(relations: Iterable<[Child, Parent]> = []) {
 		for (const [child, parent] of relations) {
-			this.add(parent, child);
+			this.set(parent, child);
 		}
 	}
 
@@ -82,8 +82,18 @@ export class RelationMap<Child, Parent> {
 		return this.#childParent.entries();
 	}
 
-	add(parent: Parent, child: Child) {
+	set(parent: Parent, child: Child) {
+		// Remove the child from the old parent.
+		if (this.#childParent.has(child)) {
+			const old = this.#childParent.get(child)!;
+			if (old === parent) return;
+			this.#parentChild.get(old)?.delete(child);
+		}
+
+		// Reassign the parent.
 		this.#childParent.set(child, parent);
+
+		// Add to the new parent.
 		const children = this.#parentChild.get(parent);
 		if (children) {
 			children.add(child);
@@ -96,7 +106,7 @@ export class RelationMap<Child, Parent> {
 		this.#childParent.clear();
 		this.#parentChild.clear();
 		for (const [child, parent] of relations) {
-			this.add(parent, child);
+			this.set(parent, child);
 		}
 	}
 

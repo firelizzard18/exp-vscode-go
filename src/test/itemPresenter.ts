@@ -16,6 +16,7 @@ import {
 	TestCase,
 	findParentTestCase,
 } from './model';
+import { ModelUpdateEvent } from './itemResolver';
 
 export class GoTestItemPresenter {
 	readonly kind = '(root)';
@@ -229,35 +230,36 @@ export class GoTestItemPresenter {
 		return this.#profiles.get(item as any);
 	}
 
-	/**
-	 * The packages of a {@link Workspace} or {@link Module} were updated, so
-	 * package relations should be rebuilt.
-	 */
-	didUpdatePackages(root: Workspace | Module) {
-		// TODO: Can we handle this by listening for item events instead?
-		const pkgs = [...root.packages];
-		this.#pkgRel.get(root).replace(
-			pkgs.map((pkg): [Package, Package | undefined] => {
-				const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
-				ancestors.sort((a, b) => a.path.length - b.path.length);
-				return [pkg, ancestors[0]];
-			}),
+	didUpdate(updates: ModelUpdateEvent[]) {
+		// If packages were added or removed, rebuild the root's package
+		// relations. It could make sense to do this on a per-package basis, but
+		// it's a lot simpler just to rebuild the relation map.
+		const pkgChanges = updates.filter(
+			(x): x is ModelUpdateEvent<Package> =>
+				x.item instanceof Package && (x.type === 'added' || x.type === 'removed'),
 		);
-	}
+		const pkgRoots = new Set(pkgChanges.map((x) => x.item.parent));
+		for (const root of pkgRoots) {
+			const pkgs = [...root.packages];
+			this.#pkgRel.get(root).replace(
+				pkgs.map((pkg): [Package, Package | undefined] => {
+					const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
+					ancestors.sort((a, b) => a.path.length - b.path.length);
+					return [pkg, ancestors[0]];
+				}),
+			);
+		}
 
-	/**
-	 * The files and tests of a {@link Package} were updated, so test relations
-	 * should be rebuilt.
-	 */
-	didUpdateTests(pkg: Package) {
-		// TODO: Can we handle this by listening for item events instead?
-		const tests = [...pkg.allTests()];
-		this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(pkg, test.name)]));
-	}
-
-	didAddTest(parent: TestCase, test: DynamicTestCase) {
-		// TODO: Can we handle this by listening for item events instead?
-		this.#testRel.get(parent.file.package).add(parent, test);
+		// If tests were added or removed, rebuild the package's test relations.
+		const testChanges = updates.filter(
+			(x): x is ModelUpdateEvent<TestCase> =>
+				x instanceof TestCase && (x.type === 'added' || x.type === 'removed'),
+		);
+		const testPkgs = new Set(testChanges.map((x) => x.item.file.package));
+		for (const pkg of testPkgs) {
+			const tests = [...pkg.allTests()];
+			this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(pkg, test.name)]));
+		}
 	}
 
 	/**

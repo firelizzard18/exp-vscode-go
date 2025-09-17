@@ -76,6 +76,11 @@ export class TestManager {
 		this.#presenter = presenter;
 		this.#disposable.push(ctrl);
 
+		// Listen to update events.
+		resolver.onDidUpdate((events) => {
+			this.#didUpdate(events);
+		});
+
 		// Register the legacy code lens provider.
 		this.#disposable.push(
 			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, codeLens),
@@ -276,33 +281,36 @@ export class TestManager {
 		}
 
 		// Update the file.
-		const { updates } = await this.#resolver.updateFile(uri, options);
+		await this.#resolver.updateFile(uri, options);
 
-		switch (event?.type) {
-			case 'changed':
-				// Track uncommitted updates (unsaved changes).
-				this.#uncommittedUpdates
-					.get(`${uri}`)
-					.push(...updates.map((x) => x.item).filter((x) => x instanceof TestCase));
-				break;
+		// Fire an event when unsaved changes are committed.
+		if (event?.type === 'saved') {
+			const key = `${uri}`;
+			if (this.#uncommittedUpdates.has(key)) {
+				this.#didCommitUpdates.fire(this.#uncommittedUpdates.get(key));
+				this.#uncommittedUpdates.delete(key);
+			}
+		}
+	}
 
-			case 'saved':
-				// Fire an event when those changes are committed.
-				const key = `${uri}`;
-				if (this.#uncommittedUpdates.has(key)) {
-					this.#didCommitUpdates.fire(this.#uncommittedUpdates.get(key));
-					this.#uncommittedUpdates.delete(key);
-				}
-				break;
+	#didUpdate(updates: ModelUpdateEvent[]) {
+		if (!this.#presenter || !this.#ctrl) return;
+
+		// Notify the presenter of changes
+		this.#presenter.didUpdate(updates);
+
+		// Track uncommitted updates (unsaved changes).
+		for (const update of updates) {
+			if (!['moved', 'modified'].includes(update.type)) continue;
+			if (!(update.item instanceof TestCase)) continue;
+			this.#uncommittedUpdates.get(`${update.item.uri}`).push(update.item);
 		}
 
 		// Invalidate test results when tests are modified.
-		if (options.invalidate && this.#ctrl?.invalidateTestResults) {
-			const tests = updates
-				.filter((x) => x.item instanceof TestCase && x.type === 'modified')
-				.map((x) => x.view)
-				.filter((x) => !!x);
-			this.#ctrl.invalidateTestResults(tests);
-		}
+		const tests = updates
+			.filter((x) => x.item instanceof TestCase && x.type === 'modified')
+			.map((x) => x.view)
+			.filter((x) => !!x);
+		this.#ctrl.invalidateTestResults?.(tests);
 	}
 }

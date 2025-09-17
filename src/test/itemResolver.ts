@@ -20,10 +20,14 @@ import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
 import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
 import { TestEvent } from './testEvent';
+import { EventEmitter } from '../utils/eventEmitter';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
 export class GoTestItemResolver {
+	readonly #didUpdate;
+	readonly onDidUpdate;
+
 	readonly #context;
 	readonly #config;
 	readonly #presenter;
@@ -37,6 +41,12 @@ export class GoTestItemResolver {
 		this.#config = config;
 		this.#presenter = presenter;
 		this.#ctrl = ctrl;
+
+		const didUpdate = new EventEmitter<(_: ModelUpdateEvent[]) => void>();
+		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) => {
+			didUpdate.fire(events.map((x) => ({ ...x, view: this.#getViewItem(x.item) })));
+		};
+		this.onDidUpdate = didUpdate.event;
 	}
 
 	/**
@@ -72,12 +82,11 @@ export class GoTestItemResolver {
 	}
 
 	async updateFile(uri: Uri, opts: { modified?: Range[] } = {}) {
-		const updates: ModelUpdateEvent[] = [];
 		const resolved: TestFile[] = [];
 
 		// We don't handle external files (those outside of a workspace).
 		const ws = this.workspaceFor(uri);
-		if (!ws) return { updates, resolved };
+		if (!ws) return resolved;
 
 		// Query gopls.
 		const r = await this.#context.commands.packages({
@@ -104,8 +113,7 @@ export class GoTestItemResolver {
 			if (!mod) {
 				mod = new Module(ws, src);
 				ws.modules.add(mod);
-				const view = this.#getViewItem(mod) || this.#buildViewItem(mod);
-				updates.push({ item: mod, type: 'added', view });
+				this.#didUpdate([{ item: mod, type: 'added' }]);
 			}
 			mods.set(src.Path, mod);
 		}
@@ -127,14 +135,14 @@ export class GoTestItemResolver {
 
 			// Get or create the package.
 			let pkg = root.packages.get(src);
-			const didAdd = !pkg;
 			if (!pkg) {
 				pkg = new Package(root, src);
 				root.packages.add(pkg);
+				this.#didUpdate([{ item: pkg, type: 'added' }]);
 			}
 
 			// Update the package's files.
-			const fileUpdates = this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
+			this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
 			resolved.push(...[...pkg.files].filter((x) => `${x.uri}` === `${uri}`));
 
 			// Mark the root and the package as requested.
@@ -142,18 +150,9 @@ export class GoTestItemResolver {
 			this.#presenter.markRequested(pkg);
 
 			// Synchronize the view model.
-			const pkgView = this.#updateViewModel(pkg, undefined, {});
-
-			// Record updates. A file may not have a view item.
-			if (didAdd) {
-				updates.push({ item: pkg, type: 'added', view: pkgView });
-			}
-			for (const update of fileUpdates) {
-				const view = this.#getViewItem(update.item);
-				updates.push({ ...update, view });
-			}
+			this.#updateViewModel(pkg, undefined, {});
 		}
-		return { updates, resolved };
+		return resolved;
 	}
 
 	/**
@@ -169,11 +168,11 @@ export class GoTestItemResolver {
 	async updateViewModel(
 		item?: TestItem | GoTestItem,
 		options: { resolve?: boolean; recurse?: boolean } = {},
-	): Promise<ItemEvent<GoTestItem>[]> {
+	): Promise<void> {
 		// Load the roots and update the view model.
 		if (!item) {
 			if (!this.#didLoadRoots && !options.resolve) {
-				return [];
+				return;
 			}
 
 			const updates = await this.#loadRoots();
@@ -196,28 +195,26 @@ export class GoTestItemResolver {
 			go = this.#getGoItem(view);
 			if (!go) {
 				this.#delete(view);
-				return [];
+				return;
 			}
 		}
 
 		// If it's a Workspace, Module, or Package, load its children.
-		let updates: ItemEvent<Package | TestFile | TestCase>[] = [];
 		if (options.resolve || this.#didLoadChildren.has(go)) {
 			switch (go.kind) {
 				case 'workspace':
 				case 'module':
-					updates = await this.#loadPackages(go);
+					await this.#loadPackages(go);
 					break;
 
 				case 'package':
-					updates = await this.#loadTests(go);
+					await this.#loadTests(go);
 					break;
 			}
 		}
 
 		// Update the view model.
 		this.#updateViewModel(go, view, options);
-		return updates;
 	}
 
 	/**
@@ -339,7 +336,7 @@ export class GoTestItemResolver {
 		}
 	}
 
-	async resolveRunRequest(rq: TestRunRequest | GoTestItem[]): Promise<ResolvedRunRequest> {
+	async resolveRunRequest(rq: TestRunRequest | GoTestItem[]) {
 		// IDs of items to exclude. Don't try to resolve to test items because
 		// those might not have been loaded yet.
 		const exclude = new Set(rq instanceof Array ? [] : rq.exclude?.map((x) => x.id) ?? []);
@@ -448,7 +445,7 @@ export class GoTestItemResolver {
 			excludeForPackage.get(pkg)!.push(item);
 		}
 
-		return {
+		const request: ResolvedRunRequest = {
 			size: packages.size,
 			packages: (run: TestRun) =>
 				this.#makePkgTestRuns(
@@ -459,6 +456,7 @@ export class GoTestItemResolver {
 					excludeForPackage,
 				),
 		};
+		return request;
 	}
 
 	*#makePkgTestRuns(
@@ -518,11 +516,14 @@ export class GoTestItemResolver {
 		// Create a dynamic subtest.
 		const parent = findParentTestCase(pkg, event.Test);
 		if (!parent) return;
-
 		const child = new DynamicTestCase(parent, test.name, run);
 		parent.file.tests.add(child);
-		this.#presenter.didAddTest(parent, child);
-		return this.#getViewItem(child) ?? this.#buildViewItem(child);
+
+		// Notify the presenter that there's a new test.
+		this.#didUpdate([{ item: child, type: 'added' }]);
+
+		// Update the parent's view model.
+		return this.#updateViewModel(parent, undefined, { recurse: true });
 	}
 
 	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {
@@ -624,8 +625,7 @@ export class GoTestItemResolver {
 		this.#presenter.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
 
 		// Update the workspaces' modules list.
-		const updates = await Promise.all([...this.#presenter.workspaces].map(async (ws) => this.#loadModules(ws)));
-		return updates.flat();
+		await Promise.all([...this.#presenter.workspaces].map(async (ws) => this.#loadModules(ws)));
 	}
 
 	/**
@@ -636,11 +636,11 @@ export class GoTestItemResolver {
 			Dir: `${ws.uri}`,
 			MaxDepth: -1,
 		});
-		if (!Modules) return [];
+		if (!Modules) return;
 
 		const config = this.#config.for(ws);
 		const exclude = config.exclude.get() || [];
-		return ws.modules.update(
+		const updates = ws.modules.update(
 			Modules.filter((m) => {
 				const uri = Uri.parse(m.GoMod);
 				const p = path.relative(ws.uri.fsPath, path.dirname(uri.fsPath));
@@ -648,6 +648,8 @@ export class GoTestItemResolver {
 			}),
 			(src) => new Module(ws, src),
 		);
+
+		this.#didUpdate(updates.flat());
 	}
 
 	/**
@@ -672,9 +674,7 @@ export class GoTestItemResolver {
 		const updates = root.packages.update(packages, (src) => new Package(root, src));
 
 		// Notify the provider that we updated the workspace/module's packages.
-		this.#presenter.didUpdatePackages(root);
-
-		return updates;
+		this.#didUpdate(updates);
 	}
 
 	/**
@@ -692,15 +692,10 @@ export class GoTestItemResolver {
 		if (!Packages) return [];
 
 		// Update files and their tests.
-		const updates = this.#updateFiles(
+		this.#updateFiles(
 			pkg,
 			Packages.flatMap((x) => x.TestFiles ?? []),
 		);
-
-		// Notify the provider that we updated the package's tests.
-		this.#presenter.didUpdateTests(pkg);
-
-		return updates;
 	}
 
 	/**
@@ -721,9 +716,7 @@ export class GoTestItemResolver {
 		);
 
 		// Notify the provider that we updated the package's tests.
-		this.#presenter.didUpdateTests(pkg);
-
-		return updates;
+		this.#didUpdate(updates);
 	}
 
 	/**
