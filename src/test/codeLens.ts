@@ -1,7 +1,4 @@
 import vscode from 'vscode';
-import { Context } from '../utils/testing';
-import { TestConfig } from './config';
-import { EventEmitter } from '../utils/eventEmitter';
 import { CodeLens, TextDocument, Range } from 'vscode';
 import { GoTestItem, StaticTestCase, TestCase, TestFile } from './model';
 import { GoTestItemResolver } from './itemResolver';

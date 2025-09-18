@@ -1,4 +1,4 @@
-import { Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri, WorkspaceFolder } from 'vscode';
+import { EventEmitter, Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
 import { Commands, Context, TestController } from '../utils/testing';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
@@ -20,7 +20,6 @@ import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
 import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
 import { TestEvent } from './testEvent';
-import { EventEmitter } from '../utils/eventEmitter';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -42,11 +41,10 @@ export class GoTestItemResolver {
 		this.#presenter = presenter;
 		this.#ctrl = ctrl;
 
-		const didUpdate = new EventEmitter<(_: ModelUpdateEvent[]) => void>();
-		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) => {
+		const didUpdate = new EventEmitter<ModelUpdateEvent[]>();
+		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) =>
 			didUpdate.fire(events.map((x) => ({ ...x, view: this.#getViewItem(x.item) })));
-		};
-		this.onDidUpdate = didUpdate.event;
+				this.onDidUpdate = didUpdate.event;
 	}
 
 	/**

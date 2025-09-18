@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Range, Uri, WorkspaceFolder, type TestItem, type TestItemCollection } from 'vscode';
+import { EventEmitter, Range, Uri, WorkspaceFolder, type TestItem, type TestItemCollection } from 'vscode';
 import { Context, debugViewTree, TestController } from '../utils/testing';
 import { GoTestItem, Package, RootItem, RootSet, TestCase, TestFile } from './item';
 import { TestConfig } from './config';
 import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
-import { EventEmitter } from '../utils/eventEmitter';
 import { timeit } from '../utils/util';
 
 export type ResolveOptions = {
@@ -32,9 +31,9 @@ export class TestResolver {
 	// managing Go test items, and Go test items should not be responsible for
 	// managing view information.
 
-	readonly #didChangeTestItem = new EventEmitter<(_?: Iterable<TestCase | TestFile | Package | RootItem>) => void>();
+	readonly #didChangeTestItem = new EventEmitter<Iterable<TestCase | TestFile | Package | RootItem>>();
 	readonly onDidChangeTestItem = this.#didChangeTestItem.event;
-	readonly #didInvalidateTestResults = new EventEmitter<(_?: Iterable<TestCase | TestFile>) => void>();
+	readonly #didInvalidateTestResults = new EventEmitter<Iterable<TestCase | TestFile>>();
 	readonly onDidInvalidateTestResults = this.#didInvalidateTestResults.event;
 
 	readonly #context: Context;

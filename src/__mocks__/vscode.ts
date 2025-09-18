@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export { Uri } from './uri';
 import type * as vscode from 'vscode';
-import { EventEmitter as EEImpl } from './../utils/eventEmitter';
 
 export enum FileType {
 	Unknown = 0,
@@ -96,8 +95,42 @@ export class Position {
 	// with(change: { line?: number; character?: number }): Position;
 }
 
-export class EventEmitter<T> extends EEImpl<(_: T) => void> implements vscode.EventEmitter<T> {
+/**
+ * EventEmitter is a clone of VSCode's event emitter, with one key change: the
+ * promise returned by fire does not resolve until all listeners have finished
+ * executing.
+ *
+ * This is probably unnecessary since the 0.2 async purge.
+ */
+export class EventEmitter<T> implements vscode.EventEmitter<T> {
+	readonly #listeners = new Set<(_: T) => void | Promise<void>>();
+
 	readonly dispose = () => {};
+
+	readonly event = (
+		listener: (_: T) => void | Promise<void>,
+		thisArgs: any = {},
+		disposables?: vscode.Disposable[],
+	): vscode.Disposable => {
+		const l = (...args: Parameters<(_: T) => void | Promise<void>>) => listener.call(thisArgs, ...args);
+		const d = { dispose: () => this.#listeners.delete(<(_: T) => void | Promise<void>>l) };
+		this.#listeners.add(<(_: T) => void | Promise<void>>l);
+		disposables?.push(d);
+		return d;
+	};
+
+	readonly fire = (...args: Parameters<(_: T) => void | Promise<void>>): Promise<void> => {
+		const promises = [];
+		for (const l of this.#listeners) {
+			const r = l.call(null, ...args);
+			if (r && 'then' in r) {
+				promises.push(r);
+			}
+		}
+
+		// Return a promise to allow tests to await the result
+		return Promise.all(promises).then(() => {});
+	};
 }
 
 export class CodeLens {

@@ -1,12 +1,16 @@
-import { TestRunProfileKind, Uri, TestRunRequest as VSCTestRunRequest, CancellationTokenSource } from 'vscode';
+import {
+	TestRunProfileKind,
+	Uri,
+	TestRunRequest as VSCTestRunRequest,
+	CancellationTokenSource,
+	EventEmitter,
+} from 'vscode';
 import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode from 'vscode';
 import { Context, doSafe, TestController } from '../utils/testing';
-import { GoTestItem, Module, Package, TestCase, Workspace } from './model';
+import { GoTestItem, TestCase } from './model';
 import { TestRunner } from './runner';
-import { TestRunRequest } from './testRun';
 import { CodeLensProvider } from './codeLens';
-import { EventEmitter } from '../utils/eventEmitter';
 import { RunConfig } from './runConfig';
 import { GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
 import { GoTestItemPresenter } from './itemPresenter';
@@ -30,7 +34,7 @@ export class TestManager {
 	// Events.
 	readonly #docVersion = new Map<string, number>();
 	readonly #uncommittedUpdates = new MapWithDefault<string, TestCase[]>(() => []);
-	readonly #didCommitUpdates = new EventEmitter<(_: TestCase[]) => void>();
+	readonly #didCommitUpdates = new EventEmitter<TestCase[]>();
 
 	// Transients.
 	#ctrl?: TestController;
