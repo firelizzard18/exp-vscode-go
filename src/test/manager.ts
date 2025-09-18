@@ -9,7 +9,7 @@ import type { CancellationToken, Disposable, Range, TestItem, TextDocument, Text
 import vscode from 'vscode';
 import { Context, doSafe, TestController } from '../utils/testing';
 import { GoTestItem, TestCase } from './model';
-import { TestRunner } from './runner';
+import { TestRunner } from './testRunner';
 import { CodeLensProvider } from './codeLens';
 import { RunConfig } from './runConfig';
 import { GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
@@ -171,7 +171,7 @@ export class TestManager {
 	 * @param token - A token for canceling the run.
 	 */
 	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | GoTestItem[], token?: CancellationToken) {
-		if (!this.#resolver || !this.#presenter) {
+		if (!this.#resolver || !this.#presenter || !this.#ctrl) {
 			throw new Error('Cannot execute test run: test explorer is disabled');
 		}
 
@@ -189,16 +189,12 @@ export class TestManager {
 		const request = await this.#resolver.resolveRunRequest(rq);
 
 		// Set up the runner.
-		const runner = new TestRunner(
-			this.#context,
-			resolver,
-			config,
-			(rq) => this.#ctrl!.createTestRun(rq.source),
-			request,
-			token,
-		);
+		const runner = new TestRunner(this.#context, this.#config, this.#ctrl, config, request, token);
 
-		if (!rq.continuous) {
+		if (rq instanceof Array || !rq.continuous) {
+			// Save all files to ensure `go test` tests the latest changes
+			await this.#context.workspace.saveAll(false);
+
 			// Execute
 			await runner.run();
 

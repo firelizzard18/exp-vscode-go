@@ -40,7 +40,6 @@ export interface ProcessResult {
 export type Flags = { [key: string]: string | boolean };
 
 export interface TestRunContext {
-	uri: Uri;
 	testItem: TestItem;
 	run: TestRun;
 	append(output: string, location?: Location, test?: TestItem): void;
@@ -72,7 +71,7 @@ export function spawnProcess(
 			return;
 		}
 
-		const { binPath } = context.go.settings.getExecutionCommand('go', run.uri) || {};
+		const { binPath } = context.go.settings.getExecutionCommand('go', run.testItem.uri!) || {};
 		if (!binPath) {
 			throw new Error(`Failed to run "go ${mode}" as the "go" binary cannot be found in either GOROOT or PATH`);
 		}
@@ -89,7 +88,7 @@ export function spawnProcess(
 			flags.json = true;
 			fixTestFlags(run, flags, userFlags);
 
-			const ws = context.workspace.getWorkspaceFolder(run.uri);
+			const ws = context.workspace.getWorkspaceFolder(run.testItem.uri!);
 			const niceFlags = Object.assign({}, flags);
 			if (ws) {
 				for (const [flag, value] of Object.entries(niceFlags)) {
@@ -101,7 +100,7 @@ export function spawnProcess(
 		}
 
 		run.append(
-			`$ cd ${run.uri.fsPath}\n$ go ${mode} ${[...prettyPrintFlags(context, run, flags, userFlags), ...args].join(' ')}\n\n`,
+			`$ cd ${run.testItem.uri!.fsPath}\n$ go ${mode} ${[...prettyPrintFlags(context, run, flags, userFlags), ...args].join(' ')}\n\n`,
 			undefined,
 			run.testItem,
 		);
@@ -178,7 +177,7 @@ export async function debugProcess(
 		return { code: null, signal: null };
 	}
 
-	const { binPath } = ctx.go.settings.getExecutionCommand('go', run.uri) || {};
+	const { binPath } = ctx.go.settings.getExecutionCommand('go', run.testItem.uri!) || {};
 	if (!binPath) {
 		throw new Error('Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH');
 	}
@@ -323,7 +322,7 @@ function fixTestFlags(run: TestRunContext, flags: Flags, userFlags: Flags) {
 }
 
 function prettyPrintFlags(context: Context, run: TestRunContext, ...flags: Flags[]) {
-	const ws = context.workspace.getWorkspaceFolder(run.uri);
+	const ws = context.workspace.getWorkspaceFolder(run.testItem.uri!);
 	const niceFlags: Flags = {};
 	flags.forEach((x) => Object.assign(niceFlags, x));
 	if (ws) {

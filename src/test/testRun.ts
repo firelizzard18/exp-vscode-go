@@ -3,7 +3,7 @@
 import { TestItem } from 'vscode';
 import { GoTestItem, Package, RootItem, TestCase, TestFile } from './item';
 import vscode from 'vscode';
-import { shouldRunBenchmarks } from './runner';
+import { shouldRunBenchmarks } from './testRunner';
 import path from 'node:path';
 import { TestRun } from 'vscode';
 import { Location } from 'vscode';

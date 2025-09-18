@@ -1,60 +1,57 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri } from 'vscode';
+import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri, workspace } from 'vscode';
 import type vscode from 'vscode';
-import { Package, StaticTestCase, TestCase, TestFile } from './item';
-import { Context, VSCodeWorkspace } from '../utils/testing';
-import { PackageTestRun, TestRunRequest } from './testRun';
+import { Context, TestController, VSCodeWorkspace } from '../utils/testing';
 import { Flags, Spawner } from './utils';
 import { ProfileType } from './profile';
-import { TestResolver } from './resolver';
-import { TestConfig } from './config';
 import path from 'node:path';
 import { getTempDirPath } from '../utils/util';
 import { createHash } from 'node:crypto';
 import { parseCoverage } from './coverage';
 import { TaskQueue } from '../utils/taskQueue';
 import { RunConfig } from './runConfig';
+import { GoTestItemResolver, shouldRunBenchmarks } from './itemResolver';
+import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
+import { WorkspaceConfig } from './workspaceConfig';
+import { Package, StaticTestCase, TestCase, Workspace } from './model';
 
 export class TestRunner {
-	readonly #context: Context;
-	readonly #resolver: TestResolver;
-	readonly #config: RunConfig;
-	readonly #createRun: (_: TestRunRequest) => vscode.TestRun;
-	readonly #request: TestRunRequest;
-	readonly #token: CancellationToken;
+	readonly #context;
+	readonly #wsConfig;
+	readonly #ctrl;
+	readonly #config;
+	readonly #request;
+	readonly #token;
 
 	constructor(
 		context: Context,
-		provider: TestResolver,
+		wsConfig: WorkspaceConfig,
+		ctrl: TestController,
 		config: RunConfig,
-		createRun: (_: TestRunRequest) => vscode.TestRun,
-		request: TestRunRequest,
+		request: ResolvedRunRequest,
 		token: CancellationToken,
 	) {
 		this.#context = context;
-		this.#resolver = provider;
+		this.#wsConfig = wsConfig;
+		this.#ctrl = ctrl;
 		this.#config = config;
-		this.#createRun = createRun;
 		this.#request = request;
 		this.#token = token;
 	}
 
 	async run() {
-		// Save all files to ensure `go test` tests the latest changes
-		await this.#context.workspace.saveAll(false);
-
 		await this.#run(this.#request);
 	}
 
-	async runContinuous(items: TestCase[]) {
+	/*async runContinuous(items: TestCase[]) {
 		if (items.length) {
 			await this.#run(await this.#request.with(items), true);
 		}
-	}
+	}*/
 
-	async #run(request: TestRunRequest, continuous = false) {
-		const run = this.#createRun(request);
+	async #run(request: ResolvedRunRequest, continuous = false) {
+		const run = this.#ctrl.createTestRun(request.request);
 		const sub = this.#token.onCancellationRequested(() => {
 			run.appendOutput('\r\n*** Cancelled ***\r\n');
 			run.end();
@@ -64,7 +61,7 @@ export class TestRunner {
 		try {
 			const invalid = request.size > 1 && this.#config.kind === TestRunProfileKind.Debug;
 			let first = true;
-			for await (const pkg of request.packages(run)) {
+			for (const pkg of request.packages(run)) {
 				if (invalid) {
 					pkg.forEach((item) =>
 						run.errored(item, {
@@ -88,11 +85,10 @@ export class TestRunner {
 		}
 	}
 
-	// `goTest` from vscode-go
 	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun, continuous: boolean) {
 		const time = new Date();
 
-		// Determine the profile parent before removing dynamic test cases. If
+		/*/ Determine the profile parent before removing dynamic test cases. If
 		// the request is for a single test, add the profiles to that test,
 		// otherwise add them to the package. If the profile parent is a
 		// sub-test, add the profile to its top-most parent test.
@@ -101,46 +97,34 @@ export class TestRunner {
 			const parent = pkg.goItem.testRelations.getParent(profileParent);
 			if (!parent) break;
 			profileParent = parent;
-		}
+		}*/
 
-		// Enqueue tests and remove dynamic test cases from tests that are about
-		// to be run
-		pkg.forEach((item, goItem) => {
+		// Enqueue tests.
+		pkg.forEach((item) => {
 			run.enqueued(item);
-			goItem?.removeDynamicTestCases();
 		});
 
-		// Destroy dynamic tests cases for this run when the run is discarded
-		run.onDidDispose?.(async () => {
-			const removed: ReturnType<TestCase['removeDynamicTestCases']> = [];
-			pkg.forEach((_, goItem) => {
-				removed.push(...(goItem?.removeDynamicTestCases(run) ?? []));
-			});
-			await this.#resolver.reloadGoItem(removed);
-		});
-
-		const cfg = new TestConfig(this.#context.workspace, pkg.goItem.uri);
 		const flags: Flags = {};
 
 		flags.fullpath = true; // Include the full path for output events
 
-		if (pkg.includeAll) {
+		if (pkg.mode === 'all') {
 			// Include all test cases
 			flags.run = '.';
-			if (shouldRunBenchmarks(this.#context.workspace, pkg.goItem)) {
+			if (shouldRunBenchmarks(this.#wsConfig, pkg.goItem)) {
 				flags.bench = '.';
 			}
 		} else {
 			// Include specific test cases
-			flags.run = makeRegex(pkg.include.keys(), (x) => x.kind !== 'benchmark') || '-';
-			flags.bench = makeRegex(pkg.include.keys(), (x) => x.kind === 'benchmark') || '-';
+			flags.run = makeRegex(pkg.tests.keys(), (x) => x.kind !== 'benchmark') || '-';
+			flags.bench = makeRegex(pkg.tests.keys(), (x) => x.kind === 'benchmark') || '-';
 		}
 		if (pkg.exclude.size) {
 			// Exclude specific test cases
 			flags.skip = makeRegex(pkg.exclude.keys());
 		}
 
-		// Capture coverage
+		/*/ Capture coverage
 		let coveragePath: Uri | undefined;
 		if (this.#config.kind === TestRunProfileKind.Coverage) {
 			// Consider forking https://github.com/rillig/gobco for branch
@@ -183,10 +167,10 @@ export class TestRunner {
 				const file = await this.#registerCapturedProfile(run, profileParent, dir, profile, time);
 				flags[`${profile.id}profile`] = file.uri.fsPath;
 			}
-		}
+		}*/
 
 		// When printing flags, use ${workspaceFolder} for the workspace folder
-		const ws = this.#context.workspace.getWorkspaceFolder(pkg.goItem.uri);
+		const ws = pkg.goItem.parent instanceof Workspace ? pkg.goItem.parent : pkg.goItem.parent.workspace;
 		const niceFlags = Object.assign({}, flags);
 		if (ws) {
 			for (const [flag, value] of Object.entries(niceFlags)) {
@@ -199,10 +183,11 @@ export class TestRunner {
 		// Use a task queue to ensure stdout calls are sequenced
 		const q = new TaskQueue();
 
-		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags(), [], {
+		const cfg = this.#wsConfig.for(pkg.goItem);
+		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags.get(), [], {
 			mode: 'test',
 			cwd: pkg.goItem.uri.fsPath,
-			env: cfg.testEnvVars(),
+			env: cfg.testEnvVars.get(),
 			cancel: this.#token,
 			debug: this.#config.options,
 			stdout: (s: string | null) => {
@@ -244,17 +229,17 @@ export class TestRunner {
 			return;
 		}
 
-		if (coveragePath && run.addCoverage && 'code' in r && r.code === 0) {
+		/*if (coveragePath && run.addCoverage && 'code' in r && r.code === 0) {
 			const coverage = await parseCoverage(this.#context, pkg.goItem.parent, coveragePath);
 			for (const [file, statements] of coverage) {
 				const summary = FileCoverage.fromDetails(Uri.parse(file), statements);
 				this.#config.coverage.set(summary, statements);
 				run.addCoverage(summary);
 			}
-		}
+		}*/
 	}
 
-	async #registerCapturedProfile(
+	/*async #registerCapturedProfile(
 		run: TestRun,
 		item: Package | StaticTestCase,
 		dir: Uri,
@@ -269,7 +254,7 @@ export class TestRunner {
 			await this.#resolver.reloadGoItem(item);
 		});
 		return profile;
-	}
+	}*/
 
 	#spawn(...args: Parameters<Spawner>) {
 		switch (this.#config.kind) {
@@ -279,25 +264,6 @@ export class TestRunner {
 				return this.#context.spawn(...args);
 		}
 	}
-}
-
-export function shouldRunBenchmarks(workspace: VSCodeWorkspace, pkg: Package) {
-	// When the user clicks the run button on a package, they expect all of the
-	// tests within that package to run - they probably don't want to run the
-	// benchmarks. So if a benchmark is not explicitly selected, don't run
-	// benchmarks. But the user may disagree, so behavior can be changed with
-	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
-	// button on a file or package that contains benchmarks and nothing else,
-	// they likely expect those benchmarks to run.
-	if (workspace.getConfiguration('exp-vscode-go', pkg.uri).get<boolean>('testExplorer.runPackageBenchmarks')) {
-		return true;
-	}
-	for (const test of pkg.getTests()) {
-		if (test.kind !== 'benchmark') {
-			return false;
-		}
-	}
-	return true;
 }
 
 function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {
@@ -342,7 +308,7 @@ async function makeCaptureDir(context: Context, run: TestRun, scope: Uri, time: 
 		return cache.get(scope)!;
 	}
 
-	const tmp = captureTempDir(context, run);
+	const tmp = captureTempDir();
 
 	// This is a simple way to make an ID from the package URI
 	const hash = createHash('sha256').update(`${scope}`).digest('hex');
@@ -358,7 +324,7 @@ async function makeCaptureDir(context: Context, run: TestRun, scope: Uri, time: 
 	return dir;
 }
 
-function captureTempDir(context: Context, run: TestRun): Uri {
+function captureTempDir(): Uri {
 	// Profiles can be deleted when the run is disposed, but there's no way to
 	// re-associated profiles with a past run when VSCode is closed and
 	// reopened. So we always use the OS temp directory for now.

@@ -61,7 +61,7 @@ export class Module {
 
 export class Package {
 	readonly kind = 'package';
-	readonly parent;
+	readonly parent; // TODO: Rename to 'root'
 	readonly uri;
 	readonly path;
 	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);

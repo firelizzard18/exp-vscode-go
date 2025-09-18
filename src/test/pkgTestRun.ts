@@ -1,9 +1,10 @@
-import { Location, Position, TestItem, TestMessage, TestRun, Uri } from 'vscode';
+import { Location, Position, TestItem, TestMessage, TestRun, TestRunRequest, Uri } from 'vscode';
 import { Package, parseID, StaticTestCase, TestCase } from './model';
 import { TestEvent } from './testEvent';
 import path from 'node:path';
 
 export interface ResolvedRunRequest {
+	request: TestRunRequest;
 	size: number;
 	packages(run: TestRun): Iterable<PackageTestRun>;
 }

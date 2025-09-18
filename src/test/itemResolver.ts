@@ -20,6 +20,7 @@ import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
 import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
 import { TestEvent } from './testEvent';
+import { MapWithDefault } from '../utils/map';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -404,20 +405,16 @@ export class GoTestItemResolver {
 		}
 
 		// Record requests for specific tests.
-		const testsForPackage = new Map<Package, TestCase[]>();
+		const testsForPackage = new MapWithDefault<Package, TestCase[]>(() => []);
 		for (const item of tests) {
 			const pkg = item.file.package;
 			packages.add(pkg);
-
-			if (!testsForPackage.has(pkg)) {
-				testsForPackage.set(pkg, []);
-			}
-			testsForPackage.get(pkg)!.push(item);
+			testsForPackage.get(pkg).push(item);
 		}
 
 		// Tests that should be excluded for each package. Ignore items that
 		// can't be resolved.
-		const excludeForPackage = new Map<Package, TestCase[]>();
+		const excludeForPackage = new MapWithDefault<Package, TestCase[]>(() => []);
 		const excludeItems = [...exclude].flatMap((x) => {
 			const id = parseID(x);
 			if (id.profile) return [];
@@ -436,23 +433,26 @@ export class GoTestItemResolver {
 		for (const item of excludeItems) {
 			const pkg = item.file.package;
 			if (!packages.has(pkg)) continue;
+			excludeForPackage.get(pkg).push(item);
+		}
 
-			if (!excludeForPackage.has(pkg)) {
-				excludeForPackage.set(pkg, []);
-			}
-			excludeForPackage.get(pkg)!.push(item);
+		// We need a TestRunRequest, so construct one if necessary.
+		if (rq instanceof Array) {
+			rq = new TestRunRequest(rq.map((x) => this.#getViewItem(x) ?? this.#buildViewItem(x)));
 		}
 
 		const request: ResolvedRunRequest = {
+			request: rq,
 			size: packages.size,
-			packages: (run: TestRun) =>
-				this.#makePkgTestRuns(
+			packages: (run: TestRun) => {
+				return this.#makePkgTestRuns(
 					run,
 					packages,
 					new Map(include.filter((x) => x.kind === 'package').map((x) => [x, 'all'])),
 					testsForPackage,
 					excludeForPackage,
-				),
+				);
+			},
 		};
 		return request;
 	}
@@ -461,23 +461,96 @@ export class GoTestItemResolver {
 		run: TestRun,
 		packages: Set<Package>,
 		modeFor: Map<Package, 'all' | 'specific'>,
-		include: Map<Package, TestCase[]>,
-		exclude: Map<Package, TestCase[]>,
+		pkgInclude: Map<Package, TestCase[]>,
+		pkgExclude: Map<Package, TestCase[]>,
 	) {
 		const get = (x: GoTestItem) => this.#getViewItem(x) ?? this.#buildViewItem(x);
 		const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, get(x)]));
 
+		// When the run is disposed, remove all dynamic test cases
+		// associated with it.
+		run.onDidDispose?.(() => {
+			for (const pkg of packages) {
+				this.#removeDynamicTests(pkg, (test) => test.run === run);
+			}
+		});
+
 		for (const pkg of packages) {
 			const mode = modeFor.get(pkg) ?? 'specific';
+			const include = mode === 'all' ? map([...pkg.allTests()]) : map(pkgInclude.get(pkg) ?? []);
+			const exclude = map(pkgExclude.get(pkg) ?? []);
+
+			// This is called immediately before executing a test run. So, we'll
+			// clear the dynamic test cases now.
+			if (mode === 'all') {
+				// We're running all tests, so remove all dynamic tests.
+				this.#removeDynamicTests(pkg, () => true);
+			} else {
+				// We're running specific tests, so remove dynamic tests if
+				// their parent is being run.
+				this.#removeDynamicTests(pkg, (test) => {
+					const parent = this.#presenter.getParent(test);
+					while (parent) {
+						if (exclude.has(parent as any)) return false;
+						if (include.has(parent as any)) return true;
+					}
+					return false;
+				});
+			}
+
 			yield new PackageTestRun({
 				run,
 				mode,
 				goItem: pkg,
 				testItem: get(pkg),
-				tests: mode === 'all' ? map([...pkg.allTests()]) : map(include.get(pkg) ?? []),
-				exclude: map(exclude.get(pkg) ?? []),
+				tests: include,
+				exclude,
 				testFor: (event) => this.#testForEvent(pkg, run, event),
 			});
+		}
+	}
+
+	#removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean) {
+		// Remove all matching dynamic test cases.
+		const parents = new Set<GoTestItem>();
+		const updates: ModelUpdateEvent[] = [];
+		const remove = (test: TestCase, predicate: (test: DynamicTestCase) => boolean): boolean => {
+			const children = this.#presenter.getChildren(test) as TestCase[];
+			const ok = test instanceof DynamicTestCase && predicate(test);
+			if (ok) {
+				// Test is dynamic, remove it and all its children.
+				test.file.tests.remove(test);
+				updates.push({ item: test, type: 'removed' });
+
+				for (const child of children) {
+					remove(child, () => true);
+				}
+			} else {
+				// Test is static or should not be removed, check its children.
+				for (const child of children) {
+					if (remove(child, predicate)) {
+						parents.add(test);
+					}
+				}
+			}
+
+			return ok;
+		};
+
+		for (const file of pkg.files) {
+			for (const test of file.tests) {
+				if (remove(test, predicate)) {
+					parents.add(file);
+				}
+			}
+		}
+
+		// Notify listeners.
+		this.#didUpdate(updates);
+
+		// Update the view model.
+		for (const parent of parents) {
+			this.#updateViewModel(parent, undefined, {});
 		}
 	}
 
@@ -522,28 +595,6 @@ export class GoTestItemResolver {
 
 		// Update the parent's view model.
 		return this.#updateViewModel(parent, undefined, { recurse: true });
-	}
-
-	removeDynamicTestCases(pkg: Package, run?: TestRun) {
-		// Find the tests that should be removed.
-		let tests = [...pkg.allTests()].filter((x) => x instanceof DynamicTestCase);
-		if (run) tests = tests.filter((x) => x.run === run);
-
-		// Remove them.
-		const parents = new Set<GoTestItem>();
-		for (const test of tests) {
-			const parent = this.#presenter.getParent(test);
-			if (parent) parents.add(parent);
-			test.file.tests.remove(test);
-		}
-
-		// Notify listeners.
-		this.#didUpdate(tests.map((x) => ({ item: x, type: 'removed' })));
-
-		// Update the view model.
-		for (const parent of parents) {
-			this.#updateViewModel(parent, undefined, {});
-		}
 	}
 
 	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {
@@ -799,7 +850,7 @@ function* testCases(items: GoTestItem[], exclude: (test: TestCase) => boolean = 
 	}
 }
 
-function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
+export function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
 	// When the user clicks the run button on a package, they expect all of the
 	// tests within that package to run - they probably don't want to run the
 	// benchmarks. So if a benchmark is not explicitly selected, don't run
