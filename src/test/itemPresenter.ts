@@ -4,7 +4,7 @@ import { RelationMap } from '../utils/map';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';
-import { ProfileContainer } from './profile';
+import { CapturedProfile, ProfileContainer, ProfileType } from './profile';
 import moment from 'moment';
 import {
 	Module,
@@ -29,9 +29,7 @@ export class GoTestItemPresenter {
 	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
 		() => new RelationMap(),
 	);
-	readonly #profiles = new WeakMapWithDefault<Package | StaticTestCase, ProfileContainer>(
-		(x) => new ProfileContainer(x),
-	);
+	readonly #profiles = new WeakMapWithDefault<GoTestItem, ProfileContainer>((x) => new ProfileContainer(x));
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
 	constructor(config: WorkspaceConfig) {
@@ -226,8 +224,16 @@ export class GoTestItemPresenter {
 		}
 	}
 
-	getProfiles(item: GoTestItem) {
-		return this.#profiles.get(item as any);
+	getProfiles(scope: GoTestItem) {
+		// Attaching profiles to dynamic tests cases is unsafe.
+		while (scope instanceof DynamicTestCase) {
+			scope = this.getParent(scope)!;
+		}
+		return this.#profiles.get(scope);
+	}
+
+	addProfile(scope: GoTestItem, dir: Uri, type: ProfileType, time: Date) {
+		return this.getProfiles(scope).addProfile(dir, type, time);
 	}
 
 	didUpdate(updates: ModelUpdateEvent[]) {

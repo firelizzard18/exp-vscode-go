@@ -2,11 +2,13 @@ import { Location, Position, TestItem, TestMessage, TestRun, TestRunRequest, Uri
 import { Package, parseID, StaticTestCase, TestCase } from './model';
 import { TestEvent } from './testEvent';
 import path from 'node:path';
+import { CapturedProfile, ProfileType } from './profile';
 
 export interface ResolvedRunRequest {
 	request: TestRunRequest;
 	size: number;
 	packages(run: TestRun): Iterable<PackageTestRun>;
+	attachProfile(run: PackageTestRun, dir: Uri, type: ProfileType, time: Date): Promise<CapturedProfile>;
 }
 
 interface TestResolver {

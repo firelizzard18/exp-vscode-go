@@ -21,6 +21,8 @@ import { pathContains } from '../utils/util';
 import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
 import { TestEvent } from './testEvent';
 import { MapWithDefault } from '../utils/map';
+import { CapturedProfile, ProfileType } from './profile';
+import { makeCaptureDir } from './utils';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -453,6 +455,9 @@ export class GoTestItemResolver {
 					excludeForPackage,
 				);
 			},
+			attachProfile: (run, dir, type, time) => {
+				return this.#attachProfile(run, dir, type, time);
+			},
 		};
 		return request;
 	}
@@ -508,6 +513,26 @@ export class GoTestItemResolver {
 				testFor: (event) => this.#testForEvent(pkg, run, event),
 			});
 		}
+	}
+
+	async #attachProfile(run: PackageTestRun, dir: Uri, type: ProfileType, time: Date) {
+		// Where should we attach the profiles? If there is a single
+		// item included, attach to it, otherwise attach to the package.
+		// If the target item is a dynamic test case, the presenter will
+		// walk up the chain until it reaches a static test case, to
+		// avoid attaching profiles to a dynamic test case.
+		const scope = run.tests.size === 1 ? [...run.tests][0][0] : run.goItem;
+		const profile = this.#presenter.addProfile(scope, dir, type, time);
+
+		// Update the view model.
+		this.#updateViewModel(profile, undefined, {});
+
+		// Remove when the run is disposed.
+		run.run.onDidDispose?.(async () => {
+			profile.remove();
+			this.#updateViewModel(profile.parent.parent, undefined, { recurse: true });
+		});
+		return profile;
 	}
 
 	#removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean) {

@@ -3,7 +3,7 @@
 import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri, workspace } from 'vscode';
 import type vscode from 'vscode';
 import { Context, TestController, VSCodeWorkspace } from '../utils/testing';
-import { Flags, Spawner } from './utils';
+import { Flags, makeCaptureDir, Spawner } from './utils';
 import { ProfileType } from './profile';
 import path from 'node:path';
 import { getTempDirPath } from '../utils/util';
@@ -44,11 +44,11 @@ export class TestRunner {
 		await this.#run(this.#request);
 	}
 
-	/*async runContinuous(items: TestCase[]) {
+	async runContinuous(items: TestCase[]) {
 		if (items.length) {
 			await this.#run(await this.#request.with(items), true);
 		}
-	}*/
+	}
 
 	async #run(request: ResolvedRunRequest, continuous = false) {
 		const run = this.#ctrl.createTestRun(request.request);
@@ -77,7 +77,7 @@ export class TestRunner {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				await this.#runPkg(pkg, run, continuous);
+				await this.#runPkg(pkg, continuous);
 			}
 		} finally {
 			run.end();
@@ -85,23 +85,12 @@ export class TestRunner {
 		}
 	}
 
-	async #runPkg(pkg: PackageTestRun, run: vscode.TestRun, continuous: boolean) {
+	async #runPkg(pkg: PackageTestRun, continuous: boolean) {
 		const time = new Date();
-
-		/*/ Determine the profile parent before removing dynamic test cases. If
-		// the request is for a single test, add the profiles to that test,
-		// otherwise add them to the package. If the profile parent is a
-		// sub-test, add the profile to its top-most parent test.
-		let profileParent = pkg.include.size === 1 ? [...pkg.include][0][0] : pkg.goItem;
-		while (profileParent instanceof TestCase) {
-			const parent = pkg.goItem.testRelations.getParent(profileParent);
-			if (!parent) break;
-			profileParent = parent;
-		}*/
 
 		// Enqueue tests.
 		pkg.forEach((item) => {
-			run.enqueued(item);
+			pkg.run.enqueued(item);
 		});
 
 		const flags: Flags = {};
@@ -124,14 +113,14 @@ export class TestRunner {
 			flags.skip = makeRegex(pkg.exclude.keys());
 		}
 
-		/*/ Capture coverage
+		// Capture coverage
 		let coveragePath: Uri | undefined;
 		if (this.#config.kind === TestRunProfileKind.Coverage) {
 			// Consider forking https://github.com/rillig/gobco for branch
 			// coverage. The original version (https://github.com/junhwi/gobco)
 			// could be used with `go test -toolexec`, so maybe we could make
 			// the new version do that to.
-			const dir = await makeCaptureDir(this.#context, run, profileParent.uri, time);
+			const dir = await makeCaptureDir(this.#context, pkg.run, pkg.goItem.uri, time);
 			coveragePath = Uri.joinPath(dir, 'coverage.log');
 			flags.coverprofile = coveragePath.fsPath;
 			flags.covermode = 'count';
@@ -154,20 +143,18 @@ export class TestRunner {
 			// Profiling is disabled for continuous runs
 			!continuous &&
 			// Is profiling enabled?
-			this.#config.settings.profile.some((x) => x.enabled) &&
-			// Profiles can only be attached to a package or a static test case
-			(profileParent instanceof Package || profileParent instanceof StaticTestCase)
+			this.#config.settings.profile.some((x) => x.enabled)
 		) {
-			const dir = await makeCaptureDir(this.#context, run, profileParent.uri, time);
+			const dir = await makeCaptureDir(this.#context, pkg.run, pkg.goItem.uri, time);
 			for (const profile of this.#config.settings.profile) {
 				if (!profile.enabled) {
 					continue;
 				}
 
-				const file = await this.#registerCapturedProfile(run, profileParent, dir, profile, time);
+				const file = await this.#request.attachProfile(pkg, dir, profile, time);
 				flags[`${profile.id}profile`] = file.uri.fsPath;
 			}
-		}*/
+		}
 
 		// When printing flags, use ${workspaceFolder} for the workspace folder
 		const ws = pkg.goItem.parent instanceof Workspace ? pkg.goItem.parent : pkg.goItem.parent.workspace;
@@ -208,7 +195,7 @@ export class TestRunner {
 		}
 
 		if ('error' in r) {
-			run.errored(pkg.testItem, {
+			pkg.run.errored(pkg.testItem, {
 				message: `${r.error}`,
 			});
 			return;
@@ -220,7 +207,7 @@ export class TestRunner {
 		}
 
 		if ('code' in r && r.code !== 0 && r.code !== 1) {
-			run.errored(pkg.testItem, {
+			pkg.run.errored(pkg.testItem, {
 				message: `\`go test\` exited with ${[
 					...(r.code ? [`code ${r.code}`] : []),
 					...(r.signal ? [`signal ${r.signal}`] : []),
@@ -229,32 +216,15 @@ export class TestRunner {
 			return;
 		}
 
-		/*if (coveragePath && run.addCoverage && 'code' in r && r.code === 0) {
+		if (coveragePath && pkg.run.addCoverage && 'code' in r && r.code === 0) {
 			const coverage = await parseCoverage(this.#context, pkg.goItem.parent, coveragePath);
 			for (const [file, statements] of coverage) {
 				const summary = FileCoverage.fromDetails(Uri.parse(file), statements);
 				this.#config.coverage.set(summary, statements);
-				run.addCoverage(summary);
+				pkg.run.addCoverage(summary);
 			}
-		}*/
+		}
 	}
-
-	/*async #registerCapturedProfile(
-		run: TestRun,
-		item: Package | StaticTestCase,
-		dir: Uri,
-		type: ProfileType,
-		time: Date,
-	) {
-		const profile = await item.profiles.addProfile(dir, type, time);
-		await this.#resolver.reloadGoItem(item);
-
-		run.onDidDispose?.(async () => {
-			item.profiles.removeProfile(profile);
-			await this.#resolver.reloadGoItem(item);
-		});
-		return profile;
-	}*/
 
 	#spawn(...args: Parameters<Spawner>) {
 		switch (this.#config.kind) {
@@ -282,57 +252,4 @@ function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = 
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
 function escapeRegExp(v: string) {
 	return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-const captureDirs = new WeakMap<TestRun, Map<Uri, Uri>>();
-
-/**
- * Creates a storage directory for captures taken during a test run.
- *
- * Ideally, if the test run is persisted and supports onDidDispose, it would
- * return the extensions's storage URI. However there are issues with that (see
- * the comment in the function).
- *
- * @param context - The context object.
- * @param run - The test run object.
- * @returns The storage directory URI.
- */
-async function makeCaptureDir(context: Context, run: TestRun, scope: Uri, time: Date): Promise<Uri> {
-	// Avoid multiple FS calls
-	let cache = captureDirs.get(run);
-	if (!cache) {
-		cache = new Map();
-		captureDirs.set(run, cache);
-	}
-	if (cache.has(scope)) {
-		return cache.get(scope)!;
-	}
-
-	const tmp = captureTempDir();
-
-	// This is a simple way to make an ID from the package URI
-	const hash = createHash('sha256').update(`${scope}`).digest('hex');
-	const dir = Uri.joinPath(tmp, `${hash.substring(0, 16)}-${time.getTime()}`);
-
-	// Store before awaiting to avoid concurrency issues
-	cache.set(scope, dir);
-
-	const { fs } = context.workspace;
-	await fs.createDirectory(dir);
-	run.onDidDispose?.(() => fs.delete(dir, { recursive: true }));
-
-	return dir;
-}
-
-function captureTempDir(): Uri {
-	// Profiles can be deleted when the run is disposed, but there's no way to
-	// re-associated profiles with a past run when VSCode is closed and
-	// reopened. So we always use the OS temp directory for now.
-	// https://github.com/microsoft/vscode/issues/227924
-
-	// if (run.isPersisted && run.onDidDispose && context.storageUri) {
-	// 	return context.storageUri;
-	// }
-
-	return Uri.file(getTempDirPath());
 }

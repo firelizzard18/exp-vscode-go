@@ -1,9 +1,9 @@
 import path, { isAbsolute, relative } from 'node:path';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
 import { Context } from '../utils/testing';
-import { Module, RootItem } from './item';
 import { execGoStr } from '../utils/util';
 import { getModulePaths } from '../utils/modules';
+import { Module, Workspace } from './model';
 
 /**
  * Parses a coverage file from `go test` into a map of
@@ -12,7 +12,7 @@ import { getModulePaths } from '../utils/modules';
  * @param coverageFile - The coverage file
  * @returns Statement coverage information.
  */
-export async function parseCoverage(context: Context, scope: RootItem, coverageFile: Uri) {
+export async function parseCoverage(context: Context, scope: Workspace | Module, coverageFile: Uri) {
 	const coverage = new Map<string, StatementCoverage[]>();
 	const dirs = context.workspace.workspaceFolders?.filter((x) => x.uri.scheme === 'file').map((x) => x.uri.fsPath);
 	const modules = await getModulePaths(context, scope.dir);
@@ -57,7 +57,7 @@ export async function parseCoverage(context: Context, scope: RootItem, coverageF
 	return coverage;
 }
 
-async function gets(context: Context, scope: RootItem, ...args: string[]) {
+async function gets(context: Context, scope: Workspace | Module, ...args: string[]) {
 	return execGoStr(context, args, { cwd: scope.dir.fsPath });
 }
 
@@ -75,7 +75,7 @@ interface Env {
  * @param s - The line.
  * @returns The parsed line.
  */
-function parseLine(env: Env, scope: RootItem, s: string) {
+function parseLine(env: Env, scope: Workspace | Module, s: string) {
 	/**
 	 * Finds the last occurrence of {@link sep} in {@link s}, splits {@link s}
 	 * on that index, and returns the RHS parsed as a number.
@@ -118,7 +118,7 @@ function parseLine(env: Env, scope: RootItem, s: string) {
 	return { location, count, statements };
 }
 
-function resolveCoveragePath(env: Env, scope: RootItem, filename: string) {
+function resolveCoveragePath(env: Env, scope: Workspace | Module, filename: string) {
 	// If it's an absolute path, assume it's correct
 	if (path.isAbsolute(filename)) {
 		return filename;

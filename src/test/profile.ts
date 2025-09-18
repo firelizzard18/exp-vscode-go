@@ -75,20 +75,16 @@ export class ProfileContainer {
 		this.parent = parent;
 	}
 
-	async addProfile(dir: Uri, type: ProfileType, time: Date): Promise<CapturedProfile> {
+	addProfile(dir: Uri, type: ProfileType, time: Date): CapturedProfile {
 		let set = this.profiles.get(time.getTime());
 		if (!set) {
 			set = new ProfileSet(this, time);
 			this.profiles.set(time.getTime(), set);
 		}
 
-		const profile = await CapturedProfile.new(set, dir, type);
+		const profile = CapturedProfile.new(set, dir, type);
 		set.profiles.add(profile);
 		return profile;
-	}
-
-	removeProfile(profile: CapturedProfile): void {
-		this.profiles.forEach((x) => x.profiles.delete(profile));
 	}
 }
 
@@ -114,7 +110,7 @@ export class CapturedProfile {
 	readonly parent: ProfileSet;
 	readonly hasChildren = false;
 
-	static async new(parent: ProfileSet, dir: Uri, type: ProfileType) {
+	static new(parent: ProfileSet, dir: Uri, type: ProfileType) {
 		const file = Uri.joinPath(dir, `${type.id}.pprof`);
 		return new this(parent, type, file);
 	}
@@ -127,6 +123,10 @@ export class CapturedProfile {
 
 	get key() {
 		return `${this.uri}`;
+	}
+
+	remove(): void {
+		this.parent.profiles.delete(this);
 	}
 }
 
