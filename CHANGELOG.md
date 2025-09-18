@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.0
+
+- This is just v0.0.14/v0.0.13 repackaged as not-a-prerelease.
+
+## v0.0.14
+
+- Introduces prerelease versions.
+
+## v0.0.13
+
+- Improves the test discovery logic when switching between files to avoid
+  unnecessary work.
+
 ## v0.0.12
 
 - Defaults to updating tests when a document is saved instead of as a document

@@ -10,6 +10,14 @@ somewhat degraded when used with release versions of the Go extension.
 [vscode-go-ms]: https://marketplace.visualstudio.com/items?itemName=golang.go
 [vscode-go-companion]: https://marketplace.visualstudio.com/items?itemName=ethan-reesor.exp-vscode-go
 
+## Releases
+
+Releases are done automatically through GitHub Actions based on git tags (see
+[publish.yml][publish]). The tag must match the package.json version. If the
+minor version number is even, it will be published as a prerelease.
+
+[publish]: ./.github/workflows/publish.yml
+
 ## Issues
 
 Report issues to [vscode-go][vscode-go-git]. Include a note that you are
