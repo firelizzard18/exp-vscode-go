@@ -44,7 +44,7 @@ export class GoTestItemResolver {
 		const didUpdate = new EventEmitter<ModelUpdateEvent[]>();
 		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) =>
 			didUpdate.fire(events.map((x) => ({ ...x, view: this.#getViewItem(x.item) })));
-				this.onDidUpdate = didUpdate.event;
+		this.onDidUpdate = didUpdate.event;
 	}
 
 	/**
@@ -522,6 +522,28 @@ export class GoTestItemResolver {
 
 		// Update the parent's view model.
 		return this.#updateViewModel(parent, undefined, { recurse: true });
+	}
+
+	removeDynamicTestCases(pkg: Package, run?: TestRun) {
+		// Find the tests that should be removed.
+		let tests = [...pkg.allTests()].filter((x) => x instanceof DynamicTestCase);
+		if (run) tests = tests.filter((x) => x.run === run);
+
+		// Remove them.
+		const parents = new Set<GoTestItem>();
+		for (const test of tests) {
+			const parent = this.#presenter.getParent(test);
+			if (parent) parents.add(parent);
+			test.file.tests.remove(test);
+		}
+
+		// Notify listeners.
+		this.#didUpdate(tests.map((x) => ({ item: x, type: 'removed' })));
+
+		// Update the view model.
+		for (const parent of parents) {
+			this.#updateViewModel(parent, undefined, {});
+		}
 	}
 
 	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {

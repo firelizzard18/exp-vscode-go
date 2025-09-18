@@ -261,41 +261,4 @@ export class GoTestItemPresenter {
 			this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(pkg, test.name)]));
 		}
 	}
-
-	/**
-	 * Deletes all {@link DynamicTestCase dynamic subtests} that are children of
-	 * the given test case. If a test run is specified, only items from that run
-	 * are removed.
-	 * @returns The items that should be reloaded.
-	 */
-	*removeTestCases(parent: TestCase, run?: TestRun): Iterable<TestCase> {
-		const rel = this.#testRel.get(parent.file.package);
-		if (!(parent instanceof DynamicTestCase)) {
-			const children = rel.getChildren(parent) ?? [];
-			for (const child of children) {
-				yield* this.removeTestCases(child, run);
-			}
-			return;
-		}
-
-		// If `run` is specified, only remove this case if it belongs to `run`
-		if (run && run !== parent.run) {
-			return;
-		}
-
-		// This item's parent should be refreshed.
-		yield rel.getParent(parent)!;
-
-		// Remove children.
-		const children = rel.getChildren(parent) ?? [];
-		for (const child of children) {
-			for (const _ of this.removeTestCases(child, run)) {
-				// Discard
-			}
-		}
-
-		// Remove this item.
-		parent.file.tests.remove(parent);
-		rel.removeChild(parent);
-	}
 }
