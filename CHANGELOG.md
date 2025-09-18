@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.0
+
+- This is just v0.0.14/v0.0.13 repackaged as not-a-prerelease.
+
 ## v0.0.14
 
 - Introduces prerelease versions.
