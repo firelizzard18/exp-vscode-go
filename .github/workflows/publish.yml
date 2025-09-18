@@ -23,14 +23,25 @@ jobs:
             echo "  tag: $Y"
             exit 1
           fi
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          MINOR=$(jq < package.json -re .version | cut -d'.' -f2)
+          if [ $((MINOR % 2)) -eq 0 ]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
       - name: Publish to Open VSX Registry
         uses: HaaLeo/publish-vscode-extension@v1.6.2
         id: publishToOpenVSX
         with:
           pat: ${{ secrets.OPEN_VSX_TOKEN }}
+          preRelease: ${{ steps.prerelease.outputs.prerelease }}
       - name: Publish to Visual Studio Marketplace
         uses: HaaLeo/publish-vscode-extension@v1.6.2
         with:
           pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
           registryUrl: https://marketplace.visualstudio.com
           extensionFile: ${{ steps.publishToOpenVSX.outputs.vsixPath }}
+          preRelease: ${{ steps.prerelease.outputs.prerelease }}
