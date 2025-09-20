@@ -1,21 +1,12 @@
-import { TestRun, Uri, WorkspaceFolder } from 'vscode';
+import { Uri, WorkspaceFolder } from 'vscode';
 import { ItemSet } from './itemSet';
 import { RelationMap } from '../utils/map';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';
-import { CapturedProfile, ProfileContainer, ProfileType } from './profile';
+import { ProfileContainer, ProfileType } from './profile';
 import moment from 'moment';
-import {
-	Module,
-	Package,
-	Workspace,
-	DynamicTestCase,
-	GoTestItem,
-	StaticTestCase,
-	TestCase,
-	findParentTestCase,
-} from './item';
+import { Module, Package, Workspace, DynamicTestCase, GoTestItem, TestCase, findParentTestCase } from './item';
 import { ModelUpdateEvent } from './itemResolver';
 
 export class GoTestItemPresenter {

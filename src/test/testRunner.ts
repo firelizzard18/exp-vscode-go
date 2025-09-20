@@ -5,12 +5,11 @@ import { Context, TestController } from '../utils/testing';
 import { Flags, makeCaptureDir, Spawner } from './utils';
 import path from 'node:path';
 import { parseCoverage } from './coverage';
-import { TaskQueue } from '../utils/taskQueue';
 import { RunConfig } from './runConfig';
 import { ResolvedTestRunRequest, shouldRunBenchmarks } from './itemResolver';
 import { PackageTestRun } from './pkgTestRun';
 import { WorkspaceConfig } from './workspaceConfig';
-import { TestCase, Workspace } from './item';
+import { TestCase } from './item';
 
 export class TestRunner {
 	readonly #context;
