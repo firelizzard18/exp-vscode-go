@@ -93,7 +93,7 @@ export class GoTestItemResolver {
 			Files: [`${uri}`],
 			Mode: Commands.PackagesMode.NeedTests,
 		});
-		const packages = this.#consolidatePackages(ws, r);
+		const packages = this.#consolidatePackages(ws, r, false);
 
 		// Map modules.
 		const mods = new Map<string, Module>();
@@ -122,9 +122,6 @@ export class GoTestItemResolver {
 		// part of multiple packages, so we can't assume there's only one
 		// package.
 		for (const src of packages) {
-			// Skip packages that don't have tests.
-			if (!src.TestFiles?.length) continue;
-
 			// Get the workspace or module for this package. If the package is
 			// part of a module but that module is not part of this workspace,
 			// use the workspace as the root.
@@ -133,8 +130,27 @@ export class GoTestItemResolver {
 				root = mods.get(src.ModulePath) ?? ws;
 			}
 
-			// Get or create the package.
+			// Get the existing package.
 			let pkg = root.packages.get(src);
+
+			// If a package doesn't have tests, that probably means the last
+			// test was removed, so we should remove it.
+			if (src.TestFiles.length === 0) {
+				if (!pkg) continue;
+
+				// Get it's current view parent.
+				const parent = this.#presenter.getParent(pkg)!;
+
+				// Remove it from the workspace or module and notify listeners.
+				root.packages.remove(pkg);
+				this.#didUpdate([{ item: pkg, type: 'removed' }]);
+
+				// Synchronize the parent's view model.
+				if (parent) this.#updateViewModel(parent, undefined, {});
+				continue;
+			}
+
+			// Create a new Package if necessary.
 			if (!pkg) {
 				pkg = new Package(root, src, r.Module?.[src.ModulePath as string]);
 				root.packages.add(pkg);
@@ -246,7 +262,7 @@ export class GoTestItemResolver {
 		}
 
 		// Delete unwanted items.
-		const goChildren = this.#presenter.getChildren(go);
+		const goChildren = [...this.#presenter.getChildren(go)];
 		const want = new Set(goChildren.map((x) => `${idFor(x)}`));
 		for (const [id, item] of view.children) {
 			if (!want.has(id)) {
@@ -482,7 +498,7 @@ export class GoTestItemResolver {
 					return mod;
 				}
 				continue;
-			} else if (!pathContains(mod.uri, uri)) {
+			} else if (!pathContains(mod.dir, uri)) {
 				continue;
 			}
 
@@ -560,6 +576,12 @@ export class GoTestItemResolver {
 	 * Loads the packages of a workspace or module.
 	 */
 	async #loadPackages(root: Workspace | Module) {
+		// TODO(ethan.reesor): We could improve performance (I think) with a
+		// "list test files but not tests" mode. If that happens, we need to:
+		//  - Change the Mode of the gopls query.
+		//  - Pass expectFiles = false to #consolidatePackages.
+		//  - Stop adding packages to #didLoadChildren.
+
 		// Remember that we've loaded the root's packages.
 		this.#didLoadChildren.add(root);
 
@@ -567,18 +589,25 @@ export class GoTestItemResolver {
 		const r = await this.#context.commands.packages({
 			Files: [`${root.dir}`],
 			Recursive: true,
+			Mode: Commands.PackagesMode.NeedTests,
 		});
 
 		// Consolidate `foo` and `foo_test`.
 		const ws = root instanceof Workspace ? root : root.workspace;
-		const packages = this.#consolidatePackages(ws, r);
+		const packages = this.#consolidatePackages(ws, r, true);
 
 		// Update. But don't update the packages' list of files, because we
 		// didn't ask for tests so we can't properly filter the list of files.
 		const updates = root.packages.update(
-packages,
-(src) => new Package(root, src, r.Module?.[src.ModulePath as string]),
-);
+			packages,
+			(src) => new Package(root, src, r.Module?.[src.ModulePath as string]),
+		);
+
+		// Since we're including tests in the gopls query, remember that we've
+		// loaded the packages' tests.
+		for (const pkg of root.packages) {
+			this.#didLoadChildren.add(pkg);
+		}
 
 		// Notify the provider that we updated the workspace/module's packages.
 		this.#didUpdate(updates);
@@ -634,27 +663,26 @@ packages,
 	 * package directives `foo`, `foo`, and `foo_test`, respectively, gopls will
 	 * report those as three separate packages. This function consolidates them
 	 * into a single package.
-	 * @param ws The workspace.
-	 * @param packages Data provided by gopls.
-	 * @returns The consolidated and filtered package data.
 	 */
-	#consolidatePackages(ws: Workspace, { Packages: all = [] }: Commands.PackagesResults) {
+	#consolidatePackages(ws: Workspace, { Packages: all = [] }: Commands.PackagesResults, expectFiles: boolean) {
 		if (!all) return [];
 
 		const exclude = this.#config.for(ws).exclude.get() || [];
-		const paths = new Set(all.filter((x) => x.TestFiles).map((x) => x.ForTest || x.Path));
-		const results: Commands.Package[] = [];
+		const paths = new Set(all.map((x) => x.ForTest || x.Path));
+		const results: (Commands.Package & Required<Pick<Commands.Package, 'TestFiles'>>)[] = [];
 		for (const pkgPath of paths) {
 			const pkgs = all.filter((x) => x.Path === pkgPath || x.ForTest === pkgPath);
 			const files = pkgs
-				.flatMap((x) => x.TestFiles || [])
+				.flatMap((x) => x.TestFiles ?? [])
 				.filter((m) => {
 					const p = path.relative(ws.dir.fsPath, Uri.parse(m.URI).fsPath);
 					return !exclude.some((x) => x.match(p));
 				});
-			if (!files.length) {
+
+			if (expectFiles && files.length === 0) {
 				continue;
 			}
+
 			results.push({
 				Path: pkgPath,
 				ModulePath: pkgs[0].ModulePath,

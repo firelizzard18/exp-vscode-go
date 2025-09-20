@@ -49,6 +49,9 @@ export class GoTestItemPresenter {
 				return item.path;
 
 			case 'package': {
+				if (item.isRootPkg) {
+					return '(root package)';
+				}
 				const config = this.#config.for(item);
 				const pkgParent = this.#pkgRel.get(item.parent).getParent(item);
 				if (pkgParent && config.nestPackages.get()) {
@@ -103,7 +106,11 @@ export class GoTestItemPresenter {
 				if (!config.nestPackages.get()) {
 					return item.parent;
 				}
-				return this.#pkgRel.get(item.parent).getParent(item) || item.parent;
+
+				const parent = this.#pkgRel.get(item.parent).getParent(item);
+				if (!parent) return item.parent;
+				if (parent.isRootPkg) return parent.parent;
+				return parent;
 			}
 
 			case 'file': {
@@ -142,13 +149,12 @@ export class GoTestItemPresenter {
 			case 'profile':
 				return false;
 			default:
-				return this.getChildren(item).length > 0;
+				return [...this.getChildren(item)].length > 0;
 		}
 	}
 
-	getChildren(item?: GoTestItem | null): GoTestItem[] {
+	*getChildren(item?: GoTestItem | null): Iterable<GoTestItem, void, void> {
 		if (!item) {
-			const children = [];
 			for (const ws of this.workspaces) {
 				// If the workspace has discovery disabled and has _not_
 				// been requested (e.g. by opening a file), skip it.
@@ -160,66 +166,105 @@ export class GoTestItemPresenter {
 				// If the workspace has packages (outside of a module),
 				// include it as a root.
 				if (ws.packages.size > 0) {
-					children.push(ws);
+					yield ws;
 				}
 
 				// Include any modules as roots.
-				children.push(...ws.modules);
+				yield* ws.modules;
 			}
-			return children;
+			return;
+		}
+
+		// If the item has a non-empty profile container, include it.
+		if (this.#profiles.has(item)) {
+			const profiles = this.#profiles.get(item);
+			if (this.hasChildren(profiles)) {
+				yield profiles;
+			}
 		}
 
 		switch (item.kind) {
 			case 'workspace':
 			case 'module':
-				return [...item.packages];
+				const config = this.#config.for(item);
+				const rel = this.#pkgRel.get(item);
+				for (const pkg of item.packages) {
+					// If the package is a root, return its children.
+					if (pkg.isRootPkg) {
+						yield* this.getChildren(pkg);
+						continue;
+					}
+
+					// If packages are nested, return root packages. Otherwise,
+					// return all packages.
+					if (!config.nestPackages.get() || !rel.getParent(pkg)) {
+						yield pkg;
+					}
+				}
+				return;
 
 			case 'package': {
+				// If packages are nested, return child packages.
 				const config = this.#config.for(item);
-				const children: GoTestItem[] = [];
-				const tests = config.showFiles.get()
-					? [...item.files]
-					: [...item.files].flatMap((x) => this.getChildren(x));
+				const rel = this.#pkgRel.get(item.parent);
 				if (config.nestPackages.get()) {
-					children.push(...(this.#pkgRel.get(item.parent).getChildren(item) || []));
+					yield* rel.getChildren(item) ?? [];
 				}
 
-				children.push(...tests);
-
-				if (this.hasChildren(this.#profiles.get(item))) {
-					children.push(this.#profiles.get(item));
+				// If files are shown, return files. Otherwise, return all their
+				// children.
+				if (config.showFiles.get()) {
+					yield* item.files;
+				} else {
+					for (const file of item.files) {
+						yield* this.getChildren(file);
+					}
 				}
-				return children;
+				return;
 			}
 
 			case 'file': {
+				// If subtests are not nested, return all tests.
 				const config = this.#config.for(item);
-				if (config.nestSubtests.get()) {
-					return [...item.tests].filter((x) => !this.#testRel.get(item.package).getParent(x));
+				if (!config.nestSubtests.get()) {
+					yield* item.tests;
+					return;
 				}
-				return [...item.tests];
+
+				// Otherwise, return root tests (those with no parent).
+				const rel = this.#testRel.get(item.package);
+				for (const test of item.tests) {
+					if (!rel.getParent(test)) {
+						yield test;
+					}
+				}
+				return;
 			}
 
 			case 'profile-container':
-				return [...item.profiles.values()].filter((x) => this.hasChildren(x));
+				// Return all profile sets that contain something.
+				for (const profile of item.profiles.values()) {
+					if (this.hasChildren(profile)) {
+						yield profile;
+					}
+				}
+				return;
 
 			case 'profile-set':
-				return [...item.profiles];
+				yield* item.profiles;
+				return;
 
 			case 'profile':
-				return [];
+				return;
 
 			default: {
+				// If nested subtest are enabled, return the tests's subtests.
 				const config = this.#config.for(item);
-				const children = [];
-				if (item instanceof StaticTestCase && this.hasChildren(this.#profiles.get(item))) {
-					children.push(this.#profiles.get(item));
-				}
+				const rel = this.#testRel.get(item.file.package);
 				if (config.nestSubtests.get()) {
-					children.push(...(this.#testRel.get(item.file.package).getChildren(item) || []));
+					yield* rel.getChildren(item) || [];
 				}
-
-				return children;
+				return;
 			}
 		}
 	}
@@ -250,7 +295,7 @@ export class GoTestItemPresenter {
 			this.#pkgRel.get(root).replace(
 				pkgs.map((pkg): [Package, Package | undefined] => {
 					const ancestors = pkgs.filter((x) => pkg.path.startsWith(`${x.path}/`));
-					ancestors.sort((a, b) => a.path.length - b.path.length);
+					ancestors.sort((a, b) => b.path.length - a.path.length);
 					return [pkg, ancestors[0]];
 				}),
 			);
