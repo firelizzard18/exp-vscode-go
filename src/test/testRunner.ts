@@ -1,20 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, FileCoverage, TestRun, TestRunProfileKind, Uri, workspace } from 'vscode';
-import type vscode from 'vscode';
-import { Context, TestController, VSCodeWorkspace } from '../utils/testing';
+import { CancellationToken, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
+import { Context, TestController } from '../utils/testing';
 import { Flags, makeCaptureDir, Spawner } from './utils';
-import { ProfileType } from './profile';
 import path from 'node:path';
-import { getTempDirPath } from '../utils/util';
-import { createHash } from 'node:crypto';
 import { parseCoverage } from './coverage';
 import { TaskQueue } from '../utils/taskQueue';
 import { RunConfig } from './runConfig';
-import { GoTestItemResolver, shouldRunBenchmarks } from './itemResolver';
-import { PackageTestRun, ResolvedRunRequest } from './pkgTestRun';
+import { ResolvedTestRunRequest, shouldRunBenchmarks } from './itemResolver';
+import { PackageTestRun } from './pkgTestRun';
 import { WorkspaceConfig } from './workspaceConfig';
-import { Package, StaticTestCase, TestCase, Workspace } from './model';
+import { TestCase, Workspace } from './model';
 
 export class TestRunner {
 	readonly #context;
@@ -29,7 +25,7 @@ export class TestRunner {
 		wsConfig: WorkspaceConfig,
 		ctrl: TestController,
 		config: RunConfig,
-		request: ResolvedRunRequest,
+		request: ResolvedTestRunRequest,
 		token: CancellationToken,
 	) {
 		this.#context = context;
@@ -50,7 +46,7 @@ export class TestRunner {
 		}
 	}
 
-	async #run(request: ResolvedRunRequest, continuous = false) {
+	async #run(request: ResolvedTestRunRequest, continuous = false) {
 		const run = this.#ctrl.createTestRun(request.request);
 		const sub = this.#token.onCancellationRequested(() => {
 			run.appendOutput('\r\n*** Cancelled ***\r\n');
