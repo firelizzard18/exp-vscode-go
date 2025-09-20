@@ -134,8 +134,13 @@ export const doSafe = async <T>(ctx: Context, msg: string, fn: () => T | Promise
 };
 
 export function reportError(ctx: Context, error: unknown) {
-	if (ctx.testing) throw error;
-	else ctx.output.error(`Error: ${error}`);
+	if (ctx.testing) {
+		throw error;
+	} else if (error instanceof Error) {
+		ctx.output.error(`Error: ${error.message}\n${(error.cause as Error)?.stack ?? error.stack}`);
+	} else {
+		ctx.output.error(`Error: ${error}`);
+	}
 }
 
 const debugResolve = false;

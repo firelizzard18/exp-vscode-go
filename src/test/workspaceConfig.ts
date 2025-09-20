@@ -10,7 +10,7 @@ const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 export type ConfigValue = { [K in keyof ConfigSet]: ConfigSet[K] extends Item<infer T> ? T : never };
 
 class ConfigSet {
-	protected readonly vsc;
+	readonly vsc;
 	readonly #scope;
 	readonly #items: Item<unknown>[] = [];
 
@@ -34,7 +34,7 @@ class ConfigSet {
 	}
 
 	#config<T>(section: string, name: string) {
-		const item = new ConfigItem<T>(this.vsc, this.#scope, section, name);
+		const item = new ConfigItem<T>(this, this.#scope, section, name);
 		this.#items.push(item);
 		return item;
 	}
@@ -194,7 +194,7 @@ interface Item<T> {
 }
 
 class ConfigItem<T> implements Item<T> {
-	readonly #workspace;
+	readonly #parent;
 	readonly #scope;
 	readonly #section;
 	readonly #name;
@@ -202,8 +202,8 @@ class ConfigItem<T> implements Item<T> {
 	#has = false;
 	#value?: T;
 
-	constructor(workspace: VSCodeWorkspace, scope: ConfigurationScope | undefined, section: string, name: string) {
-		this.#workspace = workspace;
+	constructor(parent: ConfigSet, scope: ConfigurationScope | undefined, section: string, name: string) {
+		this.#parent = parent;
 		this.#scope = scope;
 		this.#section = section;
 		this.#name = name;
@@ -215,7 +215,7 @@ class ConfigItem<T> implements Item<T> {
 		}
 
 		this.#has = true;
-		this.#value = this.#workspace.getConfiguration(this.#section, this.#scope).get<T>(this.#name);
+		this.#value = this.#parent.vsc.getConfiguration(this.#section, this.#scope).get<T>(this.#name);
 		return this.#value!;
 	}
 

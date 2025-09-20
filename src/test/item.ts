@@ -242,7 +242,10 @@ export function parseID(id: string | Uri) {
 		id = Uri.parse(id);
 	}
 	const query = new URLSearchParams(id.query);
-	if (query.has('kind')) throw new Error('Invalid ID');
+	if (!query.has('kind')) {
+throw new Error('Invalid ID');
+}
+
 	const obj = {
 		path: id.path,
 		kind: query.get('kind')! as Exclude<GoTestItem['kind'], 'profile-container' | 'profile-set' | 'profile'>,
