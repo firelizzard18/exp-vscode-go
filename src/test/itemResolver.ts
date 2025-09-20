@@ -136,7 +136,7 @@ export class GoTestItemResolver {
 			// Get or create the package.
 			let pkg = root.packages.get(src);
 			if (!pkg) {
-				pkg = new Package(root, src);
+				pkg = new Package(root, src, r.Module?.[src.ModulePath as string]);
 				root.packages.add(pkg);
 				this.#didUpdate([{ item: pkg, type: 'added' }]);
 			}
@@ -575,7 +575,10 @@ export class GoTestItemResolver {
 
 		// Update. But don't update the packages' list of files, because we
 		// didn't ask for tests so we can't properly filter the list of files.
-		const updates = root.packages.update(packages, (src) => new Package(root, src));
+		const updates = root.packages.update(
+packages,
+(src) => new Package(root, src, r.Module?.[src.ModulePath as string]),
+);
 
 		// Notify the provider that we updated the workspace/module's packages.
 		this.#didUpdate(updates);

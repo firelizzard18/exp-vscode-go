@@ -3,6 +3,8 @@ import { Commands } from '../utils/testing';
 import { ItemEvent, ItemSet } from './itemSet';
 import deepEqual from 'deep-equal';
 import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
+import path, { posix } from 'node:path';
+import { isRelativePath } from '../utils/util';
 
 export type GoTestItem =
 	| Module
@@ -66,10 +68,32 @@ export class Package {
 	readonly path;
 	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
 
-	constructor(parent: Module | Workspace, pkg: Commands.Package) {
+	constructor(parent: Module | Workspace, pkg: Commands.Package, mod?: Commands.Module) {
 		this.parent = parent;
 		this.path = pkg.Path;
-		this.uri = Uri.joinPath(Uri.parse(pkg.TestFiles![0].URI), '..');
+
+		if (pkg.ModulePath) {
+			if (!mod) {
+				throw new Error('Package specifies a module path but Module is missing');
+			}
+			const rel = posix.relative('/' + mod.Path, '/' + pkg.Path);
+			if (rel.startsWith('../')) {
+				throw new Error('Package is not within Module');
+			}
+			this.uri = Uri.joinPath(Uri.parse(mod.GoMod), '..', rel);
+		} else if (parent instanceof Workspace) {
+			let p = pkg.Path;
+			if (p.startsWith('_')) {
+				p = p.substring(1);
+			}
+			const rel = path.relative(parent.dir.fsPath, p);
+			if (!isRelativePath(rel)) {
+				throw new Error(`Package is not contained within Workspace`);
+			}
+			this.uri = Uri.joinPath(parent.dir, rel);
+		} else {
+			throw new Error('Package parent is a module but does not have a module path');
+		}
 	}
 
 	get key() {
@@ -243,8 +267,8 @@ export function parseID(id: string | Uri) {
 	}
 	const query = new URLSearchParams(id.query);
 	if (!query.has('kind')) {
-throw new Error('Invalid ID');
-}
+		throw new Error('Invalid ID');
+	}
 
 	const obj = {
 		path: id.path,

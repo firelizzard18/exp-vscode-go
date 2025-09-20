@@ -15,10 +15,19 @@ export function pathContains(a: string | Uri, b: string | Uri) {
 	if (typeof a !== 'string') a = a.fsPath;
 	if (typeof b !== 'string') b = b.fsPath;
 
-	// A contains B if and only if the relative path does not start with ../.
+	// A contains B if and only if the relative path does not start with `../`.
 	// Additionally - on Windows - if A and B have different drive letters than
 	// the 'relative' path will still be absolute.
 	const rel = path.relative(a, b);
+	return isRelativePath(rel);
+}
+
+/**
+ * Returns true if the path is not absolute and does not start with `../`.
+ *
+ * The name of this function is probably bad.
+ */
+export function isRelativePath(rel: string) {
 	return !(path.isAbsolute(rel) || rel.startsWith('..' + path.sep));
 }
 
