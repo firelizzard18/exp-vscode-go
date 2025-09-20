@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0 (prerelease)
+
+- Addresses performance issues on large projects. This involved rewriting the
+  test resolver from the ground up and it has not been 100% tested yet, hence
+  prerelease status.
+
 ## v0.1.0
 
 - This is just v0.0.14/v0.0.13 repackaged as not-a-prerelease.
