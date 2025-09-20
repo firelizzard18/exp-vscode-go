@@ -8,6 +8,7 @@ import {
 	ExtensionMode,
 	extensions,
 	languages,
+	LogOutputChannel,
 	Memento,
 	TestItem,
 	tests,
@@ -17,12 +18,11 @@ import {
 import { Browser } from '../browser';
 import { registerProfileEditor } from './profile';
 import { Context, helpers } from '../utils/testing';
-import { TestConfig } from './config';
 import { WorkspaceConfig } from './workspaceConfig';
 import { GoTestItem } from './item';
 import { Command } from './commands';
 
-export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {
+export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
 	const testCtx: Context = {
 		workspace,
 		go,
@@ -31,7 +31,7 @@ export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExten
 		testing: ctx.extensionMode === ExtensionMode.Test,
 		state: ctx.workspaceState,
 		storageUri: ctx.storageUri,
-		output: window.createOutputChannel('Go Tests (experimental)', { log: true }),
+		output,
 		commands: {
 			modules: (args) => commands.executeCommand('gopls.modules', args),
 			packages: (args) => commands.executeCommand('gopls.packages', args),

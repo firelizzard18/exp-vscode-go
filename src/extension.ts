@@ -29,8 +29,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
 	}
 
 	const go = await goExt.activate();
-	await registerTestingFeatures(ctx, go);
-	await GoGenerateManager.register(ctx, go);
+	await registerTestingFeatures(ctx, go, output);
+	await GoGenerateManager.register(ctx, go, output);
 
 	// [Command] Render documentation
 	command('goExp.renderDocs', () => Browser.renderDocs(ctx));

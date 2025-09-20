@@ -16,6 +16,7 @@ import {
 	Location,
 	TestItem,
 	TestRun,
+	LogOutputChannel,
 } from 'vscode';
 import { Context, doSafe, helpers } from '../utils/testing';
 import { debugProcess, Flags, spawnProcess } from '../test/utils';
@@ -24,7 +25,7 @@ import { basename, dirname } from 'node:path';
 import { TestConfig } from '../test/config';
 
 export class GoGenerateManager {
-	static async register(ctx: ExtensionContext, go: GoExtensionAPI) {
+	static async register(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
 		const testCtx: Context = {
 			workspace,
 			go,
@@ -33,7 +34,7 @@ export class GoGenerateManager {
 			testing: ctx.extensionMode === ExtensionMode.Test,
 			state: ctx.workspaceState,
 			storageUri: ctx.storageUri,
-			output: window.createOutputChannel('Go Generate', { log: true }),
+			output,
 			commands: {
 				// These should never be called.
 				modules: () => {
@@ -141,7 +142,6 @@ export class GoGenerateManager {
 					{
 						run,
 						testItem: item,
-						uri: item.uri!,
 						append: (...args) => append(run, ...args),
 					},
 					flags,
