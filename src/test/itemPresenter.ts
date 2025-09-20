@@ -15,7 +15,7 @@ import {
 	StaticTestCase,
 	TestCase,
 	findParentTestCase,
-} from './model';
+} from './item';
 import { ModelUpdateEvent } from './itemResolver';
 
 export class GoTestItemPresenter {

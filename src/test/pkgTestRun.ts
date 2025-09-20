@@ -1,5 +1,5 @@
 import { Location, Position, TestItem, TestMessage, TestRun, TestRunRequest, Uri } from 'vscode';
-import { Package, parseID, StaticTestCase, TestCase } from './model';
+import { Package, parseID, StaticTestCase, TestCase } from './item';
 import { TestEvent } from './testEvent';
 import path from 'node:path';
 import { CapturedProfile, ProfileType } from './profile';

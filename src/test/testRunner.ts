@@ -10,7 +10,7 @@ import { RunConfig } from './runConfig';
 import { ResolvedTestRunRequest, shouldRunBenchmarks } from './itemResolver';
 import { PackageTestRun } from './pkgTestRun';
 import { WorkspaceConfig } from './workspaceConfig';
-import { TestCase, Workspace } from './model';
+import { TestCase, Workspace } from './item';
 
 export class TestRunner {
 	readonly #context;

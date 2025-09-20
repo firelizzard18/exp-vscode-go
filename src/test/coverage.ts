@@ -3,7 +3,7 @@ import { Location, Range, StatementCoverage, Uri } from 'vscode';
 import { Context } from '../utils/testing';
 import { execGoStr } from '../utils/util';
 import { getModulePaths } from '../utils/modules';
-import { Module, Workspace } from './model';
+import { Module, Workspace } from './item';
 
 /**
  * Parses a coverage file from `go test` into a map of

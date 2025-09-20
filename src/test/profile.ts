@@ -26,7 +26,7 @@ import { killProcessTree } from '../utils/processUtils';
 import { Context, doSafe } from '../utils/testing';
 import moment from 'moment';
 import { HoverEvent, Message } from '../../webview/pprof/messages';
-import type { GoTestItem } from './model';
+import type { GoTestItem } from './item';
 
 export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
 	const command = (name: string, fn: (...args: any[]) => any) => {

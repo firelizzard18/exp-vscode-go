@@ -19,7 +19,7 @@ import { registerProfileEditor } from './profile';
 import { Context, helpers } from '../utils/testing';
 import { TestConfig } from './config';
 import { WorkspaceConfig } from './workspaceConfig';
-import { GoTestItem } from './model';
+import { GoTestItem } from './item';
 import { Command } from './commands';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI) {

@@ -14,7 +14,7 @@ import {
 	TestCase,
 	TestFile,
 	Workspace,
-} from './model';
+} from './item';
 import { GoTestItemPresenter } from './itemPresenter';
 import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
