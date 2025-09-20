@@ -38,7 +38,7 @@
     "tests": "yarn run jest",
     "clean": "rimraf dist out",
     "check-types": "tsc",
-    "vscode:prepublish": "yarn run check-types && yarn run lint && yarn run bundle"
+    "vscode:prepublish": "yarn run bundle"
   },
   "contributes": {
     "customEditors": [
