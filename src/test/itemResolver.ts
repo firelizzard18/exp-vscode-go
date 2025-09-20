@@ -675,6 +675,8 @@ export class GoTestItemResolver {
 		readonly #packages;
 		readonly #include;
 		readonly #exclude;
+		readonly #pkgInclude;
+		readonly #pkgExclude;
 
 		constructor(
 			resolver: GoTestItemResolver,
@@ -688,6 +690,8 @@ export class GoTestItemResolver {
 			this.#packages = packages;
 			this.#include = include;
 			this.#exclude = exclude;
+			this.#pkgInclude = mapTestsByPackage(include);
+			this.#pkgExclude = mapTestsByPackage(exclude);
 		}
 
 		get size() {
@@ -695,13 +699,6 @@ export class GoTestItemResolver {
 		}
 
 		*packages(run: TestRun) {
-			const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, this.#get(x)]));
-			const pkgMode = new Map(
-				[...this.#packages].map((x) => [x, this.#include.has(x) ? 'all' : 'specific'] as const),
-			);
-			const pkgInclude = mapTestsByPackage(this.#include);
-			const pkgExclude = mapTestsByPackage(this.#exclude);
-
 			// When the run is disposed, remove all dynamic test cases
 			// associated with it.
 			run.onDidDispose?.(() => {
@@ -710,10 +707,11 @@ export class GoTestItemResolver {
 				}
 			});
 
+			const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, this.#get(x)]));
 			for (const pkg of this.#packages) {
-				const mode = pkgMode.get(pkg) ?? 'specific';
-				const include = mode === 'all' ? map([...pkg.allTests()]) : map(pkgInclude.get(pkg) ?? []);
-				const exclude = map(pkgExclude.get(pkg) ?? []);
+				const mode = this.#include.has(pkg) ? 'all' : 'specific';
+				const include = mode === 'all' ? map([...pkg.allTests()]) : map(this.#pkgInclude.get(pkg) ?? []);
+				const exclude = map(this.#pkgExclude.get(pkg) ?? []);
 
 				// This is called immediately before executing a test run. So, we'll
 				// clear the dynamic test cases now.
@@ -763,6 +761,25 @@ export class GoTestItemResolver {
 				this.#resolver.#updateViewModel(profile.parent.parent, undefined, { recurse: true });
 			});
 			return profile;
+		}
+
+		/**
+		 * Constructs a new {@link ResolvedTestRunRequest} with the intersection
+		 * of the receiver's included tests and the given tests.
+		 */
+		with(tests: Iterable<TestCase>) {
+			const packages = new Set<Package>();
+			const include = new Set<GoTestItem>();
+			for (const test of tests) {
+				if (belongsTo(test, this.#exclude)) {
+					continue;
+				}
+				if (belongsTo(test, this.#include)) {
+					include.add(test);
+					packages.add(test.file.package);
+				}
+			}
+			return new ResolvedTestRunRequest(this.#resolver, this.request, packages, include, this.#exclude);
 		}
 
 		#get(item: GoTestItem) {
@@ -878,6 +895,10 @@ export function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
 		}
 	}
 	return true;
+}
+
+function belongsTo(item: TestCase, set: Set<GoTestItem>) {
+	return set.has(item) || set.has(item.file) || set.has(item.file.package) || set.has(item.file.package.parent);
 }
 
 function mapTestsByPackage(items: Iterable<GoTestItem>) {

@@ -189,14 +189,14 @@ export class TestManager {
 		const request = await this.#resolver.resolveRunRequest(rq);
 
 		// Set up the runner.
-		const runner = new TestRunner(this.#context, this.#config, this.#ctrl, config, request, token);
+		const runner = new TestRunner(this.#context, this.#config, this.#ctrl, config, token);
 
 		if (rq instanceof Array || !rq.continuous) {
 			// Save all files to ensure `go test` tests the latest changes
 			await this.#context.workspace.saveAll(false);
 
 			// Execute
-			await runner.run();
+			await runner.run(request);
 
 			// Cancel the token if it's ours
 			cancel?.cancel();
@@ -205,7 +205,7 @@ export class TestManager {
 
 		// Trigger a run when updates are committed (edits are saved).
 		const s = this.#didCommitUpdates.event((items) =>
-			doSafe(this.#context, 'run continuous', () => runner.runContinuous(items)),
+			doSafe(this.#context, 'run continuous', () => runner.run(request.with(items))),
 		);
 
 		// Cleanup when the run is canceled

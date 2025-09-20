@@ -17,7 +17,6 @@ export class TestRunner {
 	readonly #wsConfig;
 	readonly #ctrl;
 	readonly #config;
-	readonly #request;
 	readonly #token;
 
 	constructor(
@@ -25,29 +24,17 @@ export class TestRunner {
 		wsConfig: WorkspaceConfig,
 		ctrl: TestController,
 		config: RunConfig,
-		request: ResolvedTestRunRequest,
 		token: CancellationToken,
 	) {
 		this.#context = context;
 		this.#wsConfig = wsConfig;
 		this.#ctrl = ctrl;
 		this.#config = config;
-		this.#request = request;
 		this.#token = token;
 	}
 
-	async run() {
-		await this.#run(this.#request);
-	}
-
-	async runContinuous(items: TestCase[]) {
-		if (items.length) {
-			await this.#run(await this.#request.with(items), true);
-		}
-	}
-
-	async #run(request: ResolvedTestRunRequest, continuous = false) {
-		const run = this.#ctrl.createTestRun(request.request);
+	async run(rq: ResolvedTestRunRequest) {
+		const run = this.#ctrl.createTestRun(rq.request);
 		const sub = this.#token.onCancellationRequested(() => {
 			run.appendOutput('\r\n*** Cancelled ***\r\n');
 			run.end();
@@ -55,9 +42,9 @@ export class TestRunner {
 
 		// Execute the tests
 		try {
-			const invalid = request.size > 1 && this.#config.kind === TestRunProfileKind.Debug;
+			const invalid = rq.size > 1 && this.#config.kind === TestRunProfileKind.Debug;
 			let first = true;
-			for (const pkg of request.packages(run)) {
+			for (const pkg of rq.packages(run)) {
 				if (invalid) {
 					pkg.forEach((item) =>
 						run.errored(item, {
@@ -73,7 +60,7 @@ export class TestRunner {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				await this.#runPkg(pkg, continuous);
+				await this.#runPkg(rq, pkg);
 			}
 		} finally {
 			run.end();
@@ -81,7 +68,7 @@ export class TestRunner {
 		}
 	}
 
-	async #runPkg(pkg: PackageTestRun, continuous: boolean) {
+	async #runPkg(rq: ResolvedTestRunRequest, pkg: PackageTestRun) {
 		const time = new Date();
 
 		// Enqueue tests.
@@ -137,7 +124,7 @@ export class TestRunner {
 		// Capture profiles
 		if (
 			// Profiling is disabled for continuous runs
-			!continuous &&
+			!rq.request.continuous &&
 			// Is profiling enabled?
 			this.#config.settings.profile.some((x) => x.enabled)
 		) {
@@ -147,7 +134,7 @@ export class TestRunner {
 					continue;
 				}
 
-				const file = await this.#request.attachProfile(pkg, dir, profile, time);
+				const file = await rq.attachProfile(pkg, dir, profile, time);
 				flags[`${profile.id}profile`] = file.uri.fsPath;
 			}
 		}
