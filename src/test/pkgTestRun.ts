@@ -44,7 +44,7 @@ export class PackageTestRun {
 	/**
 	 * Handles an event from `go test -json`.
 	 */
-	async onStdout(s: string) {
+	onStdout(s: string) {
 		// Attempt to parse the output as a test message
 		let msg: TestEvent;
 		try {
@@ -56,15 +56,15 @@ export class PackageTestRun {
 		}
 
 		const item = this.#testFor(msg);
-		await this.#onEvent(item, msg);
+		this.#onEvent(item, msg);
 	}
 
-	async #onEvent(item: TestItem | undefined, msg: TestEvent) {
+	#onEvent(item: TestItem | undefined, msg: TestEvent) {
 		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
 		switch (msg.Action) {
 			case 'output':
 			case 'build-output':
-				await this.#onOutput(item, msg);
+				this.#onOutput(item, msg);
 				break;
 
 			case 'build-fail': {
@@ -134,7 +134,7 @@ export class PackageTestRun {
 		}
 	}
 
-	async #onOutput(item: TestItem | undefined, msg: TestEvent) {
+	#onOutput(item: TestItem | undefined, msg: TestEvent) {
 		if (!msg.Output) {
 			return;
 		}

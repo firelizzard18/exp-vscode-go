@@ -4,40 +4,65 @@
  *--------------------------------------------------------*/
 
 export class LineBuffer {
-	private buf = '';
-	private lineListeners: { (line: string): void }[] = [];
-	private lastListeners: { (last: string | null): void }[] = [];
+	#buf = '';
+	readonly #lineListeners: { (line: string): void }[] = [];
+	readonly #lastListeners: { (last: string | null): void }[] = [];
+	readonly #onError;
 
-	public append(chunk: string) {
-		this.buf += chunk;
+	constructor(onError: (err: unknown) => void) {
+		this.#onError = onError;
+	}
+
+	append(chunk: string) {
+		this.#buf += chunk;
+		this.#sendLines();
+	}
+
+	done() {
+		// Send lines in case they didn't get sent somehow. This shouldn't
+		// happen, but it did happen prior to adding try-catch around the
+		// listeners.
+		this.#sendLines();
+		this.#fireDone(this.#buf !== '' ? this.#buf : null);
+	}
+
+	onLine(listener: (line: string) => void) {
+		this.#lineListeners.push(listener);
+	}
+
+	onDone(listener: (last: string | null) => void) {
+		this.#lastListeners.push(listener);
+	}
+
+	#sendLines() {
 		for (;;) {
-			const idx = this.buf.indexOf('\n');
+			const idx = this.#buf.indexOf('\n');
 			if (idx === -1) {
 				break;
 			}
 
-			this.fireLine(this.buf.substring(0, idx));
-			this.buf = this.buf.substring(idx + 1);
+			this.#fireLine(this.#buf.substring(0, idx));
+			this.#buf = this.#buf.substring(idx + 1);
 		}
 	}
 
-	public done() {
-		this.fireDone(this.buf !== '' ? this.buf : null);
+	#fireLine(line: string) {
+		for (const listener of this.#lineListeners) {
+			try {
+				listener(line);
+			} catch (error) {
+				this.#onError(error);
+			}
+		}
 	}
 
-	public onLine(listener: (line: string) => void) {
-		this.lineListeners.push(listener);
-	}
-
-	public onDone(listener: (last: string | null) => void) {
-		this.lastListeners.push(listener);
-	}
-
-	private fireLine(line: string) {
-		this.lineListeners.forEach((listener) => listener(line));
-	}
-
-	private fireDone(last: string | null) {
-		this.lastListeners.forEach((listener) => listener(last));
+	#fireDone(last: string | null) {
+		for (const listener of this.#lastListeners) {
+			try {
+				listener(last);
+			} catch (error) {
+				this.#onError(error);
+			}
+		}
 	}
 }

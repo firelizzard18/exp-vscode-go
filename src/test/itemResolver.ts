@@ -850,14 +850,16 @@ export class GoTestItemResolver {
 			// Create a dynamic subtest.
 			const parent = findParentTestCase(pkg, event.Test);
 			if (!parent) return;
-			const child = new DynamicTestCase(parent, test.name, run);
+			const child = new DynamicTestCase(parent, event.Test, run);
 			parent.file.tests.add(child);
 
 			// Notify the presenter that there's a new test.
 			this.#resolver.#didUpdate([{ item: child, type: 'added' }]);
 
-			// Update the parent's view model.
-			return this.#resolver.#updateViewModel(parent, undefined, { recurse: true });
+			// Update the view parent's view model.
+			const viewParent = this.#resolver.#presenter.getParent(child);
+			if (!viewParent) throw new Error('Internal error');
+			return this.#resolver.#updateViewModel(viewParent, undefined, { recurse: true });
 		}
 
 		#removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean) {

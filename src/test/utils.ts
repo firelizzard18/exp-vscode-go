@@ -20,7 +20,7 @@ import {
 	Uri,
 } from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
-import { Context } from '../utils/testing';
+import { Context, reportError } from '../utils/testing';
 import { GoLaunchRequest } from '../vscode-go';
 import { createHash } from 'crypto';
 import { getTempDirPath } from '../utils/util';
@@ -78,27 +78,17 @@ export function spawnProcess(
 			throw new Error(`Failed to run "go ${mode}" as the "go" binary cannot be found in either GOROOT or PATH`);
 		}
 
-		const outbuf = new LineBuffer();
+		const outbuf = new LineBuffer((err) => reportError(context, err));
 		outbuf.onLine(stdout);
 		outbuf.onDone((x) => x && stdout(x));
 
-		const errbuf = new LineBuffer();
+		const errbuf = new LineBuffer((err) => reportError(context, err));
 		errbuf.onLine(stderr);
 		errbuf.onDone((x) => x && stderr(x));
 
 		if (mode === 'test') {
 			flags.json = true;
 			fixTestFlags(run, flags, userFlags);
-
-			const ws = context.workspace.getWorkspaceFolder(run.testItem.uri!);
-			const niceFlags = Object.assign({}, flags);
-			if (ws) {
-				for (const [flag, value] of Object.entries(niceFlags)) {
-					if (typeof value === 'string') {
-						niceFlags[flag] = value.replace(ws.uri.fsPath, '${workspaceFolder}');
-					}
-				}
-			}
 		}
 
 		run.append(
@@ -221,7 +211,7 @@ export async function debugProcess(
 
 		case 'test': {
 			// Run go test2json to parse the output
-			const outbuf = new LineBuffer();
+			const outbuf = new LineBuffer((err) => reportError(ctx, err));
 			outbuf.onLine(stdout);
 			outbuf.onDone((x) => x && stdout(x));
 

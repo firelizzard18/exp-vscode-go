@@ -304,7 +304,7 @@ export class GoTestItemPresenter {
 		// If tests were added or removed, rebuild the package's test relations.
 		const testChanges = updates.filter(
 			(x): x is ModelUpdateEvent<TestCase> =>
-				x instanceof TestCase && (x.type === 'added' || x.type === 'removed'),
+				x.item instanceof TestCase && (x.type === 'added' || x.type === 'removed'),
 		);
 		const testPkgs = new Set(testChanges.map((x) => x.item.file.package));
 		for (const pkg of testPkgs) {

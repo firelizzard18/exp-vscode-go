@@ -139,20 +139,6 @@ export class TestRunner {
 			}
 		}
 
-		// When printing flags, use ${workspaceFolder} for the workspace folder
-		const ws = pkg.goItem.parent instanceof Workspace ? pkg.goItem.parent : pkg.goItem.parent.workspace;
-		const niceFlags = Object.assign({}, flags);
-		if (ws) {
-			for (const [flag, value] of Object.entries(niceFlags)) {
-				if (typeof value === 'string') {
-					niceFlags[flag] = value.replace(ws.uri.fsPath, '${workspaceFolder}');
-				}
-			}
-		}
-
-		// Use a task queue to ensure stdout calls are sequenced
-		const q = new TaskQueue();
-
 		const cfg = this.#wsConfig.for(pkg.goItem);
 		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags.get(), [], {
 			mode: 'test',
@@ -163,7 +149,7 @@ export class TestRunner {
 			stdout: (s: string | null) => {
 				if (!s) return;
 				this.#context.output.debug(`stdout> ${s}`);
-				q.do(() => pkg.onStdout(s));
+				pkg.onStdout(s);
 			},
 			stderr: (s: string | null) => {
 				if (!s) return;
