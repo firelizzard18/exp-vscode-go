@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1
+
+- Fixes an issue that prevented profiles from appearing in the test explorer.
+- Fixes an issue where the wrong tests were executed for a continuous run.
+
+
 ## v0.2.0 (prerelease)
 
 - Addresses performance issues on large projects. This involved rewriting the
