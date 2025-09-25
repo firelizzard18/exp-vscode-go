@@ -44,8 +44,11 @@ export class GoTestItemResolver {
 		this.#ctrl = ctrl;
 
 		const didUpdate = new EventEmitter<ModelUpdateEvent[]>();
-		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) =>
-			didUpdate.fire(events.map((x) => ({ ...x, view: this.#getViewItem(x.item) })));
+		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) => {
+			if (events.length) {
+				didUpdate.fire(events.map((x) => ({ ...x, view: this.#getViewItem(x.item) })));
+			}
+		};
 		this.onDidUpdate = didUpdate.event;
 	}
 

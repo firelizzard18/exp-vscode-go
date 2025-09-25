@@ -1,5 +1,5 @@
 import { Location, Position, TestItem, TestMessage, TestRun, TestRunRequest, Uri } from 'vscode';
-import { Package, parseID, StaticTestCase, TestCase } from './item';
+import { GoTestItem, Package, parseID, StaticTestCase, TestCase } from './item';
 import { TestEvent } from './testEvent';
 import path from 'node:path';
 import { CapturedProfile, ProfileType } from './profile';
@@ -203,9 +203,9 @@ export class PackageTestRun {
 		this.run.appendOutput(output, location, test);
 	}
 
-	forEach(fn: (item: TestItem, goItem?: TestCase) => void) {
-		const recurse = (item: TestItem, goItem?: TestCase) => {
-			fn(item, goItem);
+	forEach(fn: (item: TestItem) => void) {
+		const recurse = (item: TestItem) => {
+			fn(item);
 			for (const [, child] of item.children) {
 				recurse(child);
 			}
@@ -214,7 +214,7 @@ export class PackageTestRun {
 		fn(this.testItem);
 		for (const [goItem, item] of this.tests) {
 			if (!this.exclude.has(goItem)) {
-				recurse(item, goItem);
+				recurse(item);
 			}
 		}
 	}

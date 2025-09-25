@@ -80,13 +80,13 @@ export class TestRunner {
 		flags.fullpath = true; // Include the full path for output events
 
 		if (pkg.mode === 'all') {
-			// Include all test cases
+			// Include all test cases.
 			flags.run = '.';
 			if (shouldRunBenchmarks(this.#wsConfig, pkg.goItem)) {
 				flags.bench = '.';
 			}
 		} else {
-			// Include specific test cases
+			// Include specific test cases.
 			flags.run = makeRegex(pkg.tests.keys(), (x) => x.kind !== 'benchmark') || '-';
 			flags.bench = makeRegex(pkg.tests.keys(), (x) => x.kind === 'benchmark') || '-';
 		}

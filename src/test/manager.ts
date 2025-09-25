@@ -8,7 +8,7 @@ import {
 import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode from 'vscode';
 import { Context, doSafe, TestController } from '../utils/testing';
-import { GoTestItem, TestCase } from './item';
+import { GoTestItem, StaticTestCase, TestCase } from './item';
 import { TestRunner } from './testRunner';
 import { CodeLensProvider } from './codeLens';
 import { RunConfig } from './runConfig';
@@ -40,6 +40,7 @@ export class TestManager {
 	#ctrl?: TestController;
 	#resolver?: GoTestItemResolver;
 	#presenter?: GoTestItemPresenter;
+	#trackUpdates = 0;
 
 	constructor(context: Context) {
 		this.#context = context;
@@ -204,12 +205,16 @@ export class TestManager {
 		}
 
 		// Trigger a run when updates are committed (edits are saved).
-		const s = this.#didCommitUpdates.event((items) =>
-			doSafe(this.#context, 'run continuous', () => runner.run(request.with(items))),
-		);
+		const s = this.#didCommitUpdates.event((items) => {
+			doSafe(this.#context, 'run continuous', () => runner.run(request.with(items)));
+		});
 
 		// Cleanup when the run is canceled
-		token.onCancellationRequested(() => s.dispose());
+		this.#trackUpdates++;
+		token.onCancellationRequested(() => {
+			s.dispose();
+			this.#trackUpdates--;
+		});
 	}
 
 	/**
@@ -261,27 +266,26 @@ export class TestManager {
 		const ws = this.#resolver.workspaceFor(uri);
 		if (!ws) return;
 
-		// Check the update mode and set the appropriate options. Manually
-		// triggered updates do not invalidate test results.
-		let options: { modified?: Range[]; invalidate: boolean } = { invalidate: true };
+		// Update the file. Check the update mode and set the appropriate
+		// options. Manually triggered updates do not invalidate test results.
 		const mode = this.#config.for(ws).update.get();
 		switch (event?.type) {
 			case 'saved':
-				if (mode != 'on-save') return;
+				if (mode === 'on-save') {
+					await this.#resolver.updateFile(uri, {});
+				}
 				break;
 
 			case 'changed':
-				if (mode != 'on-edit') return;
-				options.modified = event.ranges;
+				if (mode === 'on-edit') {
+					await this.#resolver.updateFile(uri, { modified: event.ranges });
+				}
 				break;
 
 			default:
-				options.invalidate = false;
+				await this.#resolver.updateFile(uri, {});
 				break;
 		}
-
-		// Update the file.
-		await this.#resolver.updateFile(uri, options);
 
 		// Fire an event when unsaved changes are committed.
 		if (event?.type === 'saved') {
@@ -300,10 +304,18 @@ export class TestManager {
 		this.#presenter.didUpdate(updates);
 
 		// Track uncommitted updates (unsaved changes).
-		for (const update of updates) {
-			if (!['moved', 'modified'].includes(update.type)) continue;
-			if (!(update.item instanceof TestCase)) continue;
-			this.#uncommittedUpdates.get(`${update.item.uri}`).push(update.item);
+		if (this.#trackUpdates > 0) {
+			for (const update of updates) {
+				if (
+					// If a test case is modified;
+					(update.type === 'modified' && update.item instanceof TestCase) ||
+					// Or a _static_ test case is added;
+					(update.type === 'added' && update.item instanceof StaticTestCase)
+				) {
+					// Queue it for execution.
+					this.#uncommittedUpdates.get(`${update.item.uri}`).push(update.item);
+				}
+			}
 		}
 
 		// Invalidate test results when tests are modified.
@@ -311,6 +323,8 @@ export class TestManager {
 			.filter((x) => x.item instanceof TestCase && x.type === 'modified')
 			.map((x) => x.view)
 			.filter((x) => !!x);
-		this.#ctrl.invalidateTestResults?.(tests);
+		if (tests.length) {
+			this.#ctrl.invalidateTestResults?.(tests);
+		}
 	}
 }
