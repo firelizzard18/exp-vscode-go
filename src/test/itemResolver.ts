@@ -798,22 +798,40 @@ export class GoTestItemResolver {
 		}
 
 		/**
-		 * Constructs a new {@link ResolvedTestRunRequest} with the intersection
-		 * of the receiver's included tests and the given tests.
+		 * Returns an object that tracks updates to test items and can construct
+		 * a new {@link ResolvedTestRunRequest} with the intersection of the
+		 * receiver's included tests and the updated tests.
 		 */
-		with(tests: Iterable<TestCase>) {
-			const packages = new Set<Package>();
-			const include = new Set<GoTestItem>();
-			for (const test of tests) {
-				if (belongsTo(test, this.#exclude)) {
-					continue;
-				}
-				if (belongsTo(test, this.#include)) {
-					include.add(test);
-					packages.add(test.file.package);
-				}
-			}
-			return new ResolvedTestRunRequest(this.#resolver, this.request, packages, include, this.#exclude);
+		forContinuous(onExecute: (rq: ResolvedTestRunRequest) => void): ContinuousRunTracker {
+			const rq = this;
+			let packages = new Set<Package>();
+			let include = new Set<TestCase>();
+			return {
+				didUpdate(tests) {
+					let didAdd = false;
+					for (const test of tests) {
+						if (belongsTo(test, rq.#exclude)) {
+							continue;
+						}
+						if (belongsTo(test, rq.#include)) {
+							include.add(test);
+							packages.add(test.file.package);
+							didAdd = true;
+						}
+					}
+					return didAdd;
+				},
+
+				run() {
+					if (include.size == 0) {
+						return;
+					}
+					const rq2 = new ResolvedTestRunRequest(rq.#resolver, rq.request, packages, include, rq.#exclude);
+					packages = new Set();
+					include = new Set();
+					onExecute(rq2);
+				},
+			};
 		}
 
 		#get(item: GoTestItem) {
@@ -913,6 +931,10 @@ export class GoTestItemResolver {
 
 export const ResolvedTestRunRequest = GoTestItemResolver.RunRequest;
 export type ResolvedTestRunRequest = InstanceType<typeof ResolvedTestRunRequest>;
+export type ContinuousRunTracker = {
+	didUpdate(tests: Iterable<TestCase>): boolean;
+	run(): void;
+};
 
 export function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
 	// When the user clicks the run button on a package, they expect all of the

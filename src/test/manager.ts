@@ -12,7 +12,7 @@ import { GoTestItem, StaticTestCase, TestCase } from './item';
 import { TestRunner } from './testRunner';
 import { CodeLensProvider } from './codeLens';
 import { RunConfig } from './runConfig';
-import { GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
+import { ContinuousRunTracker, GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
 import { GoTestItemPresenter } from './itemPresenter';
 import { WorkspaceConfig } from './workspaceConfig';
 import { MapWithDefault } from '../utils/map';
@@ -33,14 +33,12 @@ export class TestManager {
 
 	// Events.
 	readonly #docVersion = new Map<string, number>();
-	readonly #uncommittedUpdates = new MapWithDefault<string, TestCase[]>(() => []);
-	readonly #didCommitUpdates = new EventEmitter<TestCase[]>();
+	readonly #continuousRuns = new Set<ContinuousRunTracker>();
 
 	// Transients.
 	#ctrl?: TestController;
 	#resolver?: GoTestItemResolver;
 	#presenter?: GoTestItemPresenter;
-	#trackUpdates = 0;
 
 	constructor(context: Context) {
 		this.#context = context;
@@ -205,15 +203,12 @@ export class TestManager {
 		}
 
 		// Trigger a run when updates are committed (edits are saved).
-		const s = this.#didCommitUpdates.event((items) => {
-			doSafe(this.#context, 'run continuous', () => runner.run(request.with(items)));
-		});
+		const tracker = request.forContinuous((rq) => doSafe(this.#context, 'run continuous', () => runner.run(rq)));
+		this.#continuousRuns.add(tracker);
 
 		// Cleanup when the run is canceled
-		this.#trackUpdates++;
 		token.onCancellationRequested(() => {
-			s.dispose();
-			this.#trackUpdates--;
+			this.#continuousRuns.delete(tracker);
 		});
 	}
 
@@ -289,10 +284,8 @@ export class TestManager {
 
 		// Fire an event when unsaved changes are committed.
 		if (event?.type === 'saved') {
-			const key = `${uri}`;
-			if (this.#uncommittedUpdates.has(key)) {
-				this.#didCommitUpdates.fire(this.#uncommittedUpdates.get(key));
-				this.#uncommittedUpdates.delete(key);
+			for (const tracker of this.#continuousRuns) {
+				tracker.run();
 			}
 		}
 	}
@@ -303,28 +296,22 @@ export class TestManager {
 		// Notify the presenter of changes
 		this.#presenter.didUpdate(updates);
 
-		// Track uncommitted updates (unsaved changes).
-		if (this.#trackUpdates > 0) {
-			for (const update of updates) {
-				if (
-					// If a test case is modified;
-					(update.type === 'modified' && update.item instanceof TestCase) ||
-					// Or a _static_ test case is added;
-					(update.type === 'added' && update.item instanceof StaticTestCase)
-				) {
-					// Queue it for execution.
-					this.#uncommittedUpdates.get(`${update.item.uri}`).push(update.item);
-				}
-			}
+		const tests = updates.filter(
+			(x): x is ModelUpdateEvent<TestCase> =>
+				// If a test case is modified
+				(x.item instanceof TestCase && x.type === 'modified') ||
+				// Or a _static_ test case is added;
+				(x.type === 'added' && x.item instanceof StaticTestCase),
+		);
+
+		// Queue uncommitted updates (unsaved changes) for execution.
+		for (const tracker of this.#continuousRuns) {
+			tracker.didUpdate(tests.map((x) => x.item));
 		}
 
 		// Invalidate test results when tests are modified.
-		const tests = updates
-			.filter((x) => x.item instanceof TestCase && x.type === 'modified')
-			.map((x) => x.view)
-			.filter((x) => !!x);
 		if (tests.length) {
-			this.#ctrl.invalidateTestResults?.(tests);
+			this.#ctrl.invalidateTestResults?.(tests.map((x) => x.view).filter((x) => !!x));
 		}
 	}
 }
