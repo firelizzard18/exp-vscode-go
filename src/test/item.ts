@@ -274,7 +274,7 @@ export function parseID(id: string | Uri) {
 		path: id.path,
 		kind: query.get('kind')! as Exclude<GoTestItem['kind'], 'profile-container' | 'profile-set' | 'profile'>,
 		name: query.get('name') ?? undefined,
-		at: query.has('at') ? new Date(query.get('at')!) : undefined,
+		at: query.has('at') ? new Date(Number(query.get('at'))) : undefined,
 		profile: query.get('profile') ?? id.fragment === 'profiles',
 	};
 

@@ -252,6 +252,7 @@ export class GoTestItemResolver {
 		if (go instanceof StaticTestCase) {
 			view.range = go.range;
 		}
+		view.canResolveChildren = this.#presenter.hasChildren(go);
 
 		// Should we update children? If the item is a workspace, module, or
 		// package that has not yet had its children loaded, do not update them.
@@ -792,7 +793,7 @@ export class GoTestItemResolver {
 			// Remove when the run is disposed.
 			run.run.onDidDispose?.(async () => {
 				profile.remove();
-				this.#resolver.#updateViewModel(profile.parent.parent, undefined, { recurse: true });
+				this.#resolver.#updateViewModel(profile.parent.parent.parent, undefined, { recurse: true });
 			});
 			return profile;
 		}
