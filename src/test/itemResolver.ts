@@ -169,6 +169,7 @@ export class GoTestItemResolver {
 			this.#presenter.markRequested(pkg);
 
 			// Synchronize the view model.
+			this.#didLoadChildren.add(pkg);
 			this.#updateViewModel(pkg, undefined, {});
 		}
 		return resolved;
