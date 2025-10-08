@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+- Fixes populating test items when a test file is opened.
+- Fixed executing all tests in a module or workspace by running the root item.
+
 ## v0.2.1
 
 - Fixes an issue that prevented profiles from appearing in the test explorer.
