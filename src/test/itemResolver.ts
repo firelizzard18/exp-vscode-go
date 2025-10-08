@@ -391,10 +391,14 @@ export class GoTestItemResolver {
 			),
 		);
 
-		// Ensure packages have been loaded.
+		// Ensure packages have been loaded. We don't execute roots directly, so
+		// add their packages to the include set.
 		for (const root of roots) {
 			if (!this.#didLoadChildren.has(root)) {
 				await this.updateViewModel(root, { resolve: true });
+			}
+			for (const pkg of root.packages) {
+				include.add(pkg);
 			}
 		}
 
@@ -742,6 +746,11 @@ export class GoTestItemResolver {
 					this.#removeDynamicTests(pkg, (test) => test.run === run);
 				}
 			});
+
+			// Enqueue all of the packages.
+			for (const pkg of this.#packages) {
+				run.enqueued(this.#get(pkg));
+			}
 
 			const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, this.#get(x)]));
 			for (const pkg of this.#packages) {

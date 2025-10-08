@@ -39,7 +39,7 @@ export class TestRunner {
 			run.end();
 		});
 
-		// Execute the tests
+		// Execute the tests.
 		try {
 			const invalid = rq.size > 1 && this.#config.kind === TestRunProfileKind.Debug;
 			let first = true;
