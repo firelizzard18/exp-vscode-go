@@ -170,7 +170,7 @@ export class GoTestItemResolver {
 
 			// Synchronize the view model.
 			this.#didLoadChildren.add(pkg);
-			this.#updateViewModel(pkg, undefined, {});
+			this.#updateViewModel(pkg, undefined, { recurse: true });
 		}
 		return resolved;
 	}
