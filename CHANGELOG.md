@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Fixes populating subtests when a test file is opened.
+- Fixes an issue where test binaries were created in the package folder when profiling.
 
 ## v0.2.2
 - Fixes populating test items when a test file is opened.

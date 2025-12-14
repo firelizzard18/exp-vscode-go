@@ -128,13 +128,18 @@ export class TestRunner {
 			this.#config.settings.profile.some((x) => x.enabled)
 		) {
 			const dir = await makeCaptureDir(this.#context, pkg.run, pkg.goItem.uri, time);
+			flags.outputdir = dir.fsPath;
+			flags.o = Uri.joinPath(dir, 'test.exe').fsPath;
+
 			for (const profile of this.#config.settings.profile) {
 				if (!profile.enabled) {
 					continue;
 				}
 
+				// Use rel to make the cmdline nicer.
 				const file = await rq.attachProfile(pkg, dir, profile, time);
-				flags[`${profile.id}profile`] = file.uri.fsPath;
+				const rel = path.relative(dir.fsPath, file.uri.fsPath);
+				flags[`${profile.id}profile`] = rel.startsWith('.') ? file.uri.fsPath : rel;
 			}
 		}
 
