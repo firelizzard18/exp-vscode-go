@@ -1,8 +1,7 @@
-import { Location, Position, TestItem, TestMessage, TestRun, TestRunRequest, Uri } from 'vscode';
-import { GoTestItem, Package, parseID, StaticTestCase, TestCase } from './item';
+import { Location, Position, TestItem, TestMessage, TestRun, Uri } from 'vscode';
+import { Package, parseID, StaticTestCase, TestCase } from './item';
 import { TestEvent } from './testEvent';
 import path from 'node:path';
-import { CapturedProfile, ProfileType } from './profile';
 
 interface TestResolver {
 	(event: TestEvent | Location): TestItem | undefined;

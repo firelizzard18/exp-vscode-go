@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import {
@@ -24,7 +23,6 @@ import {
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
 import { Context, doSafe } from '../utils/testing';
-import moment from 'moment';
 import { HoverEvent, Message } from '../../webview/pprof/messages';
 import type { GoTestItem } from './item';
 
