@@ -25,6 +25,7 @@ import { killProcessTree } from '../utils/processUtils';
 import { Context, doSafe } from '../utils/testing';
 import { HoverEvent, Message } from '../../webview/pprof/messages';
 import type { GoTestItem } from './item';
+import moment from 'moment';
 
 export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
 	const command = (name: string, fn: (...args: any[]) => any) => {
@@ -96,6 +97,17 @@ export class ProfileSet {
 		this.parent = parent;
 		this.time = time;
 	}
+
+	get label() {
+		const now = new Date();
+		if (now.getFullYear() !== this.time.getFullYear()) {
+			return moment(this.time).format('YYYY-MM-DD HH:mm:ss');
+		}
+		if (now.getMonth() !== this.time.getMonth() || now.getDate() !== this.time.getDate()) {
+			return moment(this.time).format('MM-DD HH:mm:ss');
+		}
+		return moment(this.time).format('HH:mm:ss');
+	}
 }
 
 /**
@@ -109,7 +121,16 @@ export class CapturedProfile {
 	readonly hasChildren = false;
 
 	static new(parent: ProfileSet, dir: Uri, type: ProfileType) {
-		const file = Uri.joinPath(dir, `${type.id}.pprof`);
+		let file = Uri.joinPath(dir, `${type.id}.pprof`);
+		const item = parent.parent.parent;
+		switch (item.kind) {
+			case 'test':
+			case 'benchmark':
+			case 'example':
+			case 'fuzz':
+				file = file.with({ query: `title=${item.name} (${type.label}) @ ${parent.label}` });
+				break;
+		}
 		return new this(parent, type, file);
 	}
 
@@ -197,6 +218,11 @@ class ProfileDocument {
 				</body>
 			</html>
 		`;
+
+		const query = new URLSearchParams(this.uri.query);
+		if (query.has('title')) {
+			panel.title = query.get('title')!;
+		}
 	}
 
 	async #postMessage(message: Message) {

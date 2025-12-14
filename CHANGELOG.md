@@ -3,16 +3,16 @@
 ## Unreleased
 - Fixes populating subtests when a test file is opened.
 - Fixes an issue where test binaries were created in the package folder when profiling.
+- Sets a custom title when viewing captured profiles.
 
-## v0.2.2
+## v0.2.2 (prerelease)
 - Fixes populating test items when a test file is opened.
 - Fixed executing all tests in a module or workspace by running the root item.
 
-## v0.2.1
+## v0.2.1 (prerelease)
 
 - Fixes an issue that prevented profiles from appearing in the test explorer.
 - Fixes an issue where the wrong tests were executed for a continuous run.
-
 
 ## v0.2.0 (prerelease)
 

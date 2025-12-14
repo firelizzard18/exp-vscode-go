@@ -5,7 +5,6 @@ import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';
 import { ProfileContainer, ProfileType } from './profile';
-import moment from 'moment';
 import { Module, Package, Workspace, DynamicTestCase, GoTestItem, TestCase, findParentTestCase } from './item';
 import { ModelUpdateEvent } from './itemResolver';
 
@@ -69,16 +68,8 @@ export class GoTestItemPresenter {
 			case 'profile-container':
 				return 'Profiles';
 
-			case 'profile-set': {
-				const now = new Date();
-				if (now.getFullYear() !== item.time.getFullYear()) {
-					return moment(item.time).format('YYYY-MM-DD HH:mm:ss');
-				}
-				if (now.getMonth() !== item.time.getMonth() || now.getDate() !== item.time.getDate()) {
-					return moment(item.time).format('MM-DD HH:mm:ss');
-				}
-				return moment(item.time).format('HH:mm:ss');
-			}
+			case 'profile-set':
+				return item.label;
 
 			case 'profile':
 				return item.type.label;
