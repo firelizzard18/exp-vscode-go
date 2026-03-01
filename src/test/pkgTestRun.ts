@@ -199,7 +199,18 @@ export class PackageTestRun {
 	append(output: string, location?: Location, test?: TestItem) {
 		if (!output.endsWith('\n')) output += '\n';
 		output = output.replace(/\n/g, '\r\n');
-		this.run.appendOutput(output, location, test);
+
+		const msg = tryParseErr(output);
+		if (!msg || !test) {
+			this.run.appendOutput(output, location, test);
+		} else {
+			this.run.failed(test, {
+				location: location,
+				message: `${msg.Message}`,
+				actualOutput: 'Got' in msg ? `${msg.Got}` : undefined,
+				expectedOutput: 'Want' in msg ? `${msg.Want}` : undefined,
+			});
+		}
 	}
 
 	forEach(fn: (item: TestItem) => void) {
@@ -217,6 +228,33 @@ export class PackageTestRun {
 			}
 		}
 	}
+}
+
+function tryParseErr(output: string) {
+	if (!output.match(/^\s*\{/)) {
+		return;
+	}
+
+	let msg: unknown;
+	try {
+		msg = JSON.parse(output);
+	} catch (_) {
+		return;
+	}
+
+	if (
+		!msg ||
+		typeof msg !== 'object' ||
+		Array.isArray(msg) ||
+		!('IsVSCodeGoErr' in msg) ||
+		!('Message' in msg) ||
+		msg.IsVSCodeGoErr !== true ||
+		typeof msg.Message !== 'string'
+	) {
+		return;
+	}
+
+	return msg;
 }
 
 function processPackageFailure(

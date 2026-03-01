@@ -67,7 +67,7 @@ export function spawnProcess(
 	options: SpawnOptions,
 ) {
 	return new Promise<ProcessResult>((resolve) => {
-		const { mode, stdout, stderr, cancel, ...rest } = options;
+		const { mode, stdout, stderr, cancel, env, ...rest } = options;
 		if (cancel.isCancellationRequested) {
 			resolve({ code: null, signal: null });
 			return;
@@ -100,6 +100,10 @@ export function spawnProcess(
 		const tp = cp.spawn(binPath, [mode, ...flags2args(flags), ...flags2args(userFlags), ...args], {
 			...rest,
 			stdio: 'pipe',
+			env: {
+				VSCODE_GO_TEST: 'true',
+				...env,
+			},
 		});
 		cancel.onCancellationRequested(() => {
 			killProcessTree(tp);
@@ -280,7 +284,10 @@ export async function debugProcess(
 		request: 'launch',
 		mode,
 		program,
-		env,
+		env: {
+			VSCODE_GO_TEST: 'true',
+			...env,
+		},
 		buildFlags: flags2args(buildFlags).join(' '),
 		args: flags2args(testFlags),
 	} satisfies GoLaunchRequest;
