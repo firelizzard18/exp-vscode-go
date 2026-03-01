@@ -73,6 +73,7 @@ export class TestRunner {
 		// Enqueue tests.
 		pkg.forEach((item) => {
 			pkg.run.enqueued(item);
+			item.error = undefined;
 		});
 
 		const flags: Flags = {};
