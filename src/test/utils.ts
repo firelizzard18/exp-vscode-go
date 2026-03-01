@@ -25,6 +25,16 @@ import { GoLaunchRequest } from '../vscode-go';
 import { createHash } from 'crypto';
 import { getTempDirPath } from '../utils/util';
 
+/**
+ * This is an environment variable injected when testing, which the test
+ * harnessing can use to detect that the test is being run within vscode-go (or
+ * exp-vscode-go). The test harnessing could then decide to emit JSON test
+ * messages, for better output formatting.
+ */
+const testEnvSentinel = {
+	VSCODE_GO_TEST: 'true',
+};
+
 export interface SpawnOptions extends Pick<cp.SpawnOptions, 'env'> {
 	cwd: string;
 	cancel: CancellationToken;
@@ -100,10 +110,7 @@ export function spawnProcess(
 		const tp = cp.spawn(binPath, [mode, ...flags2args(flags), ...flags2args(userFlags), ...args], {
 			...rest,
 			stdio: 'pipe',
-			env: {
-				VSCODE_GO_TEST: 'true',
-				...env,
-			},
+			env: { ...testEnvSentinel, ...env },
 		});
 		cancel.onCancellationRequested(() => {
 			killProcessTree(tp);
@@ -284,10 +291,7 @@ export async function debugProcess(
 		request: 'launch',
 		mode,
 		program,
-		env: {
-			VSCODE_GO_TEST: 'true',
-			...env,
-		},
+		env: { ...testEnvSentinel, ...env },
 		buildFlags: flags2args(buildFlags).join(' '),
 		args: flags2args(testFlags),
 	} satisfies GoLaunchRequest;

@@ -230,6 +230,13 @@ export class PackageTestRun {
 	}
 }
 
+/**
+ * Try to parse the output as a JSON error message intended for vscode-go (or
+ * exp-vscode-go). If the message is valid JSON, contains `IsVSCodeGoErr: true`,
+ * and has a Message field, treat it as an error message. This function is only
+ * called if the message is prefixed with the call location, e.g. when calling
+ * `t.Error(...)`.
+ */
 function tryParseErr(output: string) {
 	if (!output.match(/^\s*\{/)) {
 		return;
