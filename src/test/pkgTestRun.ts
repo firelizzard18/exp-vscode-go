@@ -301,7 +301,7 @@ function parseTestFailure(test: TestItem, output: string[]): TestMessage[] {
  * (?<file>\S+\.go):(?<line>\d+):  - gofile:line: followed by a space.
  * (?<message>.\n)$                - all remaining message up to $.
  */
-const lineLocPattern = /^(.*\s+)?(?<file>\S+\.go):(?<line>\d+)(?::(?<column>\d+)): (?<message>.*\n?)$/;
+const lineLocPattern = /^(.*\s+)?(?<file>\S+\.go):(?<line>\d+)(?::(?<column>\d+))?: (?<message>.*\n?)$/;
 
 /**
  * Extract the location info from output message.
