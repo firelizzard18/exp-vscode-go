@@ -16,7 +16,6 @@ import {
 	workspace,
 } from 'vscode';
 import { Browser } from '../browser';
-import { registerProfileEditor } from './profile';
 import { Context, helpers } from '../utils/testing';
 import { WorkspaceConfig } from './workspaceConfig';
 import { GoTestItem } from './item';
@@ -39,7 +38,6 @@ export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExten
 	};
 
 	await registerTestController(ctx, testCtx);
-	await registerProfileEditor(ctx, testCtx);
 }
 
 async function registerTestController(ctx: ExtensionContext, testCtx: Context) {

@@ -125,7 +125,7 @@ export const helpers = (ctx: ExtensionContext, testCtx: Context, commands: typeo
 	},
 });
 
-export const doSafe = async <T>(ctx: Context, msg: string, fn: () => T | Promise<T>) => {
+export const doSafe = async <T>(ctx: Pick<Context, 'testing' | 'output'>, msg: string, fn: () => T | Promise<T>) => {
 	try {
 		return await fn();
 	} catch (error) {
@@ -133,7 +133,7 @@ export const doSafe = async <T>(ctx: Context, msg: string, fn: () => T | Promise
 	}
 };
 
-export function reportError(ctx: Context, error: unknown) {
+export function reportError(ctx: Pick<Context, 'testing' | 'output'>, error: unknown) {
 	if (ctx.testing) {
 		throw error;
 	} else if (error instanceof Error) {

@@ -5,13 +5,15 @@ import { GoExtensionAPI } from './vscode-go';
 import { registerTestingFeatures } from './test/register';
 import { Browser } from './browser';
 import { GoGenerateManager } from './go-generate/manager';
-import { captureProfile } from './test/profile';
 import { CanceledError } from 'axios';
+import { captureProfile, registerProfileEditor } from './profile-viewer';
 
 const output = vscode.window.createOutputChannel('Go Companion', { log: true });
 
+export type CommandExecutor = (name: string, fn: (...args: any[]) => any) => void;
+
 export async function activate(ctx: vscode.ExtensionContext) {
-	const command = (name: string, fn: (...args: any[]) => any) => {
+	const command: CommandExecutor = (name, fn) => {
 		ctx.subscriptions.push(
 			vscode.commands.registerCommand(name, async (...args) => {
 				try {
@@ -35,13 +37,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 	const go = await goExt.activate();
 	await registerTestingFeatures(ctx, go, output);
+	await registerProfileEditor(ctx, go, command);
 	await GoGenerateManager.register(ctx, go, output);
 
 	// [Command] Render documentation
 	command('goExp.renderDocs', () => Browser.renderDocs(ctx));
-
-	// [Command] Capture profile
-	command('goExp.capturePprof', () => captureProfile(ctx.workspaceState));
 }
 
 export function deactivate() {
