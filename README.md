@@ -51,11 +51,25 @@ workaround for microsoft/vscode#237106.
 
 ## Profiling
 
-Go Companion supports profiling tests and includes a pprof profile viewer that
+Go Companion supports profiling processes and tests and includes a pprof profile viewer that
 is more cleanly integrated with the editor than vscode-go's iframe-based viewer.
-To profile tests:
 
-1. Run `Configure Test Profiles`
+### Profiling a process
+
+1. Run the command `Go Companion: Capture Profile`
+2. Enter a URL of a `net/http/pprof` handler, e.g.
+   `http://localhost:6060/debug/pprof/heap`.
+3. Once the profile is captured it will be opened. CPU profiles take time to
+   capture, the others should be instant.
+
+If the URL ends with `/debug/pprof`, you will be prompted to select the type of
+profile that should be captured.
+
+![proc-profile](./docs/assets/proc-pprof.png)
+
+### Profiling a test
+
+1. Run the command `Test: Configure Test Profiles`
 2. Select `Run - Go (experimental)`
 3. Select `Profiling`
 4. Select the profiles you wish to capture

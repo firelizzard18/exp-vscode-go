@@ -208,12 +208,17 @@
       {
         "command": "goExp.configureCoverageRunProfile",
         "title": "Go Companion: Configure Coverage Run Profile",
-        "description": "Workaround for https://github.com/microsoft/vscode/issues/237106"
+        "description": "Workaround for https://github.com/microsoft/vscode/issues/237106."
       },
       {
         "command": "goExp.renderDocs",
         "title": "Go Companion: Render Documentation",
         "description": "Render the documentation for the current selection."
+      },
+      {
+        "command": "goExp.capturePprof",
+        "title": "Go Companion: Capture Profile",
+        "description": "Capture and view a profile of a Go process."
       },
       {
         "command": "goExp.testExplorer.refresh",

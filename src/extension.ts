@@ -5,6 +5,8 @@ import { GoExtensionAPI } from './vscode-go';
 import { registerTestingFeatures } from './test/register';
 import { Browser } from './browser';
 import { GoGenerateManager } from './go-generate/manager';
+import { captureProfile } from './test/profile';
+import { CanceledError } from 'axios';
 
 const output = vscode.window.createOutputChannel('Go Companion', { log: true });
 
@@ -15,6 +17,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
 				try {
 					await fn(...args);
 				} catch (error) {
+					if (error instanceof CanceledError) {
+						return;
+					}
 					output.error(error as Error);
 					console.error(error);
 				}
@@ -34,6 +39,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 	// [Command] Render documentation
 	command('goExp.renderDocs', () => Browser.renderDocs(ctx));
+
+	// [Command] Capture profile
+	command('goExp.capturePprof', () => captureProfile(ctx.workspaceState));
 }
 
 export function deactivate() {

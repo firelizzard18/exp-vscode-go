@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Adds a command to capture and display profiles from `net/http/pprof`.
 - Fixes the version check for the vscgo helper.
 - Adds support for parsing test output as failure events, including
   expected/actual support. See [codeberg.org/firelizzard/be][be-checker] for

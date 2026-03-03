@@ -19,6 +19,11 @@ import {
 	CustomDocumentBackupContext,
 	CustomDocumentEditEvent,
 	EventEmitter,
+	Memento,
+	ProgressLocation,
+	ProgressOptions,
+	ThemeIcon,
+	QuickPickItem,
 } from 'vscode';
 import { GoExtensionAPI } from '../vscode-go';
 import { killProcessTree } from '../utils/processUtils';
@@ -27,6 +32,10 @@ import { HoverEvent, Message } from '../../webview/pprof/messages';
 import type { GoTestItem } from './item';
 import moment from 'moment';
 import { SemVer } from './utils';
+import { getTempFilePath } from '../utils/util';
+import axios from 'axios';
+import { createWriteStream } from 'node:fs';
+import path from 'node:path';
 
 export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
 	const command = (name: string, fn: (...args: any[]) => any) => {
@@ -469,4 +478,122 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 	resolveCustomEditor(document: ProfileDocument | ErrorDocument, panel: WebviewPanel, token: CancellationToken) {
 		document.resolve(panel);
 	}
+}
+
+let captureNum = 1;
+
+export async function captureProfile(state: Memento) {
+	const s = await window.showInputBox({
+		title: 'Enter the URL to profile',
+		value: state.get('last-captured-profile-url'),
+		validateInput(value) {
+			try {
+				Uri.parse(value, true);
+			} catch (error) {
+				return `Invalid URL: ${error}`;
+			}
+		},
+	});
+	if (!s) return;
+	await state.update('last-captured-profile-url', s);
+
+	let url = Uri.parse(s);
+	switch (url.path) {
+		case '/debug/pprof':
+		case '/debug/pprof/': {
+			const selected = await promptForProfileType();
+			if (!selected) return;
+
+			url = url.with({ path: path.join(url.path, selected.path) });
+			if (selected.duration) {
+				url = url.with({ query: `seconds=${selected.duration}` });
+			}
+		}
+	}
+
+	const file = getTempFilePath(`capture-${captureNum}.pprof`);
+	const fileStream = createWriteStream(file);
+	captureNum++;
+
+	const controller = new AbortController();
+	const promise = axios
+		.get(`${url}`, {
+			responseType: 'stream',
+			signal: controller.signal,
+		})
+		.then((res) => {
+			return new Promise((resolve, reject) => {
+				res.data.pipe(fileStream).on('finish', resolve).on('error', reject);
+			});
+		});
+
+	// If it takes more than 100 ms to resolve...
+	const timedOut = await Promise.race([
+		promise.then(() => false),
+		new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 100)),
+	]);
+
+	//   then show progress.
+	if (timedOut) {
+		await window.withProgress(
+			{
+				location: ProgressLocation.Notification,
+				title: 'Capturing pprof profile...',
+				cancellable: true,
+			},
+			(progress, cancel) => {
+				cancel.onCancellationRequested(() => controller.abort());
+				return promise;
+			},
+		);
+	}
+
+	// Open the file.
+	await commands.executeCommand('vscode.open', Uri.file(file));
+}
+
+type ProfileTypeItem = QuickPickItem & { path: string; duration?: number };
+
+const profileTypeItems = [
+	{
+		label: 'CPU',
+		path: 'profile',
+		duration: 30,
+		buttons: [{ iconPath: new ThemeIcon('clock'), tooltip: 'Set duration' }],
+	},
+	{ label: 'Heap', path: 'heap' },
+	{ label: 'Allocations', path: 'allocs' },
+];
+
+async function promptForProfileType() {
+	const picker = window.createQuickPick<ProfileTypeItem>();
+	picker.items = profileTypeItems;
+
+	let resolving = false;
+	const selectDuration = async (item: ProfileTypeItem, resolve: (_: ProfileTypeItem) => void) => {
+		resolving = true;
+		picker.hide();
+		const duration = Number(
+			await window.showInputBox({
+				prompt: 'Duration (seconds)',
+				value: String(item.duration ?? 30),
+				validateInput: (v) => (isNaN(Number(v)) || Number(v) <= 0 ? 'Must be a positive number' : null),
+			}),
+		);
+		resolving = false;
+		if (isNaN(duration)) {
+			picker.items = profileTypeItems;
+			picker.show();
+			return;
+		}
+
+		resolve({ ...item, duration });
+	};
+
+	return new Promise<ProfileTypeItem | undefined>((resolve) => {
+		picker.onDidTriggerItemButton(({ item, button }) => selectDuration(item, resolve));
+		picker.onDidAccept(() => resolve(picker.selectedItems[0]));
+		picker.onDidHide(() => resolving || resolve(undefined));
+		picker.show();
+	});
 }
