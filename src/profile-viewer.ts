@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { promisify } from 'node:util';
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import {
@@ -23,13 +21,10 @@ import {
 	ProgressLocation,
 	ThemeIcon,
 	QuickPickItem,
-	LogOutputChannel,
 } from 'vscode';
 import { GoExtensionAPI } from './vscode-go';
 import { killProcessTree } from './utils/processUtils';
-import { Context, doSafe } from './utils/testing';
 import { HoverEvent, Message } from '../webview/pprof/messages';
-import moment from 'moment';
 import { SemVer } from './utils/semver';
 import { getTempFilePath } from './utils/util';
 import axios from 'axios';
