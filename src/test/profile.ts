@@ -26,6 +26,7 @@ import { Context, doSafe } from '../utils/testing';
 import { HoverEvent, Message } from '../../webview/pprof/messages';
 import type { GoTestItem } from './item';
 import moment from 'moment';
+import { SemVer } from './utils';
 
 export async function registerProfileEditor(ctx: ExtensionContext, testCtx: Context) {
 	const command = (name: string, fn: (...args: any[]) => any) => {
@@ -150,6 +151,33 @@ export class CapturedProfile {
 }
 
 const nbsp = '\u00A0';
+
+class ErrorDocument {
+	readonly uri;
+	readonly error;
+	constructor(uri: Uri, error: string) {
+		this.uri = uri;
+		this.error = error;
+	}
+
+	resolve(panel: WebviewPanel) {
+		panel.webview.html = `
+			<!DOCTYPE html>
+			<html lang="en">
+				<head style="height: 100vh">
+					<meta charset="UTF-8">
+					<meta name="viewport" content="width=device-width, initial-scale=1.0">
+					<title>Profile Custom Editor</title>
+				</head>
+				<body style="height: 100vh; display: flex; justify-content: center; align-items: center">
+					${this.error}
+				</body>
+			</html>
+		`;
+	}
+
+	dispose() {}
+}
 
 class ProfileDocument {
 	static #active?: ProfileDocument;
@@ -317,13 +345,15 @@ class ProfileDocument {
 	}
 }
 
-export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocument> {
+const vscgoCanServePprof = new SemVer(0, 43, 3);
+
+export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocument | ErrorDocument> {
 	readonly #ext: ExtensionContext;
 	readonly #go: GoExtensionAPI;
 	readonly decoration: TextEditorDecorationType;
 	readonly emptyDecoration: TextEditorDecorationType;
 
-	readonly didChange = new EventEmitter<CustomDocumentEditEvent<ProfileDocument>>();
+	readonly didChange = new EventEmitter<CustomDocumentEditEvent<ProfileDocument | ErrorDocument>>();
 	readonly onDidChangeCustomDocument = this.didChange.event;
 
 	constructor(ext: ExtensionContext, go: GoExtensionAPI) {
@@ -337,24 +367,30 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 		ext.subscriptions.push(this.decoration);
 	}
 
-	async saveCustomDocument(document: ProfileDocument, cancellation: CancellationToken): Promise<void> {
+	async saveCustomDocument(
+		document: ProfileDocument | ErrorDocument,
+		cancellation: CancellationToken,
+	): Promise<void> {
 		// Not actually editable
 	}
 
 	async saveCustomDocumentAs(
-		document: ProfileDocument,
+		document: ProfileDocument | ErrorDocument,
 		destination: Uri,
 		cancellation: CancellationToken,
 	): Promise<void> {
 		await workspace.fs.copy(document.uri, destination);
 	}
 
-	async revertCustomDocument(document: ProfileDocument, cancellation: CancellationToken): Promise<void> {
+	async revertCustomDocument(
+		document: ProfileDocument | ErrorDocument,
+		cancellation: CancellationToken,
+	): Promise<void> {
 		// TODO: Undo entire stack?
 	}
 
 	async backupCustomDocument(
-		document: ProfileDocument,
+		document: ProfileDocument | ErrorDocument,
 		context: CustomDocumentBackupContext,
 		cancellation: CancellationToken,
 	): Promise<CustomDocumentBackup> {
@@ -373,50 +409,64 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 		uri: Uri,
 		context: CustomDocumentOpenContext,
 		token: CancellationToken,
-	): Promise<ProfileDocument> {
+	): Promise<ProfileDocument | ErrorDocument> {
 		const { binPath } = this.#go.settings.getExecutionCommand('vscgo') || {};
 		if (!binPath) {
-			throw new Error('Cannot locate vscgo');
+			return new ErrorDocument(uri, 'Cannot locate vscgo');
 		}
 
 		// Check the version
 		const { stdout: s } = await promisify(execFile)(binPath, ['version']);
 		const version = s.split('\n')[0]?.split(':')[1]?.trim();
-		if (version !== '(devel)') {
-			throw new Error(`This feature is not available with vscgo ${version}`);
+		const semver = SemVer.parse(version);
+		if (!(version === '(devel)' || (semver && semver.cmp(vscgoCanServePprof) > 0))) {
+			return new ErrorDocument(uri, `This feature is not available with vscgo ${version}`);
 		}
 
 		const proc = spawn(binPath, ['serve-pprof', ':', uri.fsPath]);
 		token.onCancellationRequested(() => killProcessTree(proc));
 
-		const server = await new Promise<string>((resolve, reject) => {
-			proc.on('error', (err) => reject(err));
-			proc.on('exit', (code, signal) => reject(signal || code));
+		try {
+			const server = await new Promise<string>((resolve, reject) => {
+				let stdout = '';
+				let stderr = '';
 
-			let stdout = '';
-			function capture(b: Buffer) {
-				stdout += b.toString('utf-8');
-				if (!stdout.includes('\n')) return;
+				proc.stdout.on('data', capture);
+				proc.stderr.on('data', (chunk) => (stderr += chunk.toString('utf-8')));
 
-				try {
-					const {
-						Listen: { IP, Port },
-					} = JSON.parse(stdout);
-					resolve(`http://${IP.includes(':') ? `[${IP}]` : IP}:${Port}`);
-				} catch (error) {
-					killProcessTree(proc);
-					reject(error);
+				function capture(b: Buffer) {
+					stdout += b.toString('utf-8');
+					if (!stdout.includes('\n')) return;
+
+					try {
+						const {
+							Listen: { IP, Port },
+						} = JSON.parse(stdout);
+						resolve(`http://${IP.includes(':') ? `[${IP}]` : IP}:${Port}`);
+					} catch (error) {
+						killProcessTree(proc);
+						reject(error);
+					}
+					proc.stdout.off('data', capture);
 				}
-				proc.stdout.off('data', capture);
-			}
 
-			proc.stdout.on('data', capture);
-		});
+				proc.on('error', (err) => reject(err));
+				proc.on('exit', (code, signal) => {
+					if (signal) {
+						reject(`Killed by ${signal}\n\n${stderr}`);
+					} else {
+						reject(`Exited with code ${code}\n\n${stderr}`);
+					}
+				});
+			});
 
-		return new ProfileDocument(this, uri, proc, server);
+			return new ProfileDocument(this, uri, proc, server);
+		} catch (error) {
+			return new ErrorDocument(uri, `${error}`);
+		}
 	}
 
-	resolveCustomEditor(document: ProfileDocument, panel: WebviewPanel, token: CancellationToken) {
+	resolveCustomEditor(document: ProfileDocument | ErrorDocument, panel: WebviewPanel, token: CancellationToken) {
 		document.resolve(panel);
 	}
 }

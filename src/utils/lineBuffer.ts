@@ -9,7 +9,7 @@ export class LineBuffer {
 	readonly #lastListeners: { (last: string | null): void }[] = [];
 	readonly #onError;
 
-	constructor(onError: (err: unknown) => void) {
+	constructor(onError?: (err: unknown) => void) {
 		this.#onError = onError;
 	}
 
@@ -48,21 +48,25 @@ export class LineBuffer {
 
 	#fireLine(line: string) {
 		for (const listener of this.#lineListeners) {
-			try {
-				listener(line);
-			} catch (error) {
-				this.#onError(error);
-			}
+			this.#call(listener, line);
 		}
 	}
 
 	#fireDone(last: string | null) {
 		for (const listener of this.#lastListeners) {
-			try {
-				listener(last);
-			} catch (error) {
-				this.#onError(error);
-			}
+			this.#call(listener, last);
+		}
+	}
+
+	#call<I>(listener: (_: I) => void, input: I) {
+		if (!this.#onError) {
+			listener(input);
+			return;
+		}
+		try {
+			listener(input);
+		} catch (error) {
+			this.#onError(error);
 		}
 	}
 }
