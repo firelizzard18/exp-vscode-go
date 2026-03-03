@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- Adds support for parsing test output as failure events, including
+  expected/actual support. See [codeberg.org/firelizzard/be][be-checker] for
+  details.
+- Fixes an issue where the file:line of test output was no correctly parsed.
+- Fixes an issue where build failure errors were not cleared.
+
+[be-checker]: https://codeberg.org/firelizzard/be/src/branch/main/internal/checker.go#L180
+
 ## v0.2.3
 - Fixes populating subtests when a test file is opened.
 - Fixes an issue where test binaries were created in the package folder when profiling.
