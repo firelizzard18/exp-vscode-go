@@ -26,7 +26,7 @@ that.
 
 Thus, viewer state such as the selected sample, focused item, ignore list, etc
 are persisted and the state of the viewer is reconstructed when the webview is
-brought back to the fore. To the latency of an HTTP request every time the user
+shown again. To reduce the latency of an HTTP request every time the user
 switches tabs, the profile is also persisted along with the viewer state. It
 should be noted that 'persistent' is relative - data stored in this way is
 **not** persisted when the editor is closed, only when it is hidden (e.g. when
