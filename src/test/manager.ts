@@ -3,7 +3,7 @@ import {
 	Uri,
 	TestRunRequest as VSCTestRunRequest,
 	CancellationTokenSource,
-	EventEmitter,
+	TestRunRequest,
 } from 'vscode';
 import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode from 'vscode';
@@ -15,7 +15,6 @@ import { RunConfig } from './runConfig';
 import { ContinuousRunTracker, GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
 import { GoTestItemPresenter } from './itemPresenter';
 import { WorkspaceConfig } from './workspaceConfig';
-import { MapWithDefault } from '../utils/map';
 
 /**
  * Entry point for the test explorer implementation.
@@ -28,6 +27,7 @@ export class TestManager {
 	// Run configurations.
 	readonly #run: RunConfig;
 	readonly #debug: RunConfig;
+	readonly #profile: RunConfig;
 	readonly #rrDebug: RunConfig;
 	readonly #coverage: RunConfig;
 
@@ -36,6 +36,7 @@ export class TestManager {
 	readonly #continuousRuns = new Set<ContinuousRunTracker>();
 
 	// Transients.
+	#configureProfiles?: () => Promise<boolean>;
 	#ctrl?: TestController;
 	#resolver?: GoTestItemResolver;
 	#presenter?: GoTestItemPresenter;
@@ -46,6 +47,7 @@ export class TestManager {
 
 		this.#run = new RunConfig(context, 'Run', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
 		this.#debug = new RunConfig(context, 'Debug', TestRunProfileKind.Debug, true, { id: 'canDebug' });
+		this.#profile = new RunConfig(context, 'Profile', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
 		this.#coverage = new RunConfig(context, 'Coverage', TestRunProfileKind.Coverage, true, { id: 'canRun' });
 		this.#rrDebug = new RunConfig(context, 'Debug with RR', TestRunProfileKind.Debug, false, { id: 'canDebug' });
 		this.#rrDebug.options.backend = 'rr';
@@ -114,6 +116,8 @@ export class TestManager {
 			createRunProfile(this.#rrDebug);
 		}
 
+		this.#configureProfiles = () => this.#profile.configureProfiling(args);
+
 		// Check if coverage is supported.
 		const testRun = ctrl.createTestRun({ include: [], exclude: [], profile: undefined });
 		testRun.end();
@@ -142,15 +146,23 @@ export class TestManager {
 	/**
 	 * Run a test.
 	 */
-	runTests(...items: GoTestItem[]) {
+	runTests(items: GoTestItem[] | TestRunRequest) {
 		this.#executeTestRun(this.#run, items);
 	}
 
 	/**
 	 * Debug a test.
 	 */
-	debugTests(...items: GoTestItem[]) {
+	debugTests(items: GoTestItem[] | TestRunRequest) {
 		this.#executeTestRun(this.#debug, items);
+	}
+
+	/**
+	 * Profile a test.
+	 */
+	async profileTests(items: GoTestItem[] | TestRunRequest) {
+		if (!(await this.#configureProfiles?.())) return;
+		this.#executeTestRun(this.#profile, items);
 	}
 
 	/**

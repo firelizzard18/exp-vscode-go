@@ -31,6 +31,7 @@ import axios from 'axios';
 import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import type { CommandExecutor } from './extension';
+import { Command } from './commands';
 
 const nbsp = '\u00A0';
 
@@ -42,13 +43,13 @@ export async function registerProfileEditor(ctx: ExtensionContext, go: GoExtensi
 	ctx.subscriptions.push(window.registerCustomEditorProvider('goExp.pprof', provider));
 
 	// [Command] Show source
-	command('goExp.pprof.showSource', () => ProfileDocument.active?.showSource());
+	command(Command.Profile.ShowSource, () => ProfileDocument.active?.showSource());
 
 	// [Command] Ignore function
-	command('goExp.pprof.ignore', () => ProfileDocument.active?.ignoreFunc());
+	command(Command.Profile.Ignore, () => ProfileDocument.active?.ignoreFunc());
 
 	// [Command] Capture profile
-	command('goExp.capturePprof', () => captureProfile(ctx.workspaceState));
+	command(Command.Profile.Capture, () => captureProfile(ctx.workspaceState));
 }
 
 export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocument | ErrorDocument> {

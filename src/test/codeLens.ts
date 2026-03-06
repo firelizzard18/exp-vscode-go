@@ -3,7 +3,7 @@ import { CodeLens, TextDocument, Range } from 'vscode';
 import { GoTestItem, StaticTestCase, TestCase, TestFile } from './item';
 import { GoTestItemResolver } from './itemResolver';
 import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
-import { Command } from './commands';
+import { Command } from '../commands';
 
 /**
  * Provides CodeLenses for running and debugging tests for users who prefer

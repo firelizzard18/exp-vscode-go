@@ -11,6 +11,7 @@ import {
 	LogOutputChannel,
 	Memento,
 	TestItem,
+	TestRunRequest,
 	tests,
 	window,
 	workspace,
@@ -18,8 +19,8 @@ import {
 import { Browser } from '../browser';
 import { Context, helpers } from '../utils/testing';
 import { WorkspaceConfig } from './workspaceConfig';
-import { GoTestItem } from './item';
-import { Command } from './commands';
+import { isTestItem } from './item';
+import { Command } from '../commands';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
 	const testCtx: Context = {
@@ -74,8 +75,9 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	command(Command.Refresh, (item: TestItem) => manager.enabled && manager.refresh(item));
 
 	// [Command] Run Test, Debug Test
-	command(Command.Test.Run, (...item: GoTestItem[]) => manager.enabled && manager.runTests(...item));
-	command(Command.Test.Debug, (...item: GoTestItem[]) => manager.enabled && manager.debugTests(...item));
+	command(Command.Test.Run, testItemCommand(manager, 'runTests'));
+	command(Command.Test.Debug, testItemCommand(manager, 'debugTests'));
+	command(Command.Test.Profile, testItemCommand(manager, 'profileTests'));
 
 	// [Command] Browser navigation
 	command(Command.Browser.Back, () => Browser.active?.back());
@@ -83,7 +85,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	command(Command.Browser.Forward, () => Browser.active?.forward());
 
 	// [Command] Workaround for https://github.com/microsoft/vscode/issues/237106
-	command('goExp.configureCoverageRunProfile', () => manager.configureCoverageRunProfile(window));
+	command(Command.ConfigureCoverageRunProfile, () => manager.configureCoverageRunProfile(window));
 
 	// [Event] Configuration change
 	const config = new WorkspaceConfig(workspace);
@@ -166,6 +168,24 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	if (await isEnabled(ctx.globalState)) {
 		await setup();
 	}
+}
+
+function testItemCommand(manager: TestManager, fn: keyof TestManager & `${string}Tests`) {
+	return (...args: any[]) => {
+		if (!manager.enabled) {
+			return;
+		}
+
+		if (args.every((x) => isTestItem(x))) {
+			return manager[fn](args);
+		}
+
+		const tests = args.filter(
+			(x): x is TestItem =>
+				x && typeof x === 'object' && !Array.isArray(x) && 'id' in x && 'uri' in x && 'canResolveChildren' in x,
+		);
+		return manager[fn](new TestRunRequest(tests));
+	};
 }
 
 async function isEnabled(state: Memento) {

@@ -64,6 +64,10 @@ export class RunConfig {
 		}
 	}
 
+	with({ label }: { label: string }) {
+		return new RunConfig(this.#context, label, this.kind, this.#isDefault, this.#tag, this.#supportsContinuousRun);
+	}
+
 	async #update() {
 		await this.#context.state.update(`${RunConfig.#memento}[${this.#label}]`, {
 			profile: this.settings.profile.filter((x) => x.enabled).map((x) => x.id),
@@ -79,21 +83,22 @@ export class RunConfig {
 			});
 		} else {
 			await configureMenu(args, options, {
-				Profiling: () => this.#configureProfiling(args),
+				Profiling: () => this.configureProfiling(args),
 			});
 		}
 	}
 
-	async #configureProfiling(args: ConfigureArgs) {
+	async configureProfiling(args: ConfigureArgs): Promise<boolean> {
 		this.settings.profile.forEach((x) => (x.picked = x.enabled));
 		const r = await args.showQuickPick(this.settings.profile, {
 			title: 'Profile',
 			canPickMany: true,
 		});
-		if (!r) return;
+		if (!r) return false;
 
 		this.settings.profile.forEach((x) => (x.enabled = r.includes(x)));
 		await this.#update();
+		return true;
 	}
 
 	async #configureCoverage(args: ConfigureArgs) {

@@ -6,7 +6,8 @@ import { registerTestingFeatures } from './test/register';
 import { Browser } from './browser';
 import { GoGenerateManager } from './go-generate/manager';
 import { CanceledError } from 'axios';
-import { captureProfile, registerProfileEditor } from './profile-viewer';
+import { registerProfileEditor } from './profile-viewer';
+import { Command } from './commands';
 
 const output = vscode.window.createOutputChannel('Go Companion', { log: true });
 
@@ -41,7 +42,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 	await GoGenerateManager.register(ctx, go, output);
 
 	// [Command] Render documentation
-	command('goExp.renderDocs', () => Browser.renderDocs(ctx));
+	command(Command.RenderDocs, () => Browser.renderDocs(ctx));
 }
 
 export function deactivate() {

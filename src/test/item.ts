@@ -16,6 +16,19 @@ export type GoTestItem =
 	| ProfileSet
 	| CapturedProfile;
 
+export function isTestItem(v: any): v is GoTestItem {
+	return (
+		v instanceof Module ||
+		v instanceof Workspace ||
+		v instanceof Package ||
+		v instanceof TestFile ||
+		v instanceof TestCase ||
+		v instanceof ProfileContainer ||
+		v instanceof ProfileSet ||
+		v instanceof CapturedProfile
+	);
+}
+
 export class Workspace {
 	readonly kind = 'workspace';
 	readonly ws;
