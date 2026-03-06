@@ -28,7 +28,7 @@ function App() {
 		// Retrieve the URL from <script id="profile-data"> and load it
 		const el = document.getElementById('profile-data') as HTMLScriptElement;
 		const r = await fetch(el.src);
-		const profile = await r.json();
+		const profile = canonicalize(await r.json());
 
 		// Store the profile, remove the loading message, and render
 		State.profile = profile;
@@ -46,3 +46,35 @@ function App() {
 
 // Render the viewer
 render(<App />, document.body);
+
+/**
+ * Canonicalizes generic functions, rewriting `foo[int]` and `foo[string]` into
+ * a single Func.
+ */
+function canonicalize(profile: Profile): Profile {
+    if (!profile.Function || !profile.Location) return profile;
+
+    // Group funcs by base name (stripping generic params)
+    const canonical = new Map<number, number>(); // any ID → canonical ID
+    const byBaseName = new Map<string, number>();
+    for (const func of profile.Function) {
+        const base = func.Name.replace(/\[.*\]/, '');
+        if (!byBaseName.has(base)) byBaseName.set(base, func.ID);
+        canonical.set(func.ID, byBaseName.get(base)!);
+    }
+
+    return {
+        ...profile,
+        Function: profile.Function.filter((f) => canonical.get(f.ID) === f.ID).map(func => ({
+			...func,
+			Name: func.Name.replace(/\[.*\]/, ''),
+		})),
+        Location: profile.Location.map((loc) => ({
+            ...loc,
+            Line: loc.Line.map((line) => ({
+                ...line,
+                Function: canonical.get(line.Function) ?? line.Function,
+            })),
+        })),
+    };
+}
