@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.2.4
+- Adds a command and context menu item for one-off profiling of tests and benchmarks.
+- Canonicalizes (merge) generic functions when displaying profiles.
 - Adds a command to capture and display profiles from `net/http/pprof`.
 - Fixes the version check for the vscgo helper.
 - Adds support for parsing test output as failure events, including
