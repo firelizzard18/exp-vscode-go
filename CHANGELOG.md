@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.5
+
+- Detects panics.
+- Detects common diff assertion (want/got) formats.
+- Reports `t.Error(...)` (etc) output as errors (Go 1.27+).
+- Drops support for build failure parsing in versions of Go prior to 1.24.
+
 ## v0.2.4
 - Adds a command and context menu item for one-off profiling of tests and benchmarks.
 - Canonicalizes (merge) generic functions when displaying profiles.

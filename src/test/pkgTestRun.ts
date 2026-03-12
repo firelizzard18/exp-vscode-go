@@ -1,6 +1,13 @@
-import { Location, Position, TestItem, TestMessage, TestRun, Uri } from 'vscode';
-import { Package, parseID, StaticTestCase, TestCase } from './item';
-import { TestEvent } from './testEvent';
+import { Location, TestItem, TestMessage, TestRun } from 'vscode';
+import { Package, TestCase } from './item';
+import {
+	isOutputEvent,
+	normalizeTestEvent,
+	parseLocation,
+	RichOutputEvent,
+	RichTestEvent,
+	TestEvent,
+} from './testEvent';
 import path from 'node:path';
 
 interface TestResolver {
@@ -17,7 +24,7 @@ export class PackageTestRun {
 	readonly #testFor: TestResolver;
 
 	readonly stderr: string[] = [];
-	readonly output = new Map<string, { output: string[]; item: TestItem }>();
+	readonly events = new Map<string, { item: TestItem; events: RichTestEvent[] }>();
 	readonly currentLocation = new Map<string, Location>();
 
 	#buildFailed = false;
@@ -55,22 +62,53 @@ export class PackageTestRun {
 		}
 
 		const item = this.#testFor(msg);
-		this.#onEvent(item, msg);
+		const rich = normalizeTestEvent(item ?? this.testItem, msg);
+
+		// The output location is only shown on the first line so remember what
+		// the 'current' location is; continuations are prefixed with 8 spaces.
+		if (rich.Location) {
+			this.currentLocation.set(rich.TestItem.id, rich.Location);
+		} else if (item && rich.Action === 'output' && rich.Output?.startsWith('        ')) {
+			rich.Output = rich.Output.substring(8);
+			rich.Location = this.currentLocation.get(rich.TestItem.id);
+		}
+
+		// Determine the test from the location.
+		if (!item && rich.Location) {
+			rich.TestItem = this.#testFor(rich.Location) ?? this.testItem;
+		}
+
+		this.#onEvent(rich);
 	}
 
-	#onEvent(item: TestItem | undefined, msg: TestEvent) {
-		const elapsed = typeof msg.Elapsed === 'number' ? msg.Elapsed * 1000 : undefined;
-		switch (msg.Action) {
+	#onEvent(event: RichTestEvent) {
+		const item = event.TestItem;
+
+		// Track events (for reporting build failures).
+		if (!this.events.has(item.id)) {
+			this.events.set(item.id, { events: [], item });
+		}
+		this.events.get(item.id)!.events.push(event);
+
+		if (event.Output) {
+			this.append(event.Output, event.Location, event.TestItem);
+		}
+
+		const elapsed = typeof event.Elapsed === 'number' ? event.Elapsed * 1000 : undefined;
+		switch (event.Action) {
 			case 'output':
 			case 'build-output':
-				this.#onOutput(item, msg);
+				// Output has already been logged, nothing left to do.
 				break;
 
 			case 'build-fail': {
 				let didReport = false;
-				this.output.forEach(({ output, item }) => {
+				this.events.forEach(({ events, item }) => {
 					// Exclude the comment lines
-					const message = output.filter((x) => !x.startsWith('# ')).join('\n');
+					const message = events
+						.map((x) => x.Output)
+						.filter((x) => x && !x.startsWith('# '))
+						.join('\n');
 					if (!message) return;
 
 					didReport = true;
@@ -80,114 +118,35 @@ export class PackageTestRun {
 				if (!didReport) {
 					this.testItem.error = 'Build error';
 				}
-				this.run.errored(item || this.testItem, []);
+				this.run.errored(item, []);
 				this.#buildFailed = true;
 				break;
 			}
 
 			case 'run':
 			case 'start':
-				if (!msg.Test) {
-					this.run.started(this.testItem);
-				} else if (item) {
-					this.run.started(item);
-				}
+				this.run.started(item);
 				break;
 
 			case 'skip':
-				if (!msg.Test) {
-					this.run.skipped(this.testItem);
-				} else if (item) {
-					this.run.skipped(item);
-				}
+				this.run.skipped(item);
 				break;
 
 			case 'pass':
-				if (!msg.Test) {
-					this.run.passed(this.testItem, elapsed);
-				} else if (item) {
-					this.run.passed(item, elapsed);
-				}
+				this.run.passed(item, elapsed);
 				break;
 
 			case 'fail': {
-				if (!msg.Test) {
-					processPackageFailure(
-						this.run,
-						this.goItem,
-						this.testItem,
-						elapsed,
-						this.output.get(this.testItem.id)?.output || [],
-						this.stderr,
-					);
-				} else if (item) {
-					const messages = parseTestFailure(item, this.output.get(item.id)?.output || []);
-					this.run.failed(item, messages, elapsed);
-				}
+				const messages = groupOutputEvents(this.events.get(item.id)?.events ?? []).flatMap((x) =>
+					parseTestFailure(x),
+				);
+				this.run.failed(item, messages, elapsed);
 				break;
 			}
 
 			default:
 				// Ignore 'cont' and 'pause'
 				break;
-		}
-	}
-
-	#onOutput(item: TestItem | undefined, msg: TestEvent) {
-		if (!msg.Output) {
-			return;
-		}
-
-		// Try to deduce the location of the output
-		const parsed = parseOutputLocation(msg.Output, path.join((item || this.testItem).uri!.fsPath, '..'));
-		const message = parsed.message;
-		let location = parsed.location;
-
-		const origItem = item;
-		item ??= this.testItem;
-
-		// The output location is only shown on the first line so remember what
-		// the 'current' location is; continuations are prefixed with 4 spaces
-		if (location) {
-			this.currentLocation.set(item.id, location);
-		} else if (origItem && message.startsWith('    ')) {
-			location = this.currentLocation.get(item.id);
-		}
-
-		// Determine the test from the location
-		if (!origItem && location) {
-			item = this.#testFor(location) ?? item;
-		}
-
-		// Record the output
-		this.append(message, location, item || this.testItem);
-
-		// Track output for later detection of errors
-		if (!this.output.has(item.id)) {
-			this.output.set(item.id, { output: [], item });
-		}
-		this.output.get(item.id)!.output.push(msg.Output);
-
-		// go test is not good about reporting the start and end of benchmarks
-		// so we'll synthesize them.
-		if (!msg.Test?.startsWith('Benchmark')) {
-			return;
-		}
-
-		if (msg.Output === `=== RUN   ${msg.Test}\n`) {
-			// === RUN   BenchmarkFooBar
-			this.#onEvent(origItem, {
-				...msg,
-				Action: 'run',
-			});
-		} else if (
-			msg.Output?.match(/^(?<name>Benchmark[/\w]+)-(?<procs>\d+)\s+(?<result>.*)(?:$|\n)/)?.[1] === msg.Test
-		) {
-			// BenchmarkFooBar-4    123456    123.4 ns/op    123 B/op    12 allocs/op
-			this.#onEvent(origItem, {
-				...msg,
-				Action: 'pass',
-			});
 		}
 	}
 
@@ -199,18 +158,7 @@ export class PackageTestRun {
 	append(output: string, location?: Location, test?: TestItem) {
 		if (!output.endsWith('\n')) output += '\n';
 		output = output.replace(/\n/g, '\r\n');
-
-		const msg = tryParseErr(output);
-		if (!msg || !test) {
-			this.run.appendOutput(output, location, test);
-		} else {
-			this.run.failed(test, {
-				location: location,
-				message: `${msg.Message}`,
-				actualOutput: 'Got' in msg ? `${msg.Got}` : undefined,
-				expectedOutput: 'Want' in msg ? `${msg.Want}` : undefined,
-			});
-		}
+		this.run.appendOutput(output, location, test);
 	}
 
 	forEach(fn: (item: TestItem) => void) {
@@ -230,80 +178,38 @@ export class PackageTestRun {
 	}
 }
 
-/**
- * Try to parse the output as a JSON error message intended for vscode-go (or
- * exp-vscode-go). If the message is valid JSON, contains `IsVSCodeGoErr: true`,
- * and has a Message field, treat it as an error message. This function is only
- * called if the message is prefixed with the call location, e.g. when calling
- * `t.Error(...)`.
- */
-function tryParseErr(output: string) {
-	if (!output.match(/^\s*\{/)) {
-		return;
-	}
+function groupOutputEvents(events: RichTestEvent[]) {
+	const errors: RichOutputEvent[][] = [];
+	const output: RichOutputEvent[][] = [];
 
-	let msg: unknown;
-	try {
-		msg = JSON.parse(output);
-	} catch (_) {
-		return;
-	}
-
-	if (
-		!msg ||
-		typeof msg !== 'object' ||
-		Array.isArray(msg) ||
-		!('IsVSCodeGoErr' in msg) ||
-		!('Message' in msg) ||
-		msg.IsVSCodeGoErr !== true ||
-		typeof msg.Message !== 'string'
-	) {
-		return;
-	}
-
-	return msg;
-}
-
-function processPackageFailure(
-	run: TestRun,
-	pkg: Package,
-	pkgItem: TestItem,
-	elapsed: number | undefined,
-	stdout: string[],
-	stderr: string[],
-) {
-	const buildFailed = stdout.some((x) => /\[build failed\]\s*$/.test(x));
-	if (!buildFailed) {
-		run.failed(pkgItem, [], elapsed);
-		return;
-	}
-
-	const pkgMessages: TestMessage[] = [];
-	const testMessages = new Map<TestItem, TestMessage[]>();
-
-	for (const line of stderr) {
-		const { message, location } = parseOutputLocation(line, pkg.uri.fsPath);
-		const test =
-			location &&
-			[...pkgItem.children]
-				.map((x) => x[1])
-				.find((x) => x.uri!.fsPath === location.uri.fsPath && x.range?.contains(location.range));
-
-		if (!test) {
-			pkgMessages.push({ message });
-			continue;
+	// Group error output.
+	for (const event of events) {
+		if (!isOutputEvent(event)) continue;
+		switch (event.OutputType) {
+			case 'frame':
+				// Ignore.
+				break;
+			case 'error':
+				errors.push([event]);
+				break;
+			case 'error-continue':
+				if (errors.length > 0) {
+					errors[errors.length - 1].push(event);
+				} else {
+					errors.push([event]);
+				}
+				break;
+			default:
+				if (output.length > 0 && output[output.length - 1][0].Location === event.Location) {
+					output[output.length - 1].push(event);
+				} else {
+					output.push([event]);
+				}
+				break;
 		}
-
-		if (!testMessages.has(test)) {
-			testMessages.set(test, []);
-		}
-		testMessages.get(test)!.push({ message, location });
 	}
 
-	run.errored(pkgItem, pkgMessages, elapsed);
-	for (const [test, messages] of testMessages) {
-		run.errored(test, messages);
-	}
+	return [...output, ...errors];
 }
 
 /**
@@ -311,72 +217,131 @@ function processPackageFailure(
  * Location info is inferred heuristically by applying a simple pattern matching
  * over the output strings from `go test -json` `output` type action events.
  */
-function parseTestFailure(test: TestItem, output: string[]): TestMessage[] {
-	const id = parseID(test.id);
-	if (id.profile || !test.uri) {
-		// This should never happen.
-		throw new Error('Internal error');
-	}
-
-	const messages: TestMessage[] = [];
-
-	const gotI = output.indexOf('got:\n');
-	const wantI = output.indexOf('want:\n');
-	if (id.kind === 'example' && gotI >= 0 && wantI >= 0) {
-		const got = output.slice(gotI + 1, wantI).join('');
-		const want = output.slice(wantI + 1).join('');
-		const message = TestMessage.diff('Output does not match', want, got);
-		if (test instanceof StaticTestCase && test.range) {
-			message.location = new Location(test.uri, test.range.start);
+function parseTestFailure(events: RichOutputEvent[]) {
+	const output = events.map((x) => x.Output).join('');
+	let message = parsePanic(events[0].TestItem, output) ?? parseWantGot(output);
+	if (!message) {
+		switch (events[0].OutputType) {
+			case 'error':
+			case 'error-continue':
+				message = new TestMessage(output);
+				break;
+			default:
+				return [];
 		}
-		messages.push(message);
-		output = output.slice(0, gotI);
 	}
 
-	// TODO(hyangah): handle panic messages specially.
+	if (message.location) {
+		return [message];
+	}
 
-	const dir = path.join(test.uri.fsPath, '..');
-	output.forEach((line) => messages.push(parseOutputLocation(line, dir)));
+	for (const event of events) {
+		if (event.TestItem.range) {
+			message.location = new Location(event.TestItem.uri!, event.TestItem.range.start);
+			break;
+		}
+	}
+	for (const event of events) {
+		if (event.Location) {
+			message.location = event.Location;
+			break;
+		}
+	}
 
-	return messages;
+	return [message];
 }
 
-/**
- * ^(?:.*\s+|\s*)                  - non-greedy match of any chars followed by a space or, a space.
- * (?<file>\S+\.go):(?<line>\d+):  - gofile:line: followed by a space.
- * (?<message>.\n)$                - all remaining message up to $.
- */
-const lineLocPattern = /^(.*\s+)?(?<file>\S+\.go):(?<line>\d+)(?::(?<column>\d+))?: (?<message>.*\n?)$/;
+function parsePanic(test: TestItem, output: string) {
+	// Find the `panic:` line.
+	const start = output.match(/^panic: /m);
+	if (!start) return;
 
-/**
- * Extract the location info from output message.
- * This is not trivial since both the test output and any output/print
- * from the tested program are reported as `output` type test events
- * and not distinguishable. stdout/stderr output from the tested program
- * makes this more trickier.
- *
- * Here we assume that test output messages are line-oriented, precede
- * with a file name and line number, and end with new lines.
- */
-function parseOutputLocation(line: string, dir: string): { message: string; location?: Location } {
-	const m = line.match(lineLocPattern);
-	if (!m?.groups?.file) {
-		return { message: line };
+	// Scan to the last `goroutine 1 [running]:` line.
+	const reGoroutine = /^goroutine \d+ \[[^\]]+\]:$/gm;
+	reGoroutine.lastIndex = start.index! + start[0].length;
+	let last: number | undefined;
+	while (reGoroutine.exec(output)) {
+		last = reGoroutine.lastIndex;
+	}
+	if (last === undefined) return;
+
+	// Scan to the end of the stack trace.
+	const reFileLine = /^\t(?<file>\S+\.go):(?<line>\d+)( \+0x[0-9a-f]+)?( \w+=0x[0-9a-f]+)*$/gm;
+	reFileLine.lastIndex = last;
+	last = undefined;
+	while (reFileLine.exec(output)) {
+		last = reFileLine.lastIndex;
+	}
+	if (last === undefined) return;
+
+	// Find the first goroutine.
+	reGoroutine.lastIndex = 0;
+	reGoroutine.exec(output);
+	const stackStart = reGoroutine.lastIndex;
+	const stackEnd = reGoroutine.exec(output)?.index ?? last;
+	const stackStr = output.slice(stackStart, stackEnd);
+
+	// Parse the stack trace.
+	reFileLine.lastIndex = 0;
+	let m: RegExpMatchArray | null;
+	const stack: Location[] = [];
+	while ((m = reFileLine.exec(stackStr))) {
+		if (!m?.groups?.file) return;
+		stack.push(parseLocation(test, m));
 	}
 
-	// Paths will always be absolute for versions of Go (1.21+) due to
-	// -fullpath, but the user may be using an old version
-	const file =
-		m.groups.file && path.isAbsolute(m.groups.file)
-			? Uri.file(m.groups.file)
-			: Uri.file(path.join(dir, m.groups.file));
+	// Find the workspace/module directory.
+	while (test.parent) {
+		test = test.parent;
+	}
 
-	// VSCode uses 0-based line numbering (internally)
-	const ln = Number(m.groups.line) - 1;
-	const col = m.groups.column ? Number(m.groups.column) - 1 : 0;
+	let dir = test.uri!.fsPath;
+	if (path.extname(dir) !== '') {
+		dir = path.join(dir, '..');
+	}
 
-	return {
-		message: m.groups.message,
-		location: new Location(file, new Position(ln, col)),
-	};
+	// Use the first location within the workspace/module, or just the first.
+	const message = new TestMessage(output.slice(start.index!, last));
+	message.location = stack.find((x) => x.uri.fsPath.startsWith(dir)) ?? stack[0];
+	return message;
+}
+
+function parseWantGot(output: string) {
+	const re = /\b(?<verb>got|have|actual|want|expected|received|desired)\s*:/gi;
+	const first = re.exec(output);
+	const second = re.exec(output);
+	if (!first?.groups?.verb || !second?.groups?.verb) return;
+
+	const firstKind = wantGotVerbKind(first.groups.verb);
+	const secondKind = wantGotVerbKind(second.groups.verb);
+	if (firstKind === 0 || secondKind === 0 || firstKind === secondKind) return;
+
+	const prefix = output.slice(0, first.index).trim();
+	const firstContent = output
+		.slice(first.index + first[0].length, second.index)
+		.trim()
+		.replace(/;$/, '');
+	const secondContent = output.slice(second.index + second[0].length).trim();
+
+	return TestMessage.diff(
+		prefix || 'Unexpected output',
+		firstKind > 0 ? firstContent : secondContent,
+		firstKind < 0 ? firstContent : secondContent,
+	);
+}
+
+function wantGotVerbKind(s: string) {
+	switch (s) {
+		case 'got':
+		case 'have':
+		case 'received':
+		case 'actual':
+			return -1;
+		case 'expected':
+		case 'want':
+		case 'desired':
+			return +1;
+		default:
+			return 0;
+	}
 }
