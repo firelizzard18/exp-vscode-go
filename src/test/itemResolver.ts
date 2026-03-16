@@ -768,7 +768,7 @@ export class GoTestItemResolver {
 					// their parent is being run.
 					this.#removeDynamicTests(pkg, (test) => {
 						const parent = this.#resolver.#presenter.getParent(test);
-						while (parent) {
+						if (parent) {
 							if (exclude.has(parent as any)) return false;
 							if (include.has(parent as any)) return true;
 						}
@@ -957,6 +957,11 @@ export function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
 	// they likely expect those benchmarks to run.
 	if (config.for(pkg).runPackageBenchmarks.get()) {
 		return true;
+	}
+	if (pkg.files.size === 0) {
+		// If the files haven't been resolved yet, assume there are
+		// non-benchmarks.
+		return false;
 	}
 	for (const test of pkg.allTests()) {
 		if (test.kind !== 'benchmark') {
