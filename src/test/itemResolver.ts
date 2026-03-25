@@ -467,8 +467,12 @@ export class GoTestItemResolver {
 
 		// If it's a profile, find the containing item.
 		if (id.profile) {
-			const { fragment: _, ...parts } = item;
-			const parent = this.#getGoItem(Uri.from(parts));
+			const query = new URLSearchParams(item.query);
+			query.delete('profile');
+
+			const parent = this.#getGoItem(
+				id.profile === true ? item.with({ fragment: '' }) : item.with({ query: `${query}` }),
+			);
 			if (!parent) return;
 
 			const container = this.#presenter.getProfiles(parent);

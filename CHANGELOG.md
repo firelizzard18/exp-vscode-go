@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.6
+
+- Fixed a bug that would cause the extension to get hung in an infinite loop.
+
 ## v0.2.5
 
 - Detects panics.
@@ -21,11 +25,13 @@
 [be-checker]: https://codeberg.org/firelizzard/be/src/branch/main/internal/checker.go#L180
 
 ## v0.2.3
+
 - Fixes populating subtests when a test file is opened.
 - Fixes an issue where test binaries were created in the package folder when profiling.
 - Sets a custom title when viewing captured profiles.
 
 ## v0.2.2
+
 - Fixes populating test items when a test file is opened.
 - Fixed executing all tests in a module or workspace by running the root item.
 
