@@ -20,10 +20,9 @@ minor version number is even, it will be published as a prerelease.
 
 ## Issues
 
-Report issues to [vscode-go][vscode-go-git]. Include a note that you are
-reporting an issue or request for Go Companion.
+Report issues to [github.com/firelizzard18/exp-vscode-go][issues].
 
-[vscode-go-git]: https://github.com/golang/vscode-go/issues/new/choose
+[issues]: https://github.com/firelizzard18/exp-vscode-go/issues/new/choose
 
 ## Test Explorer
 

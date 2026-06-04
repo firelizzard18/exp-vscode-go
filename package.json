@@ -3,7 +3,7 @@
   "publisher": "ethan-reesor",
   "displayName": "Go Companion",
   "description": "An unofficial companion to the official Go extension, providing experimental features",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "icon": "docs/assets/icon.png",
   "license": "MIT",
   "homepage": "https://github.com/firelizzard18/exp-vscode-go",
@@ -12,7 +12,7 @@
     "url": "https://github.com/firelizzard18/exp-vscode-go"
   },
   "bugs": {
-    "url": "https://github.com/golang/vscode-go/issues"
+    "url": "https://github.com/firelizzard18/exp-vscode-go/issues"
   },
   "engines": {
     "vscode": "^1.75.0"

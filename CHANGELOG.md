@@ -1,5 +1,11 @@
 # Changelog
 
+
+## v0.3.0
+
+This release is the stable version of v0.3. It also moves issues to Go
+Companion's own repository instead of linking to vscode-go.
+
 ## v0.2.6
 
 - Fixed a bug that would cause the extension to get hung in an infinite loop.
