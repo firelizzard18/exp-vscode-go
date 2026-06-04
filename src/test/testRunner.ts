@@ -79,6 +79,7 @@ export class TestRunner {
 		const flags: Flags = {};
 
 		flags.fullpath = true; // Include the full path for output events
+		flags.benchmem = true;
 
 		if (pkg.mode === 'all') {
 			// Include all test cases.
