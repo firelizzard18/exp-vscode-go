@@ -1,11 +1,4 @@
-/**
- * Represents an update to a test item.
- *  - `added` indicates that the item was added.
- *  - `removed` indicates that the item was removed.
- *  - `moved` indicates that the item's range changed without changing its contents.
- *  - `modified` indicates that the item's contents and possibly its range changed.
- */
-export type ItemEvent<T> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
+import type { ItemEvent } from '.';
 
 export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullable<object>> {
 	readonly #srcKey;

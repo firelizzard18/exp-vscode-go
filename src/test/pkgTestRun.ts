@@ -1,5 +1,5 @@
 import { Location, TestItem, TestMessage, TestRun } from 'vscode';
-import { Package, TestCase } from './item';
+import { Package, TestCase } from './model';
 import {
 	isOutputEvent,
 	normalizeTestEvent,

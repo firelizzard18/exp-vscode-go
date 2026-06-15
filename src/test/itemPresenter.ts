@@ -1,20 +1,10 @@
 import { Uri, WorkspaceFolder } from 'vscode';
-import { ItemSet } from './itemSet';
 import { RelationMap } from '../utils/map';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';
 import { CapturedProfile, ProfileTracker, ProfileType } from './profiles';
-import {
-	Module,
-	Package,
-	Workspace,
-	DynamicTestCase,
-	GoTestItem,
-	TestCase,
-	findParentTestCase,
-	isTestItem,
-} from './item';
+import { Module, Package, Workspace, DynamicTestCase, GoTestItem, TestCase, isTestItem, ItemSet } from './model';
 import { ModelUpdateEvent } from './itemResolver';
 import moment from 'moment';
 
@@ -371,7 +361,7 @@ export class GoTestItemPresenter {
 		const testPkgs = new Set(testChanges.map((x) => x.item.file.package));
 		for (const pkg of testPkgs) {
 			const tests = [...pkg.allTests()];
-			this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(pkg, test.name)]));
+			this.#testRel.get(pkg).replace(tests.map((test) => [test, pkg.findParent(test.name)]));
 		}
 	}
 }

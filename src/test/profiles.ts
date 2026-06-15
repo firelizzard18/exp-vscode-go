@@ -1,5 +1,5 @@
 import { Uri } from 'vscode';
-import { GoTestItem } from './item';
+import { GoTestItem } from './model';
 
 /**
  * A type of profile that can be captured by Go's profiling tools.

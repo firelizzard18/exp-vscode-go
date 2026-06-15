@@ -9,7 +9,7 @@ import { RunConfig } from './runConfig';
 import { ResolvedTestRunRequest, shouldRunBenchmarks } from './itemResolver';
 import { PackageTestRun } from './pkgTestRun';
 import { WorkspaceConfig } from './workspaceConfig';
-import { TestCase } from './item';
+import { TestCase } from './model';
 
 export class TestRunner {
 	readonly #context;

@@ -19,7 +19,7 @@ import {
 import { Browser } from '../browser';
 import { Context, helpers } from '../utils/testing';
 import { WorkspaceConfig } from './workspaceConfig';
-import { isTestItem } from './item';
+import { isTestItem } from './model';
 import { Command } from '../commands';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {

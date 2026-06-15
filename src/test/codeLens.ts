@@ -1,6 +1,6 @@
 import vscode from 'vscode';
 import { CodeLens, TextDocument, Range } from 'vscode';
-import { GoTestItem, StaticTestCase, TestCase, TestFile } from './item';
+import { GoTestItem, StaticTestCase, TestCase, TestFile } from './model';
 import { GoTestItemResolver } from './itemResolver';
 import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
 import { Command } from '../commands';

@@ -4,7 +4,6 @@ import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import {
 	DynamicTestCase,
-	findParentTestCase,
 	GoTestItem,
 	isTestItem,
 	Module,
@@ -13,7 +12,7 @@ import {
 	TestCase,
 	TestFile,
 	Workspace,
-} from './item';
+} from './model';
 import {
 	GoTestItemPresenter,
 	idFor,
@@ -23,7 +22,7 @@ import {
 	ProfileItem,
 	ProfileSet,
 } from './itemPresenter';
-import { ItemEvent } from './itemSet';
+import { ItemEvent } from './model';
 import { pathContains } from '../utils/util';
 import { PackageTestRun } from './pkgTestRun';
 import { TestEvent } from './testEvent';
@@ -916,7 +915,7 @@ export class GoTestItemResolver {
 			}
 
 			// Create a dynamic subtest.
-			const parent = findParentTestCase(pkg, event.Test);
+			const parent = pkg.findParent(event.Test);
 			if (!parent) return;
 			const child = new DynamicTestCase(parent, event.Test, run);
 			parent.file.tests.add(child);

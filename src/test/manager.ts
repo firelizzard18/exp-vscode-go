@@ -8,7 +8,7 @@ import {
 import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode from 'vscode';
 import { Context, doSafe, TestController } from '../utils/testing';
-import { GoTestItem, StaticTestCase, TestCase } from './item';
+import { GoTestItem, StaticTestCase, TestCase } from './model';
 import { TestRunner } from './testRunner';
 import { CodeLensProvider } from './codeLens';
 import { RunConfig } from './runConfig';
