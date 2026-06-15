@@ -139,9 +139,9 @@ export class TestRunner {
 				}
 
 				// Use rel to make the cmdline nicer.
-				const file = await rq.attachProfile(pkg, dir, profile, time);
-				const rel = path.relative(dir.fsPath, file.uri.fsPath);
-				flags[`${profile.id}profile`] = rel.startsWith('.') ? file.uri.fsPath : rel;
+				const { file } = rq.attachProfile(pkg, dir, profile, time);
+				const rel = path.relative(dir.fsPath, file.fsPath);
+				flags[`${profile.id}profile`] = rel.startsWith('.') ? file.fsPath : rel;
 			}
 		}
 

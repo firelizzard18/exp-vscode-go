@@ -32,7 +32,7 @@
   "scripts": {
     "bundle": "esbuild main=src/extension.ts pprof=webview/pprof/App.tsx --bundle --outdir=dist --external:vscode --external:react/jsx-runtime --format=cjs --platform=node --loader:.frag=text --loader:.vert=text",
     "watch": "yarn run bundle -- --sourcemap=inline --watch",
-    "watch:types": "tsc --watch",
+    "watch:types": "tsc --watch -p src",
     "package": "vsce package",
     "lint": "eslint src --ext ts",
     "tests": "yarn run jest",
@@ -93,20 +93,20 @@
         },
         "exp-vscode-go.testExplorer.update": {
           "order": 2,
-            "type": "string",
-            "scope": "resource",
-            "markdownDescription": "Update tests as you edit files.",
-            "default": "on-save",
-            "enum": [
-              "on-save",
-              "on-edit",
-              "off"
-            ],
-            "markdownEnumDescriptions": [
-              "Update tests when a file is saved",
-              "Update tests when a file is edited (continuously as you type)",
-              "Do not automatically update tests"
-            ]
+          "type": "string",
+          "scope": "resource",
+          "markdownDescription": "Update tests as you edit files.",
+          "default": "on-save",
+          "enum": [
+            "on-save",
+            "on-edit",
+            "off"
+          ],
+          "markdownEnumDescriptions": [
+            "Update tests when a file is saved",
+            "Update tests when a file is edited (continuously as you type)",
+            "Do not automatically update tests"
+          ]
         },
         "exp-vscode-go.testExplorer.exclude": {
           "type": "object",

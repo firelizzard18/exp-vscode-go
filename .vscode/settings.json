@@ -1,13 +1,10 @@
-// Place your settings in this file to overwrite default and user settings.
 {
 	"files.exclude": {
-		"out": false, // set this to true to hide the "out" folder with the compiled JS files
+		"out": false,
 	},
 	"search.exclude": {
-		"out": true, // set this to false to include "out" folder in search results
+		"out": true,
 	},
-	// Turn off tsc task auto detection since we have the necessary tasks as npm scripts
-	"typescript.tsc.autoDetect": "off",
 	"files.autoSave": "off",
 	"[typescript]": {
 		"editor.formatOnSave": true,
@@ -21,4 +18,8 @@
 	"[glsl]": {
 		"editor.formatOnSave": true,
 	},
+
+	// Use TS 5, because TS 6 stops automatically importing @types/*, which
+	// breaks things.
+	"js/ts.tsdk.path": "node_modules/typescript/lib",
 }

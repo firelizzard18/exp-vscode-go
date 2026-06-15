@@ -166,11 +166,6 @@ export class WorkspaceConfig extends ConfigSet {
 				case 'file':
 					item = item.package;
 					continue;
-				case 'profile-container':
-				case 'profile-set':
-				case 'profile':
-					item = item.parent;
-					continue;
 				default:
 					item = item.file;
 					continue;

@@ -2,19 +2,10 @@ import { Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
 import { Commands } from '../utils/testing';
 import { ItemEvent, ItemSet } from './itemSet';
 import deepEqual from 'deep-equal';
-import { CapturedProfile, ProfileContainer, ProfileSet } from './profile';
 import path, { posix } from 'node:path';
 import { isRelativePath } from '../utils/util';
 
-export type GoTestItem =
-	| Module
-	| Workspace
-	| Package
-	| TestFile
-	| TestCase
-	| ProfileContainer
-	| ProfileSet
-	| CapturedProfile;
+export type GoTestItem = Module | Workspace | Package | TestFile | TestCase;
 
 export function isTestItem(v: any): v is GoTestItem {
 	return (
@@ -22,10 +13,7 @@ export function isTestItem(v: any): v is GoTestItem {
 		v instanceof Workspace ||
 		v instanceof Package ||
 		v instanceof TestFile ||
-		v instanceof TestCase ||
-		v instanceof ProfileContainer ||
-		v instanceof ProfileSet ||
-		v instanceof CapturedProfile
+		v instanceof TestCase
 	);
 }
 
@@ -246,58 +234,4 @@ export function findParentTestCase(pkg: Package, name: string) {
 			}
 		}
 	}
-}
-
-export function idFor(item: GoTestItem): Uri {
-	switch (item.kind) {
-		case 'workspace':
-		case 'module':
-		case 'package':
-		case 'file':
-			return item.uri.with({ query: `kind=${item.kind}` });
-
-		case 'profile-container':
-			return idFor(item.parent).with({ fragment: 'profiles' });
-
-		case 'profile-set': {
-			const base = idFor(item.parent);
-			return base.with({ query: `${base.query}&at=${item.time.getTime()}` });
-		}
-
-		case 'profile': {
-			const base = idFor(item.parent);
-			return base.with({ query: `${base.query}&profile=${item.type.id}` });
-		}
-
-		default:
-			return item.uri.with({ query: `kind=${item.kind}&name=${item.name}` });
-	}
-}
-
-export function parseID(id: string | Uri) {
-	if (typeof id === 'string') {
-		id = Uri.parse(id);
-	}
-	const query = new URLSearchParams(id.query);
-	if (!query.has('kind')) {
-		throw new Error('Invalid ID');
-	}
-
-	const obj = {
-		path: id.path,
-		kind: query.get('kind')! as Exclude<GoTestItem['kind'], 'profile-container' | 'profile-set' | 'profile'>,
-		name: query.get('name') ?? undefined,
-		at: query.has('at') ? new Date(Number(query.get('at'))) : undefined,
-		profile: query.get('profile') ?? id.fragment === 'profiles',
-	};
-
-	switch (obj.kind) {
-		case 'test':
-		case 'benchmark':
-		case 'example':
-		case 'fuzz':
-			if (!obj.name) throw new Error('Invalid test ID: missing name');
-	}
-
-	return obj;
 }

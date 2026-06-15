@@ -21,6 +21,7 @@ import {
 	ProgressLocation,
 	ThemeIcon,
 	QuickPickItem,
+	env,
 } from 'vscode';
 import { GoExtensionAPI } from './vscode-go';
 import { killProcessTree } from './utils/processUtils';
@@ -145,9 +146,18 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 
 					try {
 						const {
-							Listen: { IP, Port },
-						} = JSON.parse(stdout);
-						resolve(`http://${IP.includes(':') ? `[${IP}]` : IP}:${Port}`);
+							Listen: { Port },
+						} = JSON.parse(stdout) as {
+							// IP is provided, but we're not currently using it
+							// (see below).
+							Listen: { IP: string; Port: string };
+						};
+
+						// We have to assume VSCode will handle port forwarding.
+						// And while it can handle IPv6 listeners, it only
+						// actually forwards IPv4 requests, so sending a request
+						// to an IPv6 address won't work.
+						resolve(`http://localhost:${Port}`);
 					} catch (error) {
 						killProcessTree(proc);
 						reject(error);
@@ -165,7 +175,10 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 				});
 			});
 
-			return new ProfileDocument(this, uri, proc, server);
+			// If we're running in a remote extension host, we can't just use
+			// `server` as is, we need to convert it to an external URI.
+			const serverAsExternal = await env.asExternalUri(Uri.parse(server));
+			return new ProfileDocument(this, uri, proc, serverAsExternal);
 		} catch (error) {
 			return new ErrorDocument(uri, `${error}`);
 		}
@@ -330,16 +343,16 @@ class ProfileDocument {
 		return this.#active;
 	}
 
-	readonly #provider: ProfileEditorProvider;
-	readonly uri: Uri;
-	readonly #server: string;
-	readonly #proc: ChildProcess;
+	readonly #provider;
+	readonly uri;
+	readonly #proc;
+	readonly #server;
 	readonly #subscriptions: Disposable[] = [];
 
 	#hovered: HoverEvent = { event: 'hovered' };
 	#panel?: WebviewPanel;
 
-	constructor(provider: ProfileEditorProvider, uri: Uri, proc: ChildProcess, server: string) {
+	constructor(provider: ProfileEditorProvider, uri: Uri, proc: ChildProcess, server: Uri) {
 		this.#provider = provider;
 		this.uri = uri;
 		this.#proc = proc;

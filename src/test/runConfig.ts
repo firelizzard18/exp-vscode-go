@@ -10,8 +10,8 @@ import {
 	TestTag,
 	type window,
 } from 'vscode';
-import { makeProfileTypeSet } from './profile';
 import { GoLaunchRequest } from '../vscode-go';
+import { ProfileType } from './profiles';
 
 type ConfigureArgs = Pick<typeof window, 'showQuickPick'>;
 
@@ -26,11 +26,8 @@ export class RunConfig {
 	static readonly #memento = 'runnerSettings';
 
 	readonly settings = {
-		profile: makeProfileTypeSet(),
-		coverageScope: 'module',
-	} as {
-		readonly profile: ReturnType<typeof makeProfileTypeSet>;
-		coverageScope: CoverageScope;
+		profile: ProfileType.all,
+		coverageScope: 'module' as CoverageScope,
 	};
 
 	readonly #context: Context;

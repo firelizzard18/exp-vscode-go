@@ -4,9 +4,48 @@ import { RelationMap } from '../utils/map';
 import path from 'node:path';
 import { WorkspaceConfig } from './workspaceConfig';
 import { WeakMapWithDefault } from '../utils/map';
-import { ProfileContainer, ProfileType } from './profile';
-import { Module, Package, Workspace, DynamicTestCase, GoTestItem, TestCase, findParentTestCase } from './item';
+import { CapturedProfile, ProfileTracker, ProfileType } from './profiles';
+import {
+	Module,
+	Package,
+	Workspace,
+	DynamicTestCase,
+	GoTestItem,
+	TestCase,
+	findParentTestCase,
+	isTestItem,
+} from './item';
 import { ModelUpdateEvent } from './itemResolver';
+import moment from 'moment';
+
+export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
+
+export class ProfileContainer {
+	readonly kind = 'profile-container';
+
+	constructor(public readonly parent: GoTestItem) {}
+}
+
+export class ProfileSet {
+	readonly kind = 'profile-set';
+
+	constructor(
+		public readonly parent: ProfileContainer,
+		public readonly time: Date,
+	) {}
+}
+
+export class ProfileItem {
+	readonly kind = 'profile';
+	readonly uri;
+
+	constructor(
+		public readonly parent: ProfileSet,
+		public readonly profile: CapturedProfile,
+	) {
+		this.uri = profile.file;
+	}
+}
 
 export class GoTestItemPresenter {
 	readonly kind = '(root)';
@@ -19,7 +58,7 @@ export class GoTestItemPresenter {
 	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
 		() => new RelationMap(),
 	);
-	readonly #profiles = new WeakMapWithDefault<GoTestItem, ProfileContainer>((x) => new ProfileContainer(x));
+	readonly #profiles = new ProfileTracker();
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
 	constructor(config: WorkspaceConfig) {
@@ -30,7 +69,7 @@ export class GoTestItemPresenter {
 		this.#requested.add(item);
 	}
 
-	labelFor(item: GoTestItem) {
+	labelFor(item: Presentable) {
 		switch (item.kind) {
 			case 'workspace':
 				return `${item.ws.name} (workspace)`;
@@ -68,15 +107,23 @@ export class GoTestItemPresenter {
 			case 'profile-container':
 				return 'Profiles';
 
-			case 'profile-set':
-				return item.label;
+			case 'profile-set': {
+				const now = new Date();
+				if (now.getFullYear() !== item.time.getFullYear()) {
+					return moment(item.time).format('YYYY-MM-DD HH:mm:ss');
+				}
+				if (now.getMonth() !== item.time.getMonth() || now.getDate() !== item.time.getDate()) {
+					return moment(item.time).format('MM-DD HH:mm:ss');
+				}
+				return moment(item.time).format('HH:mm:ss');
+			}
 
 			case 'profile':
-				return item.type.label;
+				return item.profile.type.label;
 		}
 	}
 
-	getParent(item: GoTestItem): GoTestItem | undefined {
+	getParent(item: Presentable): Presentable | undefined {
 		switch (item.kind) {
 			case 'workspace':
 			case 'module':
@@ -121,21 +168,29 @@ export class GoTestItemPresenter {
 		}
 	}
 
-	hasChildren(item: GoTestItem) {
+	hasChildren(item: Presentable): 'none' | 'lazy' | 'eager' {
 		switch (item.kind) {
 			case 'workspace':
 			case 'module':
 			case 'package':
-			case 'file':
-				return true;
+				// Resolve children lazily (since it might require calling
+				// gopls).
+				return 'lazy';
+
 			case 'profile':
-				return false;
+				// Profiles do not have children.
+				return 'none';
+
 			default:
-				return [...this.getChildren(item)].length > 0;
+				// Resolve children eagerly (since these should be static).
+				for (const _ of this.getChildren(item)) {
+					return 'eager';
+				}
+				return 'none';
 		}
 	}
 
-	*getChildren(item?: GoTestItem | null): Iterable<GoTestItem, void, void> {
+	*getChildren(item?: Presentable | null): Iterable<Presentable, void, void> {
 		if (!item) {
 			for (const ws of this.workspaces) {
 				// If the workspace has discovery disabled and has _not_
@@ -158,10 +213,10 @@ export class GoTestItemPresenter {
 		}
 
 		// If the item has a non-empty profile container, include it.
-		if (this.#profiles.has(item)) {
+		if (isTestItem(item) && this.#profiles.has(item)) {
 			const profiles = this.#profiles.get(item);
-			if (this.hasChildren(profiles)) {
-				yield profiles;
+			if (profiles.length > 0) {
+				yield new ProfileContainer(item);
 			}
 		}
 
@@ -224,19 +279,25 @@ export class GoTestItemPresenter {
 			}
 
 			case 'profile-container':
-				// Return all profile sets that contain something.
-				for (const profile of item.profiles.values()) {
-					if (this.hasChildren(profile)) {
-						yield profile;
-					}
+				// Create a profile set for each unique time.
+				const profiles = this.#profiles.get(item.parent);
+				for (const time of new Set(profiles.map((x) => x.time))) {
+					yield new ProfileSet(item, time);
 				}
 				return;
 
 			case 'profile-set':
-				yield* item.profiles;
+				// Return a profile item for each profile that belongs to the
+				// set (that has the same time).
+				for (const profile of this.#profiles.get(item.parent.parent)) {
+					if (profile.time === item.time) {
+						yield new ProfileItem(item, profile);
+					}
+				}
 				return;
 
 			case 'profile':
+				// Profiles do not have children.
 				return;
 
 			default: {
@@ -251,16 +312,35 @@ export class GoTestItemPresenter {
 		}
 	}
 
-	getProfiles(scope: GoTestItem) {
-		// Attaching profiles to dynamic tests cases is unsafe.
-		while (scope instanceof DynamicTestCase) {
-			scope = this.getParent(scope)!;
-		}
-		return this.#profiles.get(scope);
+	getProfiles(scope: Presentable) {
+		return this.#profiles.get(this.#resolveProfilesParent(scope));
 	}
 
-	addProfile(scope: GoTestItem, dir: Uri, type: ProfileType, time: Date) {
-		return this.getProfiles(scope).addProfile(dir, type, time);
+	addProfile(scope: Presentable, dir: Uri, type: ProfileType, time: Date) {
+		scope = this.#resolveProfilesParent(scope);
+		const profile = new CapturedProfile(scope, type, time, dir);
+		this.#profiles.add(profile);
+		return profile;
+	}
+
+	removeProfile(profile: CapturedProfile) {
+		this.#profiles.remove(profile);
+	}
+
+	#resolveProfilesParent(scope: Presentable) {
+		// Don't attach profiles to profiles (this probably shouldn't ever
+		// happen) or to dynamic test cases (since they are destroyed and
+		// recreated on each run).
+		while (
+			scope instanceof DynamicTestCase ||
+			scope.kind === 'profile' ||
+			scope.kind === 'profile-set' ||
+			scope.kind === 'profile-container'
+		) {
+			scope = this.getParent(scope)!;
+		}
+
+		return scope;
 	}
 
 	didUpdate(updates: ModelUpdateEvent[]) {
@@ -294,4 +374,58 @@ export class GoTestItemPresenter {
 			this.#testRel.get(pkg).replace(tests.map((test) => [test, findParentTestCase(pkg, test.name)]));
 		}
 	}
+}
+
+export function idFor(item: Presentable): Uri {
+	switch (item.kind) {
+		case 'workspace':
+		case 'module':
+		case 'package':
+		case 'file':
+			return item.uri.with({ query: `kind=${item.kind}` });
+
+		case 'profile-container':
+			return idFor(item.parent).with({ fragment: 'profiles' });
+
+		case 'profile-set': {
+			const base = idFor(item.parent);
+			return base.with({ query: `${base.query}&at=${item.time.getTime()}` });
+		}
+
+		case 'profile': {
+			const base = idFor(item.parent);
+			return base.with({ query: `${base.query}&profile=${item.profile.type.id}` });
+		}
+
+		default:
+			return item.uri.with({ query: `kind=${item.kind}&name=${item.name}` });
+	}
+}
+
+export function parseID(id: string | Uri) {
+	if (typeof id === 'string') {
+		id = Uri.parse(id);
+	}
+	const query = new URLSearchParams(id.query);
+	if (!query.has('kind')) {
+		throw new Error('Invalid ID');
+	}
+
+	const obj = {
+		path: id.path,
+		kind: query.get('kind')! as Exclude<GoTestItem['kind'], 'profile-container' | 'profile-set' | 'profile'>,
+		name: query.get('name') ?? undefined,
+		at: query.has('at') ? new Date(Number(query.get('at'))) : undefined,
+		profile: query.get('profile') ?? id.fragment === 'profiles',
+	};
+
+	switch (obj.kind) {
+		case 'test':
+		case 'benchmark':
+		case 'example':
+		case 'fuzz':
+			if (!obj.name) throw new Error('Invalid test ID: missing name');
+	}
+
+	return obj;
 }

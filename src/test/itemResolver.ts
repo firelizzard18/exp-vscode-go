@@ -6,22 +6,29 @@ import {
 	DynamicTestCase,
 	findParentTestCase,
 	GoTestItem,
-	idFor,
+	isTestItem,
 	Module,
 	Package,
-	parseID,
 	StaticTestCase,
 	TestCase,
 	TestFile,
 	Workspace,
 } from './item';
-import { GoTestItemPresenter } from './itemPresenter';
+import {
+	GoTestItemPresenter,
+	idFor,
+	parseID,
+	Presentable,
+	ProfileContainer,
+	ProfileItem,
+	ProfileSet,
+} from './itemPresenter';
 import { ItemEvent } from './itemSet';
 import { pathContains } from '../utils/util';
 import { PackageTestRun } from './pkgTestRun';
 import { TestEvent } from './testEvent';
 import { MapWithDefault } from '../utils/map';
-import { ProfileType } from './profile';
+import { ProfileType } from './profiles';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
@@ -33,7 +40,7 @@ export class GoTestItemResolver {
 	readonly #config;
 	readonly #presenter;
 	readonly #ctrl;
-	readonly #didLoadChildren = new WeakSet<GoTestItem>();
+	readonly #didLoadChildren = new WeakSet<Presentable>();
 
 	#didLoadRoots = false;
 
@@ -206,13 +213,13 @@ export class GoTestItemResolver {
 		// Determine if `item` is a data or view model item. If it's the latter,
 		// find the data model item. If there is no data model item, delete the
 		// view model item.
-		let go: GoTestItem | undefined;
+		let go: Presentable | undefined;
 		let view: TestItem | undefined;
 		if ('kind' in item) {
 			go = item;
 		} else {
 			view = item;
-			go = this.#getGoItem(view);
+			go = this.#getPresentable(view);
 			if (!go) {
 				this.#delete(view);
 				return;
@@ -245,7 +252,7 @@ export class GoTestItemResolver {
 	 * **This must not be async.** This method being async would cause serious
 	 * performance issues for large projects.
 	 */
-	#updateViewModel(go: GoTestItem, view: TestItem | undefined, options: { recurse?: boolean }) {
+	#updateViewModel(go: Presentable, view: TestItem | undefined, options: { recurse?: boolean }) {
 		// Resolve or create the view item.
 		view = view ?? this.#getViewItem(go) ?? this.#buildViewItem(go);
 
@@ -253,17 +260,17 @@ export class GoTestItemResolver {
 		if (go instanceof StaticTestCase) {
 			view.range = go.range;
 		}
-		view.canResolveChildren = this.#presenter.hasChildren(go);
+
+		// Only set canResolveChildren if the item has children that should be
+		// lazily resolved. Exit if there are no children.
+		const hasChildren = this.#presenter.hasChildren(go);
+		view.canResolveChildren = hasChildren === 'lazy';
+		if (hasChildren === 'none') return view;
 
 		// Should we update children? If the item is a workspace, module, or
 		// package that has not yet had its children loaded, do not update them.
-		switch (go.kind) {
-			case 'workspace':
-			case 'module':
-			case 'package':
-				if (!this.#didLoadChildren.has(go)) {
-					return view;
-				}
+		if (hasChildren === 'lazy' && !this.#didLoadChildren.has(go)) {
+			return view;
 		}
 
 		// Delete unwanted items.
@@ -293,7 +300,7 @@ export class GoTestItemResolver {
 		return view;
 	}
 
-	#buildViewItem(go: GoTestItem) {
+	#buildViewItem(go: Presentable) {
 		// Push the ancestry chain.
 		const stack = [go];
 		for (;;) {
@@ -318,7 +325,7 @@ export class GoTestItemResolver {
 			items = view.children;
 		}
 
-		function create(this: GoTestItemResolver, go: GoTestItem, items: TestItemCollection) {
+		function create(this: GoTestItemResolver, go: Presentable, items: TestItemCollection) {
 			// Check for an existing item.
 			const id = `${idFor(go)}`;
 			let view = items.get(id);
@@ -330,9 +337,12 @@ export class GoTestItemResolver {
 			// Add it to the parent's children.
 			items.add(view);
 
-			// Other metadata.
-			view.canResolveChildren = this.#presenter.hasChildren(go);
+			// Only set canResolveChildren if the item has children that should
+			// be lazily resolved.
+			const hasChildren = this.#presenter.hasChildren(go);
+			view.canResolveChildren = hasChildren === 'lazy';
 
+			// Other metadata.
 			if (go instanceof StaticTestCase) {
 				view.range = go.range;
 			}
@@ -377,7 +387,7 @@ export class GoTestItemResolver {
 			// The request specifies view items so convert those to Go items.
 			// Silently ignore requests to execute test items that don't have a
 			// Go item.
-			include = new Set(rq.include.map((x) => this.#getGoItem(x.id)).filter((x) => !!x));
+			include = new Set(rq.include.map((x) => this.#getGoItem(x.id)).filter((x) => !!x && isTestItem(x)));
 		} else {
 			// If include is not specified, include all roots.
 			const workspaces = [...this.#presenter.workspaces];
@@ -451,8 +461,45 @@ export class GoTestItemResolver {
 			rq = new TestRunRequest(rq.map((x) => this.#getViewItem(x) ?? this.#buildViewItem(x)));
 		}
 
-		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x));
+		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x && isTestItem(x)));
 		return new GoTestItemResolver.RunRequest(this, rq, packages, include, excludeItems);
+	}
+
+	#getPresentable(view: TestItem | Uri): Presentable | undefined {
+		const uri = view instanceof Uri ? view : Uri.parse(view.id);
+		const id = parseID(uri);
+		if (!id.profile) return this.#getGoItem(view);
+
+		// If we're dealing with a profile, synthesize the relevant presentable.
+		if (typeof id.profile === 'string') {
+			const query = new URLSearchParams(uri.query);
+			query.delete('profile');
+
+			const parent = this.#getPresentable(uri.with({ query: `${query}` }));
+			if (!(parent instanceof ProfileSet)) return;
+
+			const profile = this.#presenter
+				.getProfiles(parent.parent.parent)
+				.find((x) => x.type.id === id.profile && x.time.getTime() === id.at?.getTime());
+			if (!profile) return;
+
+			return new ProfileItem(parent, profile);
+		}
+
+		if (id.at) {
+			const query = new URLSearchParams(uri.query);
+			query.delete('at');
+
+			const parent = this.#getPresentable(uri.with({ query: `${query}` }));
+			if (!(parent instanceof ProfileContainer)) return;
+
+			return new ProfileSet(parent, id.at);
+		}
+
+		const parent = this.#getGoItem(uri.with({ fragment: '' }));
+		if (!parent) return;
+
+		return new ProfileContainer(parent);
 	}
 
 	#getGoItem(item: string | Uri | TestItem): GoTestItem | undefined {
@@ -465,29 +512,8 @@ export class GoTestItemResolver {
 		// Parse the ID.
 		const id = parseID(item);
 
-		// If it's a profile, find the containing item.
-		if (id.profile) {
-			const query = new URLSearchParams(item.query);
-			query.delete('profile');
-
-			const parent = this.#getGoItem(
-				id.profile === true ? item.with({ fragment: '' }) : item.with({ query: `${query}` }),
-			);
-			if (!parent) return;
-
-			const container = this.#presenter.getProfiles(parent);
-			if (!container || !id.at) return container;
-
-			const set = container.profiles.get(id.at.getTime());
-			if (!set || typeof id.profile === 'boolean') return set;
-
-			for (const profile of set.profiles) {
-				if (profile.type.id === id.profile) {
-					return profile;
-				}
-			}
-			return;
-		}
+		// Profiles are not Go test items.
+		if (id.profile) return;
 
 		// Create a URI with the query and fragment removed.
 		const uri = Uri.from({
@@ -536,7 +562,7 @@ export class GoTestItemResolver {
 		}
 	}
 
-	#getViewItem(item: GoTestItem): TestItem | undefined {
+	#getViewItem(item: Presentable): TestItem | undefined {
 		// If the item has no (view) parent, check the root.
 		const parent = this.#presenter.getParent(item);
 		if (!parent) {
@@ -795,19 +821,25 @@ export class GoTestItemResolver {
 		attachProfile(run: PackageTestRun, dir: Uri, type: ProfileType, time: Date) {
 			// Where should we attach the profiles? If there is a single
 			// item included, attach to it, otherwise attach to the package.
-			// If the target item is a dynamic test case, the presenter will
-			// walk up the chain until it reaches a static test case, to
-			// avoid attaching profiles to a dynamic test case.
-			const scope = run.tests.size === 1 ? [...run.tests][0][0] : run.goItem;
+			let scope: GoTestItem = run.tests.size === 1 ? [...run.tests][0][0] : run.goItem;
 			const profile = this.#resolver.#presenter.addProfile(scope, dir, type, time);
 
-			// Update the view model.
-			this.#resolver.#updateViewModel(profile, undefined, {});
+			// The presenter may decide to attach the profile to something other
+			// than the scope we passed it, so we need to update the scope. For
+			// example, if the target item is a dynamic test case, the presenter
+			// will walk up the chain until it reaches a static test case, since
+			// dynamic test cases get deleted each time the parent test is run.
+			scope = profile.item;
+
+			// Update the view model. Because the presentation items for
+			// profiles don't actually exist in the data model, to make them
+			// appear we need to recursively update the scope and it's children.
+			this.#resolver.#updateViewModel(scope, undefined, { recurse: true });
 
 			// Remove when the run is disposed.
 			run.run.onDidDispose?.(async () => {
-				profile.remove();
-				this.#resolver.#updateViewModel(profile.parent.parent.parent, undefined, { recurse: true });
+				this.#resolver.#presenter.removeProfile(profile);
+				this.#resolver.#updateViewModel(scope, undefined, { recurse: true });
 			});
 			return profile;
 		}
