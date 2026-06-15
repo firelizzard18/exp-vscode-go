@@ -117,16 +117,32 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 		token: CancellationToken,
 	): Promise<ProfileDocument | ErrorDocument> {
 		const { binPath } = this.#go.settings.getExecutionCommand('vscgo') || {};
-		if (!binPath) {
-			return new ErrorDocument(uri, 'Cannot locate vscgo');
+		if (!binPath || !path.isAbsolute(binPath)) {
+			installVSCGo(uri).catch((err) => {
+				console.log('Failed to install vscgo:', err);
+			});
+			return new ErrorDocument(uri, 'vscgo is not installed');
 		}
 
 		// Check the version
-		const { stdout: s } = await promisify(execFile)(binPath, ['version']);
-		const version = s.split('\n')[0]?.split(':')[1]?.trim();
-		const semver = SemVer.parse(version);
-		if (!(version === '(devel)' || (semver && semver.cmp(vscgoCanServePprof) > 0))) {
-			return new ErrorDocument(uri, `This feature is not available with vscgo ${version}`);
+		try {
+			const { stdout: s } = await promisify(execFile)(binPath, ['version']);
+			const version = s.split('\n')[0]?.split(':')[1]?.trim();
+			const semver = SemVer.parse(version);
+			if (!(version === '(devel)' || (semver && semver.cmp(vscgoCanServePprof) > 0))) {
+				return new ErrorDocument(uri, `This feature is not available with vscode-go ${version}`);
+			}
+		} catch (error) {
+			if (!error || typeof error !== 'object' || !('code' in error) || typeof error.code !== 'string') {
+				return new ErrorDocument(uri, `An unexpected error occurred: ${error}`);
+			}
+
+			switch (error.code) {
+				case 'ENOENT':
+					return new ErrorDocument(uri, 'vscgo is not installed');
+			}
+
+			return new ErrorDocument(uri, `An unexpected error occurred: ${error}`);
 		}
 
 		const proc = spawn(binPath, ['serve-pprof', ':', uri.fsPath]);
@@ -190,6 +206,40 @@ export class ProfileEditorProvider implements CustomEditorProvider<ProfileDocume
 }
 
 let captureNum = 1;
+
+async function installVSCGo(document: Uri) {
+	const answer = await window.showWarningMessage('vscgo is required to view profiles. Install it now?', 'Install');
+	if (!answer) return;
+
+	// Ideally we'd just say "install vscgo" and vscode-go would pick up the
+	// import and module path from it's own list, but it doesn't support that
+	// today.
+	await commands.executeCommand('go.tools.install', [
+		{
+			name: 'vscgo',
+			importPath: 'github.com/golang/vscode-go/vscgo',
+			modulePath: 'github.com/golang/vscode-go/vscgo',
+		},
+	]);
+
+	// Attempt to close and reopen the editor to force it to refresh.
+	//
+	// TODO: I should probably merge the two document types so I can reload
+	// without this nonsense.
+	for (const group of window.tabGroups.all) {
+		for (const tab of group.tabs) {
+			if (
+				tab.input &&
+				typeof tab.input === 'object' &&
+				'uri' in tab.input &&
+				`${tab.input.uri}` === `${document}`
+			) {
+				await window.tabGroups.close(tab);
+				await commands.executeCommand('vscode.openWith', document, 'goExp.pprof', group.viewColumn);
+			}
+		}
+	}
+}
 
 export async function captureProfile(state: Memento) {
 	const s = await window.showInputBox({
