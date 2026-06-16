@@ -114,48 +114,52 @@ export class GoTestItemPresenter {
 	}
 
 	getParent(item: Presentable): Presentable | undefined {
+		const config = this.#config.for(item);
+		let result: Presentable;
 		switch (item.kind) {
 			case 'workspace':
 			case 'module':
-				// Modules are root items in the view.
+				// Modules (and workspaces) are root items in the view.
 				return undefined;
 
 			case 'package': {
-				const config = this.#config.for(item);
 				if (!config.nestPackages.get()) {
 					return item.parent;
 				}
 
 				const parent = this.#pkgRel.get(item.parent).getParent(item);
-				if (!parent) return item.parent;
-				if (parent.isRootPkg) return parent.parent;
-				return parent;
+				result = parent ?? item.parent;
+				break;
 			}
 
 			case 'file': {
-				if (item.package.isRootPkg) {
-					return this.getParent(item.package);
-				}
-				return item.package;
+				result = item.package;
+				break;
 			}
 
 			case 'profile-container':
 			case 'profile-set':
 			case 'profile':
-				return item.parent;
+				result = item.parent;
+				break;
 
 			default: {
-				const config = this.#config.for(item);
 				const parentTest = config.nestSubtests.get() && this.#testRel.get(item.file.package).getParent(item);
 				if (parentTest) {
 					return parentTest;
 				}
-				if (config.showFiles.get()) {
-					return item.file;
-				}
-				return this.getParent(item.file);
+
+				result = item.file;
+				break;
 			}
 		}
+
+		// If the parent is a root package, or it's a file and we're not showing
+		// files, resolve to the grandparent instead.
+		if ((result.kind === 'package' && result.isRootPkg) || (result.kind === 'file' && !config.showFiles.get())) {
+			return this.getParent(result);
+		}
+		return result;
 	}
 
 	hasChildren(item: Presentable): 'none' | 'lazy' | 'eager' {

@@ -251,7 +251,16 @@ export class GoTestItemResolver {
 	 * **This must not be async.** This method being async would cause serious
 	 * performance issues for large projects.
 	 */
-	#updateViewModel(go: Presentable, view: TestItem | undefined, options: { recurse?: boolean }) {
+	#updateViewModel(
+		go: Presentable,
+		view: TestItem | undefined,
+		options: { recurse?: boolean },
+	): TestItem | undefined {
+		// Root packages should be transparent to the presentation layer.
+		if (go.kind === 'package' && go.isRootPkg) {
+			return this.#updateViewModel(go.parent, undefined, options);
+		}
+
 		// Resolve or create the view item.
 		view = view ?? this.#getViewItem(go) ?? this.#buildViewItem(go);
 
@@ -881,6 +890,9 @@ export class GoTestItemResolver {
 		}
 
 		#get(item: GoTestItem) {
+			if (item.kind === 'package' && item.isRootPkg) {
+				item = item.parent;
+			}
 			return this.#resolver.#getViewItem(item) ?? this.#resolver.#buildViewItem(item);
 		}
 

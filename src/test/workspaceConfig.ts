@@ -4,6 +4,7 @@ import { Minimatch } from 'minimatch';
 import { Flags } from './utils';
 import { resolvePath, substituteEnv } from '../utils/util';
 import { GoTestItem, Workspace } from './model';
+import { Presentable } from './itemPresenter';
 
 const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 
@@ -151,7 +152,7 @@ export class WorkspaceConfig extends ConfigSet {
 	}
 
 	/** Returns a {@link TestConfig} for the workspace of the given item. */
-	for(item: GoTestItem) {
+	for(item: Presentable): ConfigSet {
 		for (;;) {
 			switch (item.kind) {
 				case 'workspace':
@@ -166,6 +167,10 @@ export class WorkspaceConfig extends ConfigSet {
 				case 'file':
 					item = item.package;
 					continue;
+				case 'profile-container':
+				case 'profile-set':
+				case 'profile':
+					return this.for(item.parent);
 				default:
 					item = item.file;
 					continue;
