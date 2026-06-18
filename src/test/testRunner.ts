@@ -10,6 +10,7 @@ import { ResolvedTestRunRequest, shouldRunBenchmarks } from './itemResolver';
 import { PackageTestRun } from './pkgTestRun';
 import { WorkspaceConfig } from './workspaceConfig';
 import { TestCase } from './model';
+import { TestRunLog } from './runLog';
 
 export class TestRunner {
 	readonly #context;
@@ -146,7 +147,8 @@ export class TestRunner {
 		}
 
 		const cfg = this.#wsConfig.for(pkg.goItem);
-		const r = await this.#spawn(this.#context, pkg, flags, cfg.testFlags.get(), [], {
+		const log = new TestRunLog(pkg.run, pkg.testItem, (event) => rq.testForEvent(pkg.goItem, pkg.run, event));
+		const r = await this.#spawn(this.#context, pkg.run, pkg.testItem.uri!, log, flags, cfg.testFlags.get(), [], {
 			mode: 'test',
 			cwd: pkg.goItem.uri.fsPath,
 			env: cfg.testEnvVars.get(),
@@ -155,12 +157,12 @@ export class TestRunner {
 			stdout: (s: string | null) => {
 				if (!s) return;
 				this.#context.output.debug(`stdout> ${s}`);
-				pkg.onStdout(s);
+				log.onStdout(s);
 			},
 			stderr: (s: string | null) => {
 				if (!s) return;
 				this.#context.output.debug(`stderr> ${s}`);
-				pkg.onStderr(s);
+				log.onStderr(s);
 			},
 		}).catch((error) => ({ error }));
 
@@ -176,7 +178,7 @@ export class TestRunner {
 			return;
 		}
 
-		if (pkg.buildFailed) {
+		if (log.buildFailed) {
 			// The run has already been marked as failed
 			return;
 		}

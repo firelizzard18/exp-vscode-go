@@ -821,7 +821,6 @@ export class GoTestItemResolver {
 					testItem: this.#get(pkg),
 					tests: include,
 					exclude,
-					testFor: (event) => this.#testForEvent(pkg, run, event),
 				});
 			}
 		}
@@ -896,7 +895,7 @@ export class GoTestItemResolver {
 			return this.#resolver.#getViewItem(item) ?? this.#resolver.#buildViewItem(item);
 		}
 
-		#testForEvent(pkg: Package, run: TestRun, event: TestEvent | Location) {
+		testForEvent(pkg: Package, run: TestRun, event: TestEvent | Location) {
 			// If the event is a location, find the file and find a test that
 			// contains the specified range.
 			if (event instanceof Location) {

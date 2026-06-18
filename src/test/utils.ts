@@ -18,6 +18,7 @@ import {
 	TestItem,
 	TestRun,
 	Uri,
+	WorkspaceFolder,
 } from 'vscode';
 import { killProcessTree } from '../utils/processUtils';
 import { Context, reportError } from '../utils/testing';
@@ -51,16 +52,16 @@ export interface ProcessResult {
 
 export type Flags = { [key: string]: string | boolean };
 
-export interface TestRunContext {
-	testItem: TestItem;
-	run: TestRun;
+export interface TestRunLogContext {
 	append(output: string, location?: Location, test?: TestItem): void;
 }
 
 export interface Spawner {
 	(
 		ctx: Context,
-		run: TestRunContext,
+		run: TestRun,
+		location: Uri,
+		log: TestRunLogContext,
 		flags: Flags,
 		userFlags: Flags,
 		args: string[],
@@ -68,14 +69,7 @@ export interface Spawner {
 	): Promise<ProcessResult>;
 }
 
-export function spawnProcess(
-	context: Context,
-	run: TestRunContext,
-	flags: Flags,
-	userFlags: Flags,
-	args: string[],
-	options: SpawnOptions,
-) {
+export const spawnProcess: Spawner = (context, run, loc, log, flags, userFlags, args, options) => {
 	return new Promise<ProcessResult>((resolve) => {
 		const { mode, stdout, stderr, cancel, env, ...rest } = options;
 		if (cancel.isCancellationRequested) {
@@ -83,7 +77,7 @@ export function spawnProcess(
 			return;
 		}
 
-		const { binPath } = context.go.settings.getExecutionCommand('go', run.testItem.uri!) || {};
+		const { binPath } = context.go.settings.getExecutionCommand('go', loc) || {};
 		if (!binPath) {
 			throw new Error(`Failed to run "go ${mode}" as the "go" binary cannot be found in either GOROOT or PATH`);
 		}
@@ -98,13 +92,13 @@ export function spawnProcess(
 
 		if (mode === 'test') {
 			flags.json = true;
-			fixTestFlags(run, flags, userFlags);
+			fixTestFlags(log, flags, userFlags);
 		}
 
-		run.append(
-			`$ cd ${run.testItem.uri!.fsPath}\n$ go ${mode} ${[...prettyPrintFlags(context, run, flags, userFlags), ...args].join(' ')}\n\n`,
+		const ws = context.workspace.getWorkspaceFolder(loc);
+		log.append(
+			`$ cd ${loc.fsPath}\n$ go ${mode} ${[...prettyPrintFlags(ws, flags, userFlags), ...args].join(' ')}\n\n`,
 			undefined,
-			run.testItem,
 		);
 
 		const tp = cp.spawn(binPath, [mode, ...flags2args(flags), ...flags2args(userFlags), ...args], {
@@ -125,7 +119,7 @@ export function spawnProcess(
 			resolve({ code, signal });
 		});
 	});
-}
+};
 
 let debugSessionID = 0;
 const debugSessionOutput = new Map<string, Pick<SpawnOptions, 'stdout' | 'stderr'>>();
@@ -166,21 +160,14 @@ debug?.registerDebugAdapterTrackerFactory('go', {
  * @see https://github.com/microsoft/vscode/issues/104208
  * @see https://github.com/microsoft/vscode/issues/108145
  */
-export async function debugProcess(
-	ctx: Context,
-	run: TestRunContext,
-	flags: Flags,
-	userFlags: Flags,
-	args: string[],
-	spawnOptions: SpawnOptions,
-): Promise<ProcessResult> {
+export const debugProcess: Spawner = async (ctx, run, loc, log, flags, userFlags, args, spawnOptions) => {
 	const mode = spawnOptions.mode === 'run' ? 'debug' : spawnOptions.mode;
 	const { cancel, cwd, env, stdout, stderr } = spawnOptions;
 	if (cancel.isCancellationRequested) {
 		return { code: null, signal: null };
 	}
 
-	const { binPath } = ctx.go.settings.getExecutionCommand('go', run.testItem.uri!) || {};
+	const { binPath } = ctx.go.settings.getExecutionCommand('go', loc) || {};
 	if (!binPath) {
 		throw new Error('Failed to run "go test" as the "go" binary cannot be found in either GOROOT or PATH');
 	}
@@ -198,7 +185,7 @@ export async function debugProcess(
 				return;
 			}
 			resolve(s);
-			event(run.run.token.onCancellationRequested, () => debug.stopDebugging(s));
+			event(run.token.onCancellationRequested, () => debug.stopDebugging(s));
 			event(cancel.onCancellationRequested, () => debug.stopDebugging(s));
 		}),
 	);
@@ -245,7 +232,7 @@ export async function debugProcess(
 	const testFlags: Flags = {};
 	const buildFlags: Flags = {};
 	if (mode === 'test') {
-		fixTestFlags(run, flags, userFlags);
+		fixTestFlags(log, flags, userFlags);
 		testFlags['test.v'] = true; // TODO: use 'test2json' and ignore -v and -test.v user flags
 	}
 
@@ -275,14 +262,12 @@ export async function debugProcess(
 		throw new Error('No package to run!');
 	}
 
-	const prettyBuildFlags = prettyPrintFlags(ctx, run, buildFlags).join(' ');
-	run.append(
-		`$ cd ${cwd}\n$ dlv ${mode} ${prettyBuildFlags && `--build-flags "${prettyBuildFlags}" `}${mode === 'debug' ? program + ' ' : ''}-- ${[...prettyPrintFlags(ctx, run, testFlags), ...args].join(' ')}\n\n`,
-		undefined,
-		run.testItem,
+	const ws = ctx.workspace.getWorkspaceFolder(loc);
+	const prettyBuildFlags = prettyPrintFlags(ws, buildFlags).join(' ');
+	log.append(
+		`$ cd ${cwd}\n$ dlv ${mode} ${prettyBuildFlags && `--build-flags "${prettyBuildFlags}" `}${mode === 'debug' ? program + ' ' : ''}-- ${[...prettyPrintFlags(ws, testFlags), ...args].join(' ')}\n\n`,
 	);
 
-	const ws = ctx.workspace.getWorkspaceFolder(Uri.file(cwd));
 	const config: DebugConfiguration = {
 		...(spawnOptions.debug || {}),
 		sessionID: id,
@@ -297,7 +282,7 @@ export async function debugProcess(
 	} satisfies GoLaunchRequest;
 
 	try {
-		if (!(await debug.startDebugging(ws, config, { testRun: run.run }))) {
+		if (!(await debug.startDebugging(ws, config, { testRun: run }))) {
 			return { code: null, signal: null };
 		}
 		await didStart;
@@ -306,13 +291,13 @@ export async function debugProcess(
 	} finally {
 		subs.forEach((s) => s.dispose());
 	}
-}
+};
 
 function flags2args(flags: Flags) {
 	return Object.entries(flags).map(([k, v]) => (v === true ? `-${k}` : `-${k}=${v}`));
 }
 
-function fixTestFlags(run: TestRunContext, flags: Flags, userFlags: Flags) {
+function fixTestFlags(log: TestRunLogContext, flags: Flags, userFlags: Flags) {
 	// Always use -json (the caller must add this), but don't combine it with -v
 	// because weird things happen (https://github.com/golang/go/issues/70384)
 	delete flags.v;
@@ -320,12 +305,11 @@ function fixTestFlags(run: TestRunContext, flags: Flags, userFlags: Flags) {
 	// Don't change the user's flags but warn them that it might cause
 	// problems
 	if (userFlags.v || userFlags['test.v']) {
-		run.append('!!! Setting -v or -test.v may degrade your experience due to golang/go#70384\n');
+		log.append('!!! Setting -v or -test.v may degrade your experience due to golang/go#70384\n');
 	}
 }
 
-function prettyPrintFlags(context: Context, run: TestRunContext, ...flags: Flags[]) {
-	const ws = context.workspace.getWorkspaceFolder(run.testItem.uri!);
+function prettyPrintFlags(ws: WorkspaceFolder | undefined, ...flags: Flags[]) {
 	const niceFlags: Flags = {};
 	flags.forEach((x) => Object.assign(niceFlags, x));
 	if (ws) {

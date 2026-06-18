@@ -139,11 +139,9 @@ export class GoGenerateManager {
 				const { flags, args } = parse(item.sortText, env);
 				const { code } = await (kind === TestRunProfileKind.Debug ? this.#context.debug : this.#context.spawn)(
 					this.#context,
-					{
-						run,
-						testItem: item,
-						append: (...args) => append(run, ...args),
-					},
+					run,
+					item.uri!,
+					{ append: (...args) => append(run, ...args) },
 					flags,
 					{},
 					args,
