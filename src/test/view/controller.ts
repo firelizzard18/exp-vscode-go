@@ -38,11 +38,8 @@ export class ViewController {
 	readonly #model;
 	readonly #presenter;
 	readonly #ctrl;
-	readonly #didLoadChildren = new WeakSet<Presentable>();
 
 	readonly subscriptions: Disposable[] = [];
-
-	#didLoadRoots = false;
 
 	constructor(
 		context: Context,
@@ -60,7 +57,7 @@ export class ViewController {
 		this.subscriptions.push(
 			model.onDidUpdate((updates) => {
 				// Synchronize the view model.
-const refresh = new Map<Presentable, boolean>();
+				const refresh = new Map<Presentable, boolean>();
 				for (const { item, type } of updates) {
 					if (type === 'removed') {
 						const parent = this.#presenter.getParent(item);
@@ -79,15 +76,15 @@ const refresh = new Map<Presentable, boolean>();
 					if (item instanceof DynamicTestCase) {
 						const viewParent = this.#presenter.getParent(item);
 						if (!viewParent) throw new Error('Internal error');
-refresh.set(viewParent, true);
+						refresh.set(viewParent, true);
 					}
 				}
 
 				// Refresh the view model. TODO: Eliminate duplicates
 				// (parent-and-child refreshes)?
 				for (const [item, recurse] of refresh) {
-						this.#updateViewModel(item, undefined, { recurse });
-									}
+					this.#updateViewModel(item, undefined, { recurse });
+				}
 
 				// Invalidate test results when tests are modified.
 				const tests = updates.filter(
@@ -177,7 +174,7 @@ refresh.set(viewParent, true);
 	): Promise<void> {
 		// Load the roots and update the view model.
 		if (!item) {
-			if (!this.#didLoadRoots && !options.resolve) {
+			if (!this.#didLoad() && !options.resolve) {
 				return;
 			}
 
@@ -206,7 +203,7 @@ refresh.set(viewParent, true);
 		}
 
 		// If it's a Workspace, Module, or Package, load its children.
-		if (options.resolve || this.#didLoadChildren.has(go)) {
+		if (options.resolve || this.#didLoad(go)) {
 			switch (go.kind) {
 				case 'workspace':
 				case 'module':
@@ -254,7 +251,7 @@ refresh.set(viewParent, true);
 
 		// Should we update children? If the item is a workspace, module, or
 		// package that has not yet had its children loaded, do not update them.
-		if (hasChildren === 'lazy' && !this.#didLoadChildren.has(go)) {
+		if (hasChildren === 'lazy' && !this.#didLoad(go)) {
 			return view;
 		}
 
@@ -359,7 +356,7 @@ refresh.set(viewParent, true);
 		const isExcluded = (item: GoTestItem) => exclude.has(`${idFor(item)}`);
 
 		// Ensure roots have been loaded.
-		if (!this.#didLoadRoots) {
+		if (!this.#didLoad()) {
 			await this.updateViewModel(undefined, { resolve: true });
 		}
 
@@ -389,7 +386,7 @@ refresh.set(viewParent, true);
 		// Ensure packages have been loaded. We don't execute roots directly, so
 		// add their packages to the include set.
 		for (const root of roots) {
-			if (!this.#didLoadChildren.has(root)) {
+			if (!this.#didLoad(root)) {
 				await this.updateViewModel(root, { resolve: true });
 			}
 			for (const pkg of root.packages) {
@@ -402,7 +399,7 @@ refresh.set(viewParent, true);
 
 		// Ensure files and tests have been loaded.
 		for (const pkg of packages) {
-			if (!this.#didLoadChildren.has(pkg)) {
+			if (!this.#didLoad(pkg)) {
 				await this.updateViewModel(pkg, { resolve: true });
 			}
 		}
@@ -448,6 +445,22 @@ refresh.set(viewParent, true);
 
 		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x && isTestItem(x)));
 		return new ViewController.RunRequest(this, rq, packages, include, excludeItems);
+	}
+
+	#didLoad(scope?: Presentable) {
+		if (!scope) {
+			return this.#model.workspaces.loaded;
+		}
+		switch (scope.kind) {
+			case 'workspace':
+			case 'module':
+				return scope.packages.loaded;
+			case 'package':
+				return scope.files.loaded;
+			case 'file':
+				return scope.tests.loaded;
+		}
+		return false;
 	}
 
 	#getPresentable(view: TestItem | Uri): Presentable | undefined {
