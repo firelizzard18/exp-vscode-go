@@ -8,6 +8,7 @@ export abstract class TestCase {
 	readonly file;
 	readonly uri;
 	readonly name;
+	abstract readonly range?: Range;
 
 	constructor(file: TestFile, uri: Uri, kind: 'test' | 'benchmark' | 'fuzz' | 'example', name: string) {
 		this.file = file;
@@ -80,13 +81,14 @@ export class StaticTestCase extends TestCase {
 }
 
 export class DynamicTestCase extends TestCase {
+	readonly range: undefined;
+
 	/**
 	 * The {@link TestRun} that created this dynamic test case.
 	 */
-	run;
+	run: TestRun | undefined;
 
-	constructor(parent: TestCase, name: string, run: TestRun) {
+	constructor(parent: TestCase, name: string) {
 		super(parent.file, parent.uri, parent.kind, name);
-		this.run = run;
 	}
 }

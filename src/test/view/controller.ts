@@ -3,7 +3,7 @@ import { MapWithDefault } from '@/utils/map';
 import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
 import path from 'node:path';
-import { Disposable, Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
+import { Disposable, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
 import {
 	DynamicTestCase,
 	GoTestItem,
@@ -18,7 +18,6 @@ import {
 	Workspace,
 } from '../model';
 import { ProfileType } from '../profiles';
-import { TestEvent } from '../run/event';
 import { PackageTestRun } from '../run/pkgTestRun';
 import { WorkspaceConfig } from '../workspaceConfig';
 import {
@@ -60,19 +59,35 @@ export class ViewController {
 
 		this.subscriptions.push(
 			model.onDidUpdate((updates) => {
-				// This replicates logic from updateFile that was removed in the
-				// migration to ModelController.
+				// Synchronize the view model.
+const refresh = new Map<Presentable, boolean>();
 				for (const { item, type } of updates) {
+					if (type === 'removed') {
+						const parent = this.#presenter.getParent(item);
+						if (parent) refresh.set(parent, false);
+						continue;
+					}
+
+					// Update the package (recursively).
 					if (item.kind === 'package') {
-						// Synchronize the view model.
-						if (type === 'removed') {
-							const parent = this.#presenter.getParent(item);
-							if (parent) this.#updateViewModel(parent, undefined, {});
-						} else {
-							this.#updateViewModel(item, undefined, { recurse: true });
-						}
+						refresh.set(item, true);
+					}
+
+					// Update the view parent's view model. TODO: This is
+					// triggered by RunController.#testFor, handle this during
+					// resolveViewItem/#buildViewItem?
+					if (item instanceof DynamicTestCase) {
+						const viewParent = this.#presenter.getParent(item);
+						if (!viewParent) throw new Error('Internal error');
+refresh.set(viewParent, true);
 					}
 				}
+
+				// Refresh the view model. TODO: Eliminate duplicates
+				// (parent-and-child refreshes)?
+				for (const [item, recurse] of refresh) {
+						this.#updateViewModel(item, undefined, { recurse });
+									}
 
 				// Invalidate test results when tests are modified.
 				const tests = updates.filter(
@@ -123,6 +138,13 @@ export class ViewController {
 		if (exclude.some((x) => x.match(rel))) return;
 
 		return ws;
+	}
+
+	resolveViewItem(go: GoTestItem) {
+		if (go.kind === 'package' && go.isRootPkg) {
+			go = go.parent;
+		}
+		return this.#getViewItem(go) ?? this.#buildViewItem(go);
 	}
 
 	async updateFile(uri: Uri, opts: { modified?: Range[] } = {}) {
@@ -578,16 +600,17 @@ export class ViewController {
 			// associated with it.
 			run.onDidDispose?.(() => {
 				for (const pkg of this.#packages) {
-					this.#removeDynamicTests(pkg, (test) => test.run === run);
+					this.#resolver.#model.removeDynamicTests(pkg, (test) => test.run === run);
 				}
 			});
 
 			// Enqueue all of the packages.
 			for (const pkg of this.#packages) {
-				run.enqueued(this.#get(pkg));
+				run.enqueued(this.#resolver.resolveViewItem(pkg));
 			}
 
-			const map = <T extends GoTestItem>(items: T[]) => new Map(items.map((x) => [x, this.#get(x)]));
+			const map = <T extends GoTestItem>(items: T[]) =>
+				new Map(items.map((x) => [x, this.#resolver.resolveViewItem(x)]));
 			for (const pkg of this.#packages) {
 				const mode = this.#include.has(pkg) ? 'all' : 'specific';
 				const include = mode === 'all' ? map([...pkg.allTests()]) : map(this.#pkgInclude.get(pkg) ?? []);
@@ -597,11 +620,11 @@ export class ViewController {
 				// clear the dynamic test cases now.
 				if (mode === 'all') {
 					// We're running all tests, so remove all dynamic tests.
-					this.#removeDynamicTests(pkg, () => true);
+					this.#resolver.#model.removeDynamicTests(pkg, () => true);
 				} else {
 					// We're running specific tests, so remove dynamic tests if
 					// their parent is being run.
-					this.#removeDynamicTests(pkg, (test) => {
+					this.#resolver.#model.removeDynamicTests(pkg, (test) => {
 						const parent = this.#resolver.#presenter.getParent(test);
 						if (parent) {
 							if (exclude.has(parent as any)) return false;
@@ -615,7 +638,7 @@ export class ViewController {
 					run,
 					mode,
 					goItem: pkg,
-					testItem: this.#get(pkg),
+					testItem: this.#resolver.resolveViewItem(pkg),
 					tests: include,
 					exclude,
 				});
@@ -683,102 +706,6 @@ export class ViewController {
 					onExecute(rq2);
 				},
 			};
-		}
-
-		#get(item: GoTestItem) {
-			if (item.kind === 'package' && item.isRootPkg) {
-				item = item.parent;
-			}
-			return this.#resolver.#getViewItem(item) ?? this.#resolver.#buildViewItem(item);
-		}
-
-		testForEvent(pkg: Package, run: TestRun, event: TestEvent | Location) {
-			// If the event is a location, find the file and find a test that
-			// contains the specified range.
-			if (event instanceof Location) {
-				const file = pkg.files.get(`${event.uri}`);
-				if (!file) return;
-
-				for (const test of file.tests) {
-					if (test instanceof StaticTestCase && test.range && test.range.contains(event.range)) {
-						return this.#get(test);
-					}
-				}
-				return;
-			}
-
-			if (!event.Test) return;
-
-			// Check for an exact match.
-			for (const file of pkg.files) {
-				const test = file.tests.get(event.Test);
-				if (!test) continue;
-
-				// Reassociate with the current run.
-				if (test instanceof DynamicTestCase) {
-					test.run = run;
-				}
-
-				return this.#get(test);
-			}
-
-			// Create a dynamic subtest.
-			const parent = pkg.findParent(event.Test);
-			if (!parent) return;
-			const child = new DynamicTestCase(parent, event.Test, run);
-			parent.file.tests.add(child);
-
-			// Notify the presenter that there's a new test.
-			this.#resolver.#didUpdate([{ item: child, type: 'added' }]);
-
-			// Update the view parent's view model.
-			const viewParent = this.#resolver.#presenter.getParent(child);
-			if (!viewParent) throw new Error('Internal error');
-			return this.#resolver.#updateViewModel(viewParent, undefined, { recurse: true });
-		}
-
-		#removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean) {
-			// Remove all matching dynamic test cases.
-			const parents = new Set<GoTestItem>();
-			const updates: ModelUpdateEvent[] = [];
-			const remove = (test: TestCase, predicate: (test: DynamicTestCase) => boolean): boolean => {
-				const children = this.#resolver.#presenter.getChildren(test) as TestCase[];
-				const ok = test instanceof DynamicTestCase && predicate(test);
-				if (ok) {
-					// Test is dynamic, remove it and all its children.
-					test.file.tests.remove(test);
-					updates.push({ item: test, type: 'removed' });
-
-					for (const child of children) {
-						remove(child, () => true);
-					}
-				} else {
-					// Test is static or should not be removed, check its children.
-					for (const child of children) {
-						if (remove(child, predicate)) {
-							parents.add(test);
-						}
-					}
-				}
-
-				return ok;
-			};
-
-			for (const file of pkg.files) {
-				for (const test of file.tests) {
-					if (remove(test, predicate)) {
-						parents.add(file);
-					}
-				}
-			}
-
-			// Notify listeners.
-			this.#resolver.#didUpdate(updates);
-
-			// Update the view model.
-			for (const parent of parents) {
-				this.#resolver.#updateViewModel(parent, undefined, {});
-			}
 		}
 	};
 }

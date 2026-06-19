@@ -39,6 +39,7 @@ export class TestManager {
 	// Transients.
 	#configureProfiles?: () => Promise<boolean>;
 	#ctrl?: TestController;
+	#model?: ModelController;
 	#resolver?: ViewController;
 	#presenter?: ModelViewPresenter;
 
@@ -81,6 +82,7 @@ export class TestManager {
 		const codeLens = new CodeLensProvider(this.#config, resolver);
 
 		this.#ctrl = ctrl;
+		this.#model = model;
 		this.#resolver = resolver;
 		this.#presenter = presenter;
 
@@ -187,7 +189,7 @@ export class TestManager {
 	 * @param token - A token for canceling the run.
 	 */
 	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | GoTestItem[], token?: CancellationToken) {
-		if (!this.#resolver || !this.#presenter || !this.#ctrl) {
+		if (!this.#resolver || !this.#presenter || !this.#ctrl || !this.#model) {
 			throw new Error('Cannot execute test run: test explorer is disabled');
 		}
 
@@ -205,7 +207,15 @@ export class TestManager {
 		const request = await this.#resolver.resolveRunRequest(rq);
 
 		// Set up the runner.
-		const runner = new RunController(this.#context, this.#config, this.#ctrl, config, token);
+		const runner = new RunController(
+			this.#context,
+			this.#config,
+			this.#ctrl,
+			config,
+			token,
+			this.#resolver,
+			this.#model,
+		);
 
 		if (rq instanceof Array || !rq.continuous) {
 			// Save all files to ensure `go test` tests the latest changes

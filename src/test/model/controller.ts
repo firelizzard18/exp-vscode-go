@@ -1,10 +1,10 @@
 import { Commands, Context } from '@/utils/common';
 import { pathContains } from '@/utils/util';
 import path from 'node:path';
-import { EventEmitter, Range, Uri } from 'vscode';
+import { EventEmitter, Location, Range, Uri } from 'vscode';
 import { GoTestItem, ItemEvent } from '.';
 import { WorkspaceConfig } from '../workspaceConfig';
-import { DynamicTestCase, StaticTestCase } from './case';
+import { DynamicTestCase, StaticTestCase, TestCase } from './case';
 import { TestFile } from './file';
 import { Module } from './module';
 import { Package } from './package';
@@ -23,6 +23,56 @@ export class ModelController {
 	constructor(context: Context, config: WorkspaceConfig) {
 		this.#context = context;
 		this.#config = config;
+	}
+
+	workspaceFor(uri: Uri) {
+		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
+		if (!wsf) return;
+
+		// Resolve or create a Workspace.
+		let ws = this.workspaces.get(wsf);
+		if (!ws) {
+			ws = new Workspace(wsf);
+			this.workspaces.add(ws);
+		}
+
+		// If the path is excluded, ignore it.
+		const config = this.#config.for(ws);
+		const exclude = config.exclude.get() || [];
+		const rel = path.relative(ws.uri.fsPath, uri.fsPath);
+		if (exclude.some((x) => x.match(rel))) return;
+
+		return ws;
+	}
+
+	findTest(pkg: Package, query: Location | string): TestCase | undefined {
+		if (typeof query === 'string') {
+			for (const file of pkg.files) {
+				const test = file.tests.get(query);
+				if (test) return test;
+			}
+			return;
+		}
+
+		const file = pkg.files.get(`${query.uri}`);
+		if (!file) return;
+
+		for (const test of file.tests) {
+			if (test.range && test.range.contains(query.range)) {
+				return test;
+			}
+		}
+	}
+
+	createDynamicSubtest(pkg: Package, name: string) {
+		const parent = pkg.findParent(name);
+		if (!parent) return;
+
+		// Create a dynamic subtest.
+		const child = new DynamicTestCase(parent, name);
+		parent.file.tests.add(child);
+		this.#didUpdate.fire([{ item: child, type: 'added' }]);
+		return child;
 	}
 
 	/**
@@ -143,26 +193,6 @@ export class ModelController {
 			yield* this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
 			resolved.push(...[...pkg.files].filter((x) => `${x.uri}` === `${uri}`));
 		}
-	}
-
-	workspaceFor(uri: Uri) {
-		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
-		if (!wsf) return;
-
-		// Resolve or create a Workspace.
-		let ws = this.workspaces.get(wsf);
-		if (!ws) {
-			ws = new Workspace(wsf);
-			this.workspaces.add(ws);
-		}
-
-		// If the path is excluded, ignore it.
-		const config = this.#config.for(ws);
-		const exclude = config.exclude.get() || [];
-		const rel = path.relative(ws.uri.fsPath, uri.fsPath);
-		if (exclude.some((x) => x.match(rel))) return;
-
-		return ws;
 	}
 
 	/**
@@ -300,5 +330,34 @@ export class ModelController {
 			});
 		}
 		return results;
+	}
+
+	removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean): void {
+		// Find all the directly matching dynamic test cases.
+		const toRemove = new Set(
+			[...pkg.files]
+				.flatMap((file) => [...file.tests])
+				.filter((test) => test instanceof DynamicTestCase && predicate(test)),
+		);
+
+		// Find all their children.
+		const prefixes = [...toRemove].map((x) => `${x.name}/`);
+		for (const file of pkg.files) {
+			for (const test of file.tests) {
+				if (test instanceof DynamicTestCase && prefixes.some((x) => test.name.startsWith(x))) {
+					toRemove.add(test);
+				}
+			}
+		}
+
+		// Remove them.
+		const updates: ItemEvent<TestCase>[] = [];
+		for (const test of toRemove) {
+			test.file.tests.remove(test);
+			updates.push({ item: test, type: 'removed' });
+		}
+
+		// Notify listeners.
+		this.#didUpdate.fire(updates);
 	}
 }
