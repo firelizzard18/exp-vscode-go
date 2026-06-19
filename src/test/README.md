@@ -1,6 +1,6 @@
 # Test Explorer
 
-> **Note:** This document describes the *planned* architecture. The current code does not yet reflect this structure; it will be migrated incrementally over multiple commits.
+> **Note:** This document describes the *target* architecture. The code is being migrated toward it incrementally.
 
 The test explorer surfaces Go tests in VSCode's Test Explorer view. It is built around an explicit separation between the **data model** (the Go test hierarchy as it actually exists) and the **presentation layer** (how that hierarchy is shown in VSCode). This separation is intentional: earlier implementations used VSCode's `TestItem` tree as the data model, which conflated data and presentation concerns and made updates significantly more complex.
 
@@ -48,6 +48,15 @@ The data model lives in its own package and has no dependency on VSCode's test U
 
 **`testEvent.ts`** defines the types for `go test -json` output and utilities for normalizing them.
 
+## Migration principles
+
+The migration is ongoing and incremental. A few constraints that apply to every commit:
+
+- **Never temporarily worse.** Each commit should leave the code more readable than it found it. Don't make things worse in order to make a later change easier.
+- **Event-driven, not push-driven.** Components should subscribe to events from their dependencies. Avoid patterns where one component calls into another's internals to notify it of a change.
+- **Explicit dependencies.** Boundaries between components are enforced by injected dependencies and public APIs, not by accessing private internals through a reference.
+- **Minimize async in the critical path.** Large test suites make async/await overhead measurable. Keep the hot path (model updates, view sync) synchronous where possible.
+
 ## TODO
 
 - **TestManager (`manager.ts`)**: Analyze and clean up. It's doing too much but the scope of the problem hasn't been fully assessed.
@@ -55,25 +64,31 @@ The data model lives in its own package and has no dependency on VSCode's test U
 
 ## Known issues
 
-### `ViewController`
+The issues below are understood well enough to have a direction, even if the work isn't done yet.
 
-**`updateFile` is a leaky proxy.** It delegates to `ModelController.updateFile` then calls `presenter.markRequested` as a side effect. The view controller has to know that a file update implies a discovery-request, and it has to know the presenter's API to record it. Two separate concerns bolted together.
+### Profile view sync
 
-**`resolveRunRequest` is a god method.** It does at least four distinct things: lazy-loads the model if needed, translates VSCode `TestItem`s back to Go items, resolves workspace/module includes into package sets, and deduplicates the include/exclude sets. The lazy-loading especially feels wrong here.
+`ResolvedTestRunRequest.attachProfile` currently pushes profile state directly into `ModelViewPresenter` and then manually calls `ViewController.updateViewModel` to sync the view. This violates the event-driven principle: `ResolvedTestRunRequest` has no business knowing that attaching a profile requires a view sync, and `ViewController` has no business being called imperatively from outside to react to something that's really a `ProfileTracker` event.
 
-**`updateViewModel` has a dual input type.** It accepts `TestItem | GoTestItem` and has to figure out which it got. The `TestItem` path exists for VSCode's `resolveHandler`; the `GoTestItem` path is for internal calls. These should be separate entry points.
+The correct fix is to make `ProfileTracker` emit events when profiles are added or removed. `ViewController` subscribes to those events and updates the view model itself — the same way it handles `ModelController` events. `ResolvedTestRunRequest` then only needs to call `ProfileTracker.add/remove`; it doesn't touch the view at all.
 
-**`#buildViewItem` uses a `function create(this: ViewController, ...)` inner function** called with `.call(this, ...)` because it needs private field access. Should be a private method.
+### Discovery visibility (`markRequested`)
 
-**`#getPresentable` handles both Go item lookup and profile synthesis** in the same method — very different code paths crammed together.
+`ViewController.updateFile` calls `presenter.markRequested` as a side effect after delegating to `ModelController.updateFile`. The visibility state (whether a workspace/package has been "requested" by the user opening a file) lives in `ModelViewPresenter`, but the trigger that sets it lives in `ViewController`. These are two different concerns that happen to be co-located.
 
-**`ResolvedTestRunRequest` is still a nested class** accessing `#model`, `#presenter`, and `#updateViewModel` through `this.#resolver`. The README describes it as a standalone class with injected dependencies; that work is not yet done.
+The correct shape is unclear. One option is for `ModelController` to emit a distinct event type for file updates (vs. population), and for `ModelViewPresenter` to observe that and mark items as requested itself. The current code is tolerable but should be revisited when the profile sync issue is addressed, since both follow the same push-vs-event pattern.
 
-### `ModelViewPresenter`
+### `resolveRunRequest` is a god method
 
-**`#requested` / `markRequested` is owned by the presenter but written by `ViewController`** as a side effect of `updateFile`. The state that controls visibility lives in the presenter, but the trigger that sets it lives in the view controller.
+It lazy-loads the model if needed, translates VSCode `TestItem`s back to Go items, resolves workspace/module includes into package sets, and deduplicates the include/exclude list. These are distinct concerns. The lazy-loading especially doesn't belong here — by the time a run is requested, the model should already be populated. The method should be split, but the right split depends on what `ViewController`'s responsibility boundary ends up being after the other refactors settle.
 
-**Profile management (`addProfile`, `removeProfile`, `getProfiles`, `#resolveProfilesParent`) is mixed into the structural presenter.** The profile tree nodes (`ProfileContainer`, `ProfileSet`, `ProfileItem`) drive profiles into `getChildren`/`getParent`/`hasChildren`. The coupling is tight and makes the presenter harder to read.
+### `ViewController` structural issues
+
+**`updateViewModel` has a dual input type.** It accepts `TestItem | GoTestItem` and has to figure out which it got. The `TestItem` path exists only for VSCode's `resolveHandler`; the `GoTestItem` path is used internally. These should be separate entry points.
+
+**`#buildViewItem` uses a `function create(this: ViewController, ...)` inner function** called with `.call(this, ...)` because it needs private field access. Should just be a private method.
+
+**`#getPresentable` handles both Go item lookup and profile synthesis** in the same method. These are very different code paths that should be separated — the profile case in particular should shrink significantly once `ProfileTracker` emits events.
 
 ## Data flow
 
