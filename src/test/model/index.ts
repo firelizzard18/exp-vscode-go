@@ -1,11 +1,13 @@
-import { Workspace } from './workspace';
+import { DynamicTestCase, StaticTestCase, TestCase } from './case';
+import { TestFile } from './file';
 import { Module } from './module';
 import { Package } from './package';
-import { TestFile } from './file';
-import { TestCase, StaticTestCase, DynamicTestCase } from './case';
+import { Workspace } from './workspace';
 
-export { Workspace, Module, Package, TestFile, TestCase, StaticTestCase, DynamicTestCase };
+export { ModelController } from './controller';
 export { ItemSet } from './set';
+
+export { DynamicTestCase, Module, Package, StaticTestCase, TestCase, TestFile, Workspace };
 
 /**
  * Represents an update to a test item.
@@ -14,7 +16,7 @@ export { ItemSet } from './set';
  *  - `moved` indicates that the item's range changed without changing its contents.
  *  - `modified` indicates that the item's contents and possibly its range changed.
  */
-export type ItemEvent<T> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
+export type ItemEvent<T = GoTestItem> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
 
 export type GoTestItem = Module | Workspace | Package | TestFile | TestCase;
 

@@ -6,11 +6,11 @@ import { Flags, makeCaptureDir, Spawner } from './utils';
 import path from 'node:path';
 import { parseCoverage } from './coverage';
 import { RunConfig } from './runConfig';
-import { ResolvedTestRunRequest, shouldRunBenchmarks } from './itemResolver';
 import { PackageTestRun } from './pkgTestRun';
 import { WorkspaceConfig } from './workspaceConfig';
 import { TestCase } from './model';
 import { TestRunLog } from './runLog';
+import { ResolvedTestRunRequest, shouldRunBenchmarks } from './view/controller';
 
 export class TestRunner {
 	readonly #context;

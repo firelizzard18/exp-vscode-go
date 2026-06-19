@@ -1,11 +1,9 @@
-import path, { posix } from 'node:path';
-import { Uri } from 'vscode';
-
 import { Commands } from '@/utils/testing';
 import { isRelativePath } from '@/utils/util';
-
+import path, { posix } from 'node:path';
+import { Uri } from 'vscode';
+import type { Module, TestFile, Workspace } from '.';
 import { ItemSet } from './set';
-import type { Workspace, Module, TestFile } from '.';
 
 export class Package {
 	readonly kind = 'package';

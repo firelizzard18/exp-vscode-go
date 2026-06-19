@@ -1,9 +1,7 @@
-import { Uri } from 'vscode';
-
 import { Commands } from '@/utils/testing';
-
-import { ItemSet } from './set';
+import { Uri } from 'vscode';
 import type { Package, TestCase } from '.';
+import { ItemSet } from './set';
 
 export class TestFile {
 	readonly kind = 'file';

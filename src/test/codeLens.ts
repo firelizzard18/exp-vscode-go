@@ -1,9 +1,9 @@
 import vscode from 'vscode';
 import { CodeLens, TextDocument, Range } from 'vscode';
 import { GoTestItem, StaticTestCase, TestCase, TestFile } from './model';
-import { GoTestItemResolver } from './itemResolver';
 import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
 import { Command } from '../commands';
+import { ViewController } from './view/controller';
 
 /**
  * Provides CodeLenses for running and debugging tests for users who prefer
@@ -11,9 +11,9 @@ import { Command } from '../commands';
  */
 export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	readonly #config: WorkspaceConfig;
-	readonly #resolver: GoTestItemResolver;
+	readonly #resolver: ViewController;
 
-	constructor(config: WorkspaceConfig, resolver: GoTestItemResolver) {
+	constructor(config: WorkspaceConfig, resolver: ViewController) {
 		this.#config = config;
 		this.#resolver = resolver;
 	}

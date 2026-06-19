@@ -1,9 +1,7 @@
-import { Uri, WorkspaceFolder } from 'vscode';
-
 import { Commands } from '@/utils/testing';
-
-import { ItemSet } from './set';
+import { Uri, WorkspaceFolder } from 'vscode';
 import type { Module, Package } from '.';
+import { ItemSet } from './set';
 
 export class Workspace {
 	readonly kind = 'workspace';

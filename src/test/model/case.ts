@@ -1,8 +1,6 @@
+import { Commands } from '@/utils/testing';
 import deepEqual from 'deep-equal';
 import { Range, TestRun, Uri } from 'vscode';
-
-import { Commands } from '@/utils/testing';
-
 import type { ItemEvent, TestFile } from '.';
 
 export abstract class TestCase {

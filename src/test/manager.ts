@@ -8,13 +8,14 @@ import {
 import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode from 'vscode';
 import { Context, doSafe, TestController } from '../utils/testing';
-import { GoTestItem, StaticTestCase, TestCase } from './model';
+import { GoTestItem, ItemEvent, ModelController, StaticTestCase, TestCase } from './model';
 import { TestRunner } from './testRunner';
 import { CodeLensProvider } from './codeLens';
 import { RunConfig } from './runConfig';
-import { ContinuousRunTracker, GoTestItemResolver, ModelUpdateEvent } from './itemResolver';
-import { GoTestItemPresenter } from './itemPresenter';
 import { WorkspaceConfig } from './workspaceConfig';
+import { ContinuousRunTracker, ModelUpdateEvent, ViewController } from './view/controller';
+import { ModelViewPresenter } from './view/presenter';
+import { ProfileTracker } from './profiles';
 
 /**
  * Entry point for the test explorer implementation.
@@ -38,8 +39,8 @@ export class TestManager {
 	// Transients.
 	#configureProfiles?: () => Promise<boolean>;
 	#ctrl?: TestController;
-	#resolver?: GoTestItemResolver;
-	#presenter?: GoTestItemPresenter;
+	#resolver?: ViewController;
+	#presenter?: ModelViewPresenter;
 
 	constructor(context: Context) {
 		this.#context = context;
@@ -70,19 +71,23 @@ export class TestManager {
 				createTestController(id: string, label: string): TestController;
 			},
 	) {
-		// Set up the components.
-		const presenter = new GoTestItemPresenter(this.#config);
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
-		const resolver = new GoTestItemResolver(this.#context, this.#config, presenter, ctrl);
+
+		// Set up the components.
+		const model = new ModelController(this.#context, this.#config);
+		const profiles = new ProfileTracker();
+		const presenter = new ModelViewPresenter(this.#config, model, profiles);
+		const resolver = new ViewController(this.#context, this.#config, model, presenter, ctrl);
 		const codeLens = new CodeLensProvider(this.#config, resolver);
 
 		this.#ctrl = ctrl;
 		this.#resolver = resolver;
 		this.#presenter = presenter;
-		this.#disposable.push(ctrl);
+
+		this.#disposable.push(ctrl, resolver);
 
 		// Listen to update events.
-		resolver.onDidUpdate((events) => {
+		model.onDidUpdate((events) => {
 			this.#didUpdate(events);
 		});
 
@@ -302,28 +307,18 @@ export class TestManager {
 		}
 	}
 
-	#didUpdate(updates: ModelUpdateEvent[]) {
+	#didUpdate(updates: ItemEvent[]) {
 		if (!this.#presenter || !this.#ctrl) return;
 
 		// Notify the presenter of changes
 		this.#presenter.didUpdate(updates);
 
-		const tests = updates.filter(
-			(x): x is ModelUpdateEvent<TestCase> =>
-				// If a test case is modified
-				(x.item instanceof TestCase && x.type === 'modified') ||
-				// Or a _static_ test case is added;
-				(x.type === 'added' && x.item instanceof StaticTestCase),
-		);
-
 		// Queue uncommitted updates (unsaved changes) for execution.
+		const tests = updates.filter(
+			(x): x is ItemEvent<TestCase> => x.item instanceof TestCase && x.type === 'modified',
+		);
 		for (const tracker of this.#continuousRuns) {
 			tracker.didUpdate(tests.map((x) => x.item));
-		}
-
-		// Invalidate test results when tests are modified.
-		if (tests.length) {
-			this.#ctrl.invalidateTestResults?.(tests.map((x) => x.view).filter((x) => !!x));
 		}
 	}
 }

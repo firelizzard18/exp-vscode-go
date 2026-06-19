@@ -4,6 +4,14 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 	readonly #srcKey;
 	readonly #items;
 
+	/**
+	 * Tracks whether this set has been populated or not. This is a bit awkward
+	 * because it's used as a sentinel/as a proxy for "have we asked gopls to
+	 * populate this?" We do not set #loaded when add is called, because it does
+	 * not indicate that we 'properly' populated this set.
+	 */
+	#loaded = false;
+
 	constructor(srcKey: (s: S) => string, items: T[] = []) {
 		this.#srcKey = srcKey;
 		this.#items = new Map(items.map((x) => [x.key, x]));
@@ -19,6 +27,10 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 
 	[Symbol.iterator]() {
 		return this.#items.values();
+	}
+
+	get loaded() {
+		return this.#loaded;
 	}
 
 	get size() {
@@ -55,23 +67,6 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 	}
 
 	/**
-	 * Replaces the set of items with a new set. If the existing set has items
-	 * with the same key, the original items are preserved.
-	 */
-	replace(items: T[]) {
-		// Insert new items
-		this.add(...items);
-
-		// Delete items that are no longer present
-		const keep = new Set(items.map((x) => x.key));
-		for (const key of this.keys()) {
-			if (!keep.has(key)) {
-				this.remove(key);
-			}
-		}
-	}
-
-	/**
 	 * Replaces the set of items with a new set. For each value in source, if an
 	 * item with the same key exists in the set, the item is updated. Otherwise,
 	 * a new item is created.
@@ -86,6 +81,8 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 		update: (_1: SS, _2: T) => Iterable<ItemEvent<R>> = () => [],
 		keep: (_: T) => boolean = () => false,
 	): ItemEvent<T | R>[] {
+		this.#loaded = true;
+
 		// Delete items that are no longer present
 		const changed: ItemEvent<T | R>[] = [];
 		const srcKeys = new Set(src.map((x) => this.#srcKey(x)));

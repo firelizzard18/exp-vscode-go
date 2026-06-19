@@ -1,12 +1,21 @@
-import { Uri, WorkspaceFolder } from 'vscode';
-import { RelationMap } from '../utils/map';
-import path from 'node:path';
-import { WorkspaceConfig } from './workspaceConfig';
-import { WeakMapWithDefault } from '../utils/map';
-import { CapturedProfile, ProfileTracker, ProfileType } from './profiles';
-import { Module, Package, Workspace, DynamicTestCase, GoTestItem, TestCase, isTestItem, ItemSet } from './model';
-import { ModelUpdateEvent } from './itemResolver';
+import { RelationMap, WeakMapWithDefault } from '@/utils/map';
 import moment from 'moment';
+import path from 'node:path';
+import { Uri } from 'vscode';
+import {
+	DynamicTestCase,
+	GoTestItem,
+	isTestItem,
+	ItemEvent,
+	ModelController,
+	Module,
+	Package,
+	TestCase,
+	Workspace,
+} from '../model';
+import { CapturedProfile, ProfileTracker, ProfileType } from '../profiles';
+import { WorkspaceConfig } from '../workspaceConfig';
+import { ModelUpdateEvent } from './controller';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
 
@@ -37,22 +46,22 @@ export class ProfileItem {
 	}
 }
 
-export class GoTestItemPresenter {
-	readonly kind = '(root)';
-	readonly workspaces = new ItemSet<Workspace, WorkspaceFolder | Uri>((x) => `${x instanceof Uri ? x : x.uri}`);
-
+export class ModelViewPresenter {
 	readonly #config;
-	readonly #pkgRel = new WeakMapWithDefault<Workspace | Module, RelationMap<Package, Package | undefined>>(
-		() => new RelationMap(),
+	readonly #profiles;
+	readonly #pkgRel = new WeakMapWithDefault(
+		(_: Workspace | Module) => new RelationMap<Package, Package | undefined>(),
 	);
-	readonly #testRel = new WeakMapWithDefault<Package, RelationMap<TestCase, TestCase | undefined>>(
-		() => new RelationMap(),
-	);
-	readonly #profiles = new ProfileTracker();
+	readonly #testRel = new WeakMapWithDefault((_: Package) => new RelationMap<TestCase, TestCase | undefined>());
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
-	constructor(config: WorkspaceConfig) {
+	constructor(
+		config: WorkspaceConfig,
+		public readonly tests: ModelController,
+		profiles: ProfileTracker,
+	) {
 		this.#config = config;
+		this.#profiles = profiles;
 	}
 
 	markRequested(item: Workspace | Module | Package) {
@@ -186,7 +195,7 @@ export class GoTestItemPresenter {
 
 	*getChildren(item?: Presentable | null): Iterable<Presentable, void, void> {
 		if (!item) {
-			for (const ws of this.workspaces) {
+			for (const ws of this.tests.workspaces) {
 				// If the workspace has discovery disabled and has _not_
 				// been requested (e.g. by opening a file), skip it.
 				const mode = this.#config.for(ws).discovery.get();
@@ -337,13 +346,12 @@ export class GoTestItemPresenter {
 		return scope;
 	}
 
-	didUpdate(updates: ModelUpdateEvent[]) {
+	didUpdate(updates: ItemEvent[]) {
 		// If packages were added or removed, rebuild the root's package
 		// relations. It could make sense to do this on a per-package basis, but
 		// it's a lot simpler just to rebuild the relation map.
 		const pkgChanges = updates.filter(
-			(x): x is ModelUpdateEvent<Package> =>
-				x.item instanceof Package && (x.type === 'added' || x.type === 'removed'),
+			(x): x is ItemEvent<Package> => x.item instanceof Package && (x.type === 'added' || x.type === 'removed'),
 		);
 		const pkgRoots = new Set(pkgChanges.map((x) => x.item.parent));
 		for (const root of pkgRoots) {

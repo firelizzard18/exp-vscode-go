@@ -1,61 +1,95 @@
-import { EventEmitter, Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
-import { Commands, Context, TestController } from '../utils/testing';
+import { MapWithDefault } from '@/utils/map';
+import { Context, TestController } from '@/utils/testing';
+import { pathContains } from '@/utils/util';
 import path from 'node:path';
-import { WorkspaceConfig } from './workspaceConfig';
+import { Disposable, Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
 import {
 	DynamicTestCase,
 	GoTestItem,
 	isTestItem,
+	ItemEvent,
+	ModelController,
 	Module,
 	Package,
 	StaticTestCase,
 	TestCase,
 	TestFile,
 	Workspace,
-} from './model';
+} from '../model';
+import { ProfileType } from '../profiles';
+import { WorkspaceConfig } from '../workspaceConfig';
 import {
-	GoTestItemPresenter,
 	idFor,
+	ModelViewPresenter,
 	parseID,
 	Presentable,
 	ProfileContainer,
 	ProfileItem,
 	ProfileSet,
-} from './itemPresenter';
-import { ItemEvent } from './model';
-import { pathContains } from '../utils/util';
-import { PackageTestRun } from './pkgTestRun';
-import { TestEvent } from './testEvent';
-import { MapWithDefault } from '../utils/map';
-import { ProfileType } from './profiles';
+} from './presenter';
+import { PackageTestRun } from '../pkgTestRun';
+import { TestEvent } from '../testEvent';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
-export class GoTestItemResolver {
-	readonly #didUpdate;
-	readonly onDidUpdate;
-
+export class ViewController {
 	readonly #context;
 	readonly #config;
+	readonly #model;
 	readonly #presenter;
 	readonly #ctrl;
 	readonly #didLoadChildren = new WeakSet<Presentable>();
 
+	readonly subscriptions: Disposable[] = [];
+
 	#didLoadRoots = false;
 
-	constructor(context: Context, config: WorkspaceConfig, presenter: GoTestItemPresenter, ctrl: TestController) {
+	constructor(
+		context: Context,
+		config: WorkspaceConfig,
+		model: ModelController,
+		presenter: ModelViewPresenter,
+		ctrl: TestController,
+	) {
 		this.#context = context;
 		this.#config = config;
+		this.#model = model;
 		this.#presenter = presenter;
 		this.#ctrl = ctrl;
 
-		const didUpdate = new EventEmitter<ModelUpdateEvent[]>();
-		this.#didUpdate = (events: ItemEvent<GoTestItem>[]) => {
-			if (events.length) {
-				didUpdate.fire(events.map((x) => ({ ...x, view: this.#getViewItem(x.item) })));
-			}
-		};
-		this.onDidUpdate = didUpdate.event;
+		this.subscriptions.push(
+			model.onDidUpdate((updates) => {
+				// This replicates logic from updateFile that was removed in the
+				// migration to ModelController.
+				for (const { item, type } of updates) {
+					if (item.kind === 'package') {
+						// Synchronize the view model.
+						if (type === 'removed') {
+							const parent = this.#presenter.getParent(item);
+							if (parent) this.#updateViewModel(parent, undefined, {});
+						} else {
+							this.#updateViewModel(item, undefined, { recurse: true });
+						}
+					}
+				}
+
+				// Invalidate test results when tests are modified.
+				const tests = updates.filter(
+					(x): x is ItemEvent<TestCase> =>
+						// If a test case is modified
+						(x.item instanceof TestCase && x.type === 'modified') ||
+						// Or a _static_ test case is added;
+						(x.type === 'added' && x.item instanceof StaticTestCase),
+				);
+				if (tests.length) {
+					this.#ctrl.invalidateTestResults?.(tests.map((x) => this.#getViewItem(x.item)).filter((x) => !!x));
+				}
+			}),
+		);
+	}
+
+	dispose() {
+		this.subscriptions.splice(0, this.subscriptions.length).forEach((x) => x.dispose());
 	}
 
 	/**
@@ -75,10 +109,10 @@ export class GoTestItemResolver {
 		if (!wsf) return;
 
 		// Resolve or create a Workspace.
-		let ws = this.#presenter.workspaces.get(wsf);
+		let ws = this.#presenter.tests.workspaces.get(wsf);
 		if (!ws) {
 			ws = new Workspace(wsf);
-			this.#presenter.workspaces.add(ws);
+			this.#presenter.tests.workspaces.add(ws);
 		}
 
 		// If the path is excluded, ignore it.
@@ -91,93 +125,16 @@ export class GoTestItemResolver {
 	}
 
 	async updateFile(uri: Uri, opts: { modified?: Range[] } = {}) {
-		const resolved: TestFile[] = [];
+		// Delegate to the model.
+		const resolved = await this.#model.updateFile(uri, opts);
 
-		// We don't handle external files (those outside of a workspace).
-		const ws = this.workspaceFor(uri);
-		if (!ws) return resolved;
-
-		// Query gopls.
-		const r = await this.#context.commands.packages({
-			Files: [`${uri}`],
-			Mode: Commands.PackagesMode.NeedTests,
-		});
-		const packages = this.#consolidatePackages(ws, r, false);
-
-		// Map modules.
-		const mods = new Map<string, Module>();
-		const config = this.#config.for(ws);
-		const exclude = config.exclude.get() || [];
-		for (const src of Object.values(r.Module ?? {})) {
-			// If the path is outside of the workspace, ignore it.
-			const uri = Uri.parse(src.GoMod);
-			if (!pathContains(ws.uri, uri)) continue;
-
-			// If the path is excluded, ignore it.
-			const relDir = path.relative(ws.uri.fsPath, path.dirname(uri.fsPath));
-			if (exclude.some((x) => x.match(relDir))) continue;
-
-			// Get or create the module.
-			let mod = ws.modules.get(src.Path);
-			if (!mod) {
-				mod = new Module(ws, src);
-				ws.modules.add(mod);
-				this.#didUpdate([{ item: mod, type: 'added' }]);
-			}
-			mods.set(src.Path, mod);
+		// Mark the root and pacakge as explicitly requested by the user. This
+		// used to happen at the end of the `for (const src of packages)` loop.
+		for (const file of resolved) {
+			this.#presenter.markRequested(file.package);
+			this.#presenter.markRequested(file.package.parent);
 		}
 
-		// Process packages. An alternative build system may allow a file to be
-		// part of multiple packages, so we can't assume there's only one
-		// package.
-		for (const src of packages) {
-			// Get the workspace or module for this package. If the package is
-			// part of a module but that module is not part of this workspace,
-			// use the workspace as the root.
-			let root: Workspace | Module = ws;
-			if (src.ModulePath) {
-				root = mods.get(src.ModulePath) ?? ws;
-			}
-
-			// Get the existing package.
-			let pkg = root.packages.get(src);
-
-			// If a package doesn't have tests, that probably means the last
-			// test was removed, so we should remove it.
-			if (src.TestFiles.length === 0) {
-				if (!pkg) continue;
-
-				// Get it's current view parent.
-				const parent = this.#presenter.getParent(pkg)!;
-
-				// Remove it from the workspace or module and notify listeners.
-				root.packages.remove(pkg);
-				this.#didUpdate([{ item: pkg, type: 'removed' }]);
-
-				// Synchronize the parent's view model.
-				if (parent) this.#updateViewModel(parent, undefined, {});
-				continue;
-			}
-
-			// Create a new Package if necessary.
-			if (!pkg) {
-				pkg = new Package(root, src, r.Module?.[src.ModulePath as string]);
-				root.packages.add(pkg);
-				this.#didUpdate([{ item: pkg, type: 'added' }]);
-			}
-
-			// Update the package's files.
-			this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
-			resolved.push(...[...pkg.files].filter((x) => `${x.uri}` === `${uri}`));
-
-			// Mark the root and the package as requested.
-			this.#presenter.markRequested(root);
-			this.#presenter.markRequested(pkg);
-
-			// Synchronize the view model.
-			this.#didLoadChildren.add(pkg);
-			this.#updateViewModel(pkg, undefined, { recurse: true });
-		}
 		return resolved;
 	}
 
@@ -201,12 +158,12 @@ export class GoTestItemResolver {
 				return;
 			}
 
-			const updates = await this.#loadRoots();
+			await this.#model.populate();
 			for (const go of this.#presenter.getChildren()) {
 				const view = this.#ctrl.items.get(`${idFor(go)}`);
 				this.#updateViewModel(go, view, options);
 			}
-			return updates;
+			return;
 		}
 
 		// Determine if `item` is a data or view model item. If it's the latter,
@@ -230,11 +187,8 @@ export class GoTestItemResolver {
 			switch (go.kind) {
 				case 'workspace':
 				case 'module':
-					await this.#loadPackages(go);
-					break;
-
 				case 'package':
-					await this.#loadTests(go);
+					await this.#model.populate(go);
 					break;
 			}
 		}
@@ -333,7 +287,7 @@ export class GoTestItemResolver {
 			items = view.children;
 		}
 
-		function create(this: GoTestItemResolver, go: Presentable, items: TestItemCollection) {
+		function create(this: ViewController, go: Presentable, items: TestItemCollection) {
 			// Check for an existing item.
 			const id = `${idFor(go)}`;
 			let view = items.get(id);
@@ -398,7 +352,7 @@ export class GoTestItemResolver {
 			include = new Set(rq.include.map((x) => this.#getGoItem(x.id)).filter((x) => !!x && isTestItem(x)));
 		} else {
 			// If include is not specified, include all roots.
-			const workspaces = [...this.#presenter.workspaces];
+			const workspaces = [...this.#presenter.tests.workspaces];
 			include = new Set([...workspaces, ...workspaces.flatMap((x) => [...x.modules])]);
 		}
 
@@ -470,7 +424,7 @@ export class GoTestItemResolver {
 		}
 
 		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x && isTestItem(x)));
-		return new GoTestItemResolver.RunRequest(this, rq, packages, include, excludeItems);
+		return new ViewController.RunRequest(this, rq, packages, include, excludeItems);
 	}
 
 	#getPresentable(view: TestItem | Uri): Presentable | undefined {
@@ -533,7 +487,7 @@ export class GoTestItemResolver {
 		// Get the workspace.
 		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
 		if (!wsf) return;
-		const ws = this.#presenter.workspaces.get(wsf);
+		const ws = this.#presenter.tests.workspaces.get(wsf);
 		if (!ws || id.kind === 'workspace') return ws;
 
 		// Scan all the modules.
@@ -581,164 +535,6 @@ export class GoTestItemResolver {
 		return this.#getViewItem(parent)?.children.get(`${idFor(item)}`);
 	}
 
-	/**
-	 * Updates the list of workspaces, and loads the modules of each workspace.
-	 */
-	async #loadRoots() {
-		// Remember that we've loaded the roots.
-		this.#didLoadRoots = true;
-
-		// Update the workspace item set.
-		this.#presenter.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
-
-		// Update the workspaces' modules list.
-		await Promise.all([...this.#presenter.workspaces].map(async (ws) => this.#loadModules(ws)));
-	}
-
-	/**
-	 * Updates the modules of a workspace.
-	 */
-	async #loadModules(ws: Workspace) {
-		const { Modules } = await this.#context.commands.modules({
-			Dir: `${ws.uri}`,
-			MaxDepth: -1,
-		});
-		if (!Modules) return;
-
-		const config = this.#config.for(ws);
-		const exclude = config.exclude.get() || [];
-		const updates = ws.modules.update(
-			Modules.filter((m) => {
-				const uri = Uri.parse(m.GoMod);
-				const p = path.relative(ws.uri.fsPath, path.dirname(uri.fsPath));
-				return !exclude.some((x) => x.match(p));
-			}),
-			(src) => new Module(ws, src),
-		);
-
-		this.#didUpdate(updates.flat());
-	}
-
-	/**
-	 * Loads the packages of a workspace or module.
-	 */
-	async #loadPackages(root: Workspace | Module) {
-		// TODO(ethan.reesor): We could improve performance (I think) with a
-		// "list test files but not tests" mode. If that happens, we need to:
-		//  - Change the Mode of the gopls query.
-		//  - Pass expectFiles = false to #consolidatePackages.
-		//  - Stop adding packages to #didLoadChildren.
-
-		// Remember that we've loaded the root's packages.
-		this.#didLoadChildren.add(root);
-
-		// Query gopls.
-		const r = await this.#context.commands.packages({
-			Files: [`${root.dir}`],
-			Recursive: true,
-			Mode: Commands.PackagesMode.NeedTests,
-		});
-
-		// Consolidate `foo` and `foo_test`.
-		const ws = root instanceof Workspace ? root : root.workspace;
-		const packages = this.#consolidatePackages(ws, r, true);
-
-		// Update. But don't update the packages' list of files, because we
-		// didn't ask for tests so we can't properly filter the list of files.
-		const updates = root.packages.update(
-			packages,
-			(src) => new Package(root, src, r.Module?.[src.ModulePath as string]),
-		);
-
-		// Since we're including tests in the gopls query, remember that we've
-		// loaded the packages' tests.
-		for (const pkg of root.packages) {
-			this.#didLoadChildren.add(pkg);
-		}
-
-		// Notify the provider that we updated the workspace/module's packages.
-		this.#didUpdate(updates);
-	}
-
-	/**
-	 * Loads the tests (and files) of a package.
-	 */
-	async #loadTests(pkg: Package) {
-		// Remember that we've loaded the package's files.
-		this.#didLoadChildren.add(pkg);
-
-		// Query gopls.
-		const { Packages } = await this.#context.commands.packages({
-			Files: [`${pkg.uri}`],
-			Mode: Commands.PackagesMode.NeedTests,
-		});
-		if (!Packages) return [];
-
-		// Update files and their tests.
-		this.#updateFiles(
-			pkg,
-			Packages.flatMap((x) => x.TestFiles ?? []),
-		);
-	}
-
-	/**
-	 * Updates the files and tests of a package using the provided data.
-	 */
-	#updateFiles(pkg: Package, files: Commands.TestFile[], ranges?: Record<string, Range[] | undefined>) {
-		const updates = pkg.files.update(
-			files.filter((x) => x.Tests && x.Tests.length > 0),
-			(src) => new TestFile(pkg, src),
-			(src, file) =>
-				file.tests.update(
-					src.Tests ?? [],
-					(src) => new StaticTestCase(file, src),
-					(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges?.[`${file.uri}`]) : []),
-					// Don't erase dynamic test cases.
-					(test) => test instanceof DynamicTestCase,
-				),
-		);
-
-		// Notify the provider that we updated the package's tests.
-		this.#didUpdate(updates);
-	}
-
-	/**
-	 * Consolidates test and source package data from gopls and filters out
-	 * excluded packages.
-	 *
-	 * If a directory contains `foo.go`, `foo_test.go`, and `foo2_test.go` with
-	 * package directives `foo`, `foo`, and `foo_test`, respectively, gopls will
-	 * report those as three separate packages. This function consolidates them
-	 * into a single package.
-	 */
-	#consolidatePackages(ws: Workspace, { Packages: all = [] }: Commands.PackagesResults, expectFiles: boolean) {
-		if (!all) return [];
-
-		const exclude = this.#config.for(ws).exclude.get() || [];
-		const paths = new Set(all.map((x) => x.ForTest || x.Path));
-		const results: (Commands.Package & Required<Pick<Commands.Package, 'TestFiles'>>)[] = [];
-		for (const pkgPath of paths) {
-			const pkgs = all.filter((x) => x.Path === pkgPath || x.ForTest === pkgPath);
-			const files = pkgs
-				.flatMap((x) => x.TestFiles ?? [])
-				.filter((m) => {
-					const p = path.relative(ws.dir.fsPath, Uri.parse(m.URI).fsPath);
-					return !exclude.some((x) => x.match(p));
-				});
-
-			if (expectFiles && files.length === 0) {
-				continue;
-			}
-
-			results.push({
-				Path: pkgPath,
-				ModulePath: pkgs[0].ModulePath,
-				TestFiles: files,
-			});
-		}
-		return results;
-	}
-
 	#delete(item: TestItem) {
 		if (item.parent) {
 			item.parent.children.delete(item.id);
@@ -757,7 +553,7 @@ export class GoTestItemResolver {
 		readonly #pkgExclude;
 
 		constructor(
-			resolver: GoTestItemResolver,
+			resolver: ViewController,
 			request: TestRunRequest,
 			packages: Set<Package>,
 			include: Set<GoTestItem>,
@@ -986,7 +782,7 @@ export class GoTestItemResolver {
 	};
 }
 
-export const ResolvedTestRunRequest = GoTestItemResolver.RunRequest;
+export const ResolvedTestRunRequest = ViewController.RunRequest;
 export type ResolvedTestRunRequest = InstanceType<typeof ResolvedTestRunRequest>;
 export type ContinuousRunTracker = {
 	didUpdate(tests: Iterable<TestCase>): boolean;

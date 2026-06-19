@@ -3,8 +3,8 @@ import { VSCodeWorkspace } from '../utils/testing';
 import { Minimatch } from 'minimatch';
 import { Flags } from './utils';
 import { resolvePath, substituteEnv } from '../utils/util';
-import { GoTestItem, Workspace } from './model';
-import { Presentable } from './itemPresenter';
+import { Workspace } from './model';
+import { Presentable } from './view/presenter';
 
 const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 
