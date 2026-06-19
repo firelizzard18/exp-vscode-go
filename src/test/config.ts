@@ -1,9 +1,9 @@
-import { VSCodeWorkspace } from '../utils/testing';
-import { ConfigurationScope, Uri } from 'vscode';
-import { Minimatch } from 'minimatch';
+import { VSCodeWorkspace } from '@/utils/common';
+import { Flags } from '@/utils/spawn';
+import { resolvePath, substituteEnv } from '@/utils/util';
 import deepEqual from 'deep-equal';
-import { resolvePath, substituteEnv } from '../utils/util';
-import { Flags } from './utils';
+import { Minimatch } from 'minimatch';
+import { ConfigurationScope, Uri } from 'vscode';
 
 /**
  * Wrapper for accessing test explorer configuration.

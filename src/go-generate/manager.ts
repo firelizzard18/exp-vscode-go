@@ -1,28 +1,28 @@
+import { Context } from '@/utils/common';
+import { debugProcess, Flags, spawnProcess } from '@/utils/spawn';
+import { doSafe, helpers } from '@/utils/testing';
+import { basename, dirname } from 'node:path';
 import {
-	TestController,
-	tests,
-	ExtensionContext,
-	commands,
-	ExtensionMode,
-	workspace,
-	window,
-	TextDocument,
-	Range,
-	TestTag,
-	Uri,
-	TestRunProfileKind,
-	TestRunRequest,
 	CancellationToken,
+	commands,
+	ExtensionContext,
+	ExtensionMode,
 	Location,
+	LogOutputChannel,
+	Range,
+	TestController,
 	TestItem,
 	TestRun,
-	LogOutputChannel,
+	TestRunProfileKind,
+	TestRunRequest,
+	tests,
+	TestTag,
+	TextDocument,
+	Uri,
+	workspace,
 } from 'vscode';
-import { Context, doSafe, helpers } from '../utils/testing';
-import { debugProcess, Flags, spawnProcess } from '../test/utils';
-import { GoExtensionAPI } from '../vscode-go';
-import { basename, dirname } from 'node:path';
 import { TestConfig } from '../test/config';
+import { GoExtensionAPI } from '../vscode-go';
 
 export class GoGenerateManager {
 	static async register(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {

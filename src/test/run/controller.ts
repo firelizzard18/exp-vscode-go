@@ -1,18 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CancellationToken, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
-import { Context, TestController } from '../utils/testing';
-import { Flags, makeCaptureDir, Spawner } from './utils';
+import { makeCaptureDir } from '@/utils/capture';
+import { Context } from '@/utils/common';
+import { Flags, Spawner } from '@/utils/spawn';
+import { TestController } from '@/utils/testing';
 import path from 'node:path';
-import { parseCoverage } from './coverage';
-import { RunConfig } from './runConfig';
+import { CancellationToken, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
+import { parseCoverage } from '../coverage';
+import { TestCase } from '../model';
+import { ResolvedTestRunRequest, shouldRunBenchmarks } from '../view/controller';
+import { WorkspaceConfig } from '../workspaceConfig';
+import { RunConfig } from './config';
+import { TestRunLog } from './log';
 import { PackageTestRun } from './pkgTestRun';
-import { WorkspaceConfig } from './workspaceConfig';
-import { TestCase } from './model';
-import { TestRunLog } from './runLog';
-import { ResolvedTestRunRequest, shouldRunBenchmarks } from './view/controller';
 
-export class TestRunner {
+export class RunController {
 	readonly #context;
 	readonly #wsConfig;
 	readonly #ctrl;

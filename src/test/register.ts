@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { GoExtensionAPI } from '../vscode-go';
-import { debugProcess, spawnProcess } from './utils';
-import { TestManager } from './manager';
+import { Browser } from '@/browser';
+import { Command } from '@/commands';
+import { Context } from '@/utils/common';
+import { debugProcess, spawnProcess } from '@/utils/spawn';
+import { helpers } from '@/utils/testing';
+import { GoExtensionAPI } from '@/vscode-go';
 import {
 	commands,
 	ExtensionContext,
@@ -16,11 +19,9 @@ import {
 	window,
 	workspace,
 } from 'vscode';
-import { Browser } from '../browser';
-import { Context, helpers } from '../utils/testing';
-import { WorkspaceConfig } from './workspaceConfig';
+import { TestManager } from './manager';
 import { isTestItem } from './model';
-import { Command } from '../commands';
+import { WorkspaceConfig } from './workspaceConfig';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
 	const testCtx: Context = {

@@ -1,4 +1,6 @@
-import { Context, doSafe, TestController } from '../utils/testing';
+import { Context } from '@/utils/common';
+import { doSafe, TestController } from '@/utils/testing';
+import { GoLaunchRequest } from '@/vscode-go';
 import {
 	CancellationToken,
 	FileCoverage,
@@ -10,8 +12,7 @@ import {
 	TestTag,
 	type window,
 } from 'vscode';
-import { GoLaunchRequest } from '../vscode-go';
-import { ProfileType } from './profiles';
+import { ProfileType } from '../profiles';
 
 type ConfigureArgs = Pick<typeof window, 'showQuickPick'>;
 

@@ -1,21 +1,21 @@
-import {
+import { Context } from '@/utils/common';
+import { doSafe, TestController } from '@/utils/testing';
+import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
+import vscode, {
+	CancellationTokenSource,
 	TestRunProfileKind,
+	TestRunRequest,
 	Uri,
 	TestRunRequest as VSCTestRunRequest,
-	CancellationTokenSource,
-	TestRunRequest,
 } from 'vscode';
-import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
-import vscode from 'vscode';
-import { Context, doSafe, TestController } from '../utils/testing';
-import { GoTestItem, ItemEvent, ModelController, StaticTestCase, TestCase } from './model';
-import { TestRunner } from './testRunner';
 import { CodeLensProvider } from './codeLens';
-import { RunConfig } from './runConfig';
-import { WorkspaceConfig } from './workspaceConfig';
-import { ContinuousRunTracker, ModelUpdateEvent, ViewController } from './view/controller';
-import { ModelViewPresenter } from './view/presenter';
+import { GoTestItem, ItemEvent, ModelController, TestCase } from './model';
 import { ProfileTracker } from './profiles';
+import { RunConfig } from './run/config';
+import { RunController } from './run/controller';
+import { ContinuousRunTracker, ViewController } from './view/controller';
+import { ModelViewPresenter } from './view/presenter';
+import { WorkspaceConfig } from './workspaceConfig';
 
 /**
  * Entry point for the test explorer implementation.
@@ -205,7 +205,7 @@ export class TestManager {
 		const request = await this.#resolver.resolveRunRequest(rq);
 
 		// Set up the runner.
-		const runner = new TestRunner(this.#context, this.#config, this.#ctrl, config, token);
+		const runner = new RunController(this.#context, this.#config, this.#ctrl, config, token);
 
 		if (rq instanceof Array || !rq.continuous) {
 			// Save all files to ensure `go test` tests the latest changes

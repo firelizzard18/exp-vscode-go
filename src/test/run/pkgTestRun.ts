@@ -1,6 +1,5 @@
-import { Location, TestItem, TestRun } from 'vscode';
-import { Package, TestCase } from './model';
-import { TestEvent } from './testEvent';
+import { TestItem, TestRun } from 'vscode';
+import { Package, TestCase } from '../model';
 
 export class PackageTestRun {
 	readonly run: TestRun;

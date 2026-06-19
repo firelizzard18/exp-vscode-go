@@ -1,8 +1,8 @@
+import { Context } from '@/utils/common';
+import { getModulePaths } from '@/utils/modules';
+import { execGoStr } from '@/utils/util';
 import path, { isAbsolute, relative } from 'node:path';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
-import { Context } from '../utils/testing';
-import { execGoStr } from '../utils/util';
-import { getModulePaths } from '../utils/modules';
 import { Module, Workspace } from './model';
 
 /**

@@ -1,4 +1,4 @@
-import { Commands } from '@/utils/testing';
+import { Commands } from '@/utils/common';
 import { Uri } from 'vscode';
 import type { Package, Workspace } from '.';
 import { ItemSet } from './set';

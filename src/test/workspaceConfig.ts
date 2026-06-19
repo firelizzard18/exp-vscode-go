@@ -1,8 +1,8 @@
-import { ConfigurationChangeEvent, ConfigurationScope, Uri } from 'vscode';
-import { VSCodeWorkspace } from '../utils/testing';
+import { VSCodeWorkspace } from '@/utils/common';
+import { Flags } from '@/utils/spawn';
+import { resolvePath, substituteEnv } from '@/utils/util';
 import { Minimatch } from 'minimatch';
-import { Flags } from './utils';
-import { resolvePath, substituteEnv } from '../utils/util';
+import { ConfigurationChangeEvent, ConfigurationScope, Uri } from 'vscode';
 import { Workspace } from './model';
 import { Presentable } from './view/presenter';
 

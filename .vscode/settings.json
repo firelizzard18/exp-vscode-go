@@ -5,7 +5,11 @@
 	"search.exclude": {
 		"out": true,
 	},
+
 	"files.autoSave": "off",
+	"editor.codeActionsOnSave": {
+		"source.organizeImports": "explicit"
+	},
 	"[typescript]": {
 		"editor.formatOnSave": true,
 	},

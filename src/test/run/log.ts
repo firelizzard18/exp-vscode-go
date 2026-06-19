@@ -1,13 +1,6 @@
-import { Location, TestItem, TestMessage, TestRun } from 'vscode';
-import {
-	isOutputEvent,
-	normalizeTestEvent,
-	parseLocation,
-	RichOutputEvent,
-	RichTestEvent,
-	TestEvent,
-} from './testEvent';
 import path from 'node:path';
+import { Location, TestItem, TestMessage, TestRun } from 'vscode';
+import { isOutputEvent, normalizeTestEvent, parseLocation, RichOutputEvent, RichTestEvent, TestEvent } from './event';
 
 interface TestResolver {
 	(event: TestEvent | Location): TestItem | undefined;

@@ -1,4 +1,4 @@
-import { Commands } from '@/utils/testing';
+import { Commands } from '@/utils/common';
 import deepEqual from 'deep-equal';
 import { Range, TestRun, Uri } from 'vscode';
 import type { ItemEvent, TestFile } from '.';

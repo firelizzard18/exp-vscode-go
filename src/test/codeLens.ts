@@ -1,9 +1,8 @@
-import vscode from 'vscode';
-import { CodeLens, TextDocument, Range } from 'vscode';
+import { Command } from '@/commands';
+import vscode, { CodeLens, Range, TextDocument } from 'vscode';
 import { GoTestItem, StaticTestCase, TestCase, TestFile } from './model';
-import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
-import { Command } from '../commands';
 import { ViewController } from './view/controller';
+import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
 
 /**
  * Provides CodeLenses for running and debugging tests for users who prefer

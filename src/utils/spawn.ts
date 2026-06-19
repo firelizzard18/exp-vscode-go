@@ -1,12 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/*---------------------------------------------------------
- * Copyright 2020 The Go Authors. All rights reserved.
- * Licensed under the MIT License. See LICENSE in the project root for license information.
- *--------------------------------------------------------*/
-
+import { GoLaunchRequest } from '@/vscode-go';
 import cp from 'child_process';
-import { LineBuffer } from '../utils/lineBuffer';
 import {
 	CancellationToken,
 	debug,
@@ -20,11 +13,10 @@ import {
 	Uri,
 	WorkspaceFolder,
 } from 'vscode';
-import { killProcessTree } from '../utils/processUtils';
-import { Context, reportError } from '../utils/testing';
-import { GoLaunchRequest } from '../vscode-go';
-import { createHash } from 'crypto';
-import { getTempDirPath } from '../utils/util';
+import { Context } from './common';
+import { LineBuffer } from './lineBuffer';
+import { killProcessTree } from './processUtils';
+import { reportError } from './testing';
 
 /**
  * This is an environment variable injected when testing, which the test
@@ -52,7 +44,7 @@ export interface ProcessResult {
 
 export type Flags = { [key: string]: string | boolean };
 
-export interface TestRunLogContext {
+export interface LogAppender {
 	append(output: string, location?: Location, test?: TestItem): void;
 }
 
@@ -61,7 +53,7 @@ export interface Spawner {
 		ctx: Context,
 		run: TestRun,
 		location: Uri,
-		log: TestRunLogContext,
+		log: LogAppender,
 		flags: Flags,
 		userFlags: Flags,
 		args: string[],
@@ -297,7 +289,7 @@ function flags2args(flags: Flags) {
 	return Object.entries(flags).map(([k, v]) => (v === true ? `-${k}` : `-${k}=${v}`));
 }
 
-function fixTestFlags(log: TestRunLogContext, flags: Flags, userFlags: Flags) {
+function fixTestFlags(log: LogAppender, flags: Flags, userFlags: Flags) {
 	// Always use -json (the caller must add this), but don't combine it with -v
 	// because weird things happen (https://github.com/golang/go/issues/70384)
 	delete flags.v;
@@ -350,57 +342,4 @@ function isBuildFlag(name: string) {
 		default:
 			return false;
 	}
-}
-
-const captureDirs = new WeakMap<TestRun, Map<Uri, Uri>>();
-
-/**
- * Creates a storage directory for captures taken during a test run.
- *
- * Ideally, if the test run is persisted and supports onDidDispose, it would
- * return the extensions's storage URI. However there are issues with that (see
- * the comment in the function).
- *
- * @param context - The context object.
- * @param run - The test run object.
- * @returns The storage directory URI.
- */
-export async function makeCaptureDir(context: Context, run: TestRun, scope: Uri, time: Date): Promise<Uri> {
-	// Avoid multiple FS calls
-	let cache = captureDirs.get(run);
-	if (!cache) {
-		cache = new Map();
-		captureDirs.set(run, cache);
-	}
-	if (cache.has(scope)) {
-		return cache.get(scope)!;
-	}
-
-	const tmp = captureTempDir();
-
-	// This is a simple way to make an ID from the package URI
-	const hash = createHash('sha256').update(`${scope}`).digest('hex');
-	const dir = Uri.joinPath(tmp, `${hash.substring(0, 16)}-${time.getTime()}`);
-
-	// Store before awaiting to avoid concurrency issues
-	cache.set(scope, dir);
-
-	const { fs } = context.workspace;
-	await fs.createDirectory(dir);
-	run.onDidDispose?.(() => fs.delete(dir, { recursive: true }));
-
-	return dir;
-}
-
-function captureTempDir(): Uri {
-	// Profiles can be deleted when the run is disposed, but there's no way to
-	// re-associated profiles with a past run when VSCode is closed and
-	// reopened. So we always use the OS temp directory for now.
-	// https://github.com/microsoft/vscode/issues/227924
-
-	// if (run.isPersisted && run.onDidDispose && context.storageUri) {
-	// 	return context.storageUri;
-	// }
-
-	return Uri.file(getTempDirPath());
 }

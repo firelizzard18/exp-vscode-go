@@ -1,4 +1,4 @@
-import { Commands } from '@/utils/testing';
+import { Commands } from '@/utils/common';
 import { isRelativePath } from '@/utils/util';
 import path, { posix } from 'node:path';
 import { Uri } from 'vscode';

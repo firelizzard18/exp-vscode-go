@@ -1,5 +1,6 @@
+import { Context } from '@/utils/common';
 import { MapWithDefault } from '@/utils/map';
-import { Context, TestController } from '@/utils/testing';
+import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
 import path from 'node:path';
 import { Disposable, Location, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
@@ -17,6 +18,8 @@ import {
 	Workspace,
 } from '../model';
 import { ProfileType } from '../profiles';
+import { TestEvent } from '../run/event';
+import { PackageTestRun } from '../run/pkgTestRun';
 import { WorkspaceConfig } from '../workspaceConfig';
 import {
 	idFor,
@@ -27,8 +30,6 @@ import {
 	ProfileItem,
 	ProfileSet,
 } from './presenter';
-import { PackageTestRun } from '../pkgTestRun';
-import { TestEvent } from '../testEvent';
 
 export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
 
