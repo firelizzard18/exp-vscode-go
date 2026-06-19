@@ -1,38 +1,38 @@
-import { promisify } from 'node:util';
+import axios from 'axios';
 import { ChildProcess, execFile, spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import {
-	Uri,
-	window,
-	type ExtensionContext,
-	type CancellationToken,
-	type CustomDocumentOpenContext,
-	type WebviewPanel,
 	commands,
-	Disposable,
-	workspace,
-	Range,
-	TextEditorDecorationType,
-	CustomEditorProvider,
 	CustomDocumentBackup,
 	CustomDocumentBackupContext,
 	CustomDocumentEditEvent,
+	CustomEditorProvider,
+	env,
 	EventEmitter,
 	Memento,
 	ProgressLocation,
-	ThemeIcon,
 	QuickPickItem,
-	env,
+	Range,
+	TextEditorDecorationType,
+	ThemeIcon,
+	Uri,
+	window,
+	workspace,
+	type CancellationToken,
+	type CustomDocumentOpenContext,
+	type ExtensionContext,
+	type WebviewPanel,
 } from 'vscode';
-import { GoExtensionAPI } from './vscode-go';
-import { killProcessTree } from './utils/processUtils';
 import { HoverEvent, Message } from '../webview/pprof/messages';
+import { Command } from './commands';
+import type { CommandExecutor } from './extension';
+import { Disposer } from './utils/disposable';
+import { killProcessTree } from './utils/processUtils';
 import { SemVer } from './utils/semver';
 import { getTempFilePath } from './utils/util';
-import axios from 'axios';
-import { createWriteStream } from 'node:fs';
-import path from 'node:path';
-import type { CommandExecutor } from './extension';
-import { Command } from './commands';
+import { GoExtensionAPI } from './vscode-go';
 
 const nbsp = '\u00A0';
 
@@ -387,7 +387,7 @@ class ErrorDocument {
 	dispose() {}
 }
 
-class ProfileDocument {
+class ProfileDocument extends Disposer {
 	static #active?: ProfileDocument;
 	static get active() {
 		return this.#active;
@@ -397,12 +397,12 @@ class ProfileDocument {
 	readonly uri;
 	readonly #proc;
 	readonly #server;
-	readonly #subscriptions: Disposable[] = [];
 
 	#hovered: HoverEvent = { event: 'hovered' };
 	#panel?: WebviewPanel;
 
 	constructor(provider: ProfileEditorProvider, uri: Uri, proc: ChildProcess, server: Uri) {
+		super();
 		this.#provider = provider;
 		this.uri = uri;
 		this.#proc = proc;
@@ -411,34 +411,26 @@ class ProfileDocument {
 
 	dispose() {
 		killProcessTree(this.#proc);
-		this.#subscriptions.forEach((x) => x.dispose());
+		super.dispose();
 	}
 
 	resolve(panel: WebviewPanel) {
 		ProfileDocument.#active = this;
 		this.#panel = panel;
-		panel.onDidChangeViewState(
-			(e) => {
-				if (e.webviewPanel.active) {
-					ProfileDocument.#active = this;
-				} else if (ProfileDocument.#active === this) {
-					ProfileDocument.#active = undefined;
-				}
-			},
-			null,
-			this.#subscriptions,
-		);
+		this.disposeOf = panel.onDidChangeViewState((e) => {
+			if (e.webviewPanel.active) {
+				ProfileDocument.#active = this;
+			} else if (ProfileDocument.#active === this) {
+				ProfileDocument.#active = undefined;
+			}
+		});
 
 		panel.webview.options = { enableScripts: true, enableCommandUris: true };
-		panel.webview.onDidReceiveMessage(
-			(x) => {
-				if (!x || typeof x !== 'object') return;
-				if (!('event' in x || 'command' in x)) return;
-				this.#didReceiveMessage(x);
-			},
-			null,
-			this.#subscriptions,
-		);
+		this.disposeOf = panel.webview.onDidReceiveMessage((x) => {
+			if (!x || typeof x !== 'object') return;
+			if (!('event' in x || 'command' in x)) return;
+			this.#didReceiveMessage(x);
+		});
 		panel.webview.html = `
 			<!DOCTYPE html>
 			<html lang="en">

@@ -1,3 +1,4 @@
+import { Disposer } from '@/utils/disposable';
 import { RelationMap, WeakMapWithDefault } from '@/utils/map';
 import moment from 'moment';
 import path from 'node:path';
@@ -15,7 +16,6 @@ import {
 } from '../model';
 import { CapturedProfile, ProfileTracker, ProfileType } from '../profiles';
 import { WorkspaceConfig } from '../workspaceConfig';
-import { ModelUpdateEvent } from './controller';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
 
@@ -46,8 +46,9 @@ export class ProfileItem {
 	}
 }
 
-export class ModelViewPresenter {
+export class ModelViewPresenter extends Disposer {
 	readonly #config;
+	readonly #model;
 	readonly #profiles;
 	readonly #pkgRel = new WeakMapWithDefault(
 		(_: Workspace | Module) => new RelationMap<Package, Package | undefined>(),
@@ -55,13 +56,13 @@ export class ModelViewPresenter {
 	readonly #testRel = new WeakMapWithDefault((_: Package) => new RelationMap<TestCase, TestCase | undefined>());
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
-	constructor(
-		config: WorkspaceConfig,
-		public readonly tests: ModelController,
-		profiles: ProfileTracker,
-	) {
+	constructor(config: WorkspaceConfig, tests: ModelController, profiles: ProfileTracker) {
+		super();
 		this.#config = config;
+		this.#model = tests;
 		this.#profiles = profiles;
+
+		this.disposeOf = tests.onDidUpdate((x) => this.#didUpdate(x));
 	}
 
 	markRequested(item: Workspace | Module | Package) {
@@ -195,11 +196,11 @@ export class ModelViewPresenter {
 
 	*getChildren(item?: Presentable | null): Iterable<Presentable, void, void> {
 		if (!item) {
-			for (const ws of this.tests.workspaces) {
+			for (const ws of this.#model.workspaces) {
 				// If the workspace has discovery disabled and has _not_
 				// been requested (e.g. by opening a file), skip it.
 				const mode = this.#config.for(ws).discovery.get();
-				if (mode !== 'on' && this.#requested.has(ws)) {
+				if (mode !== 'on' && !this.#requested.has(ws)) {
 					continue;
 				}
 
@@ -346,7 +347,7 @@ export class ModelViewPresenter {
 		return scope;
 	}
 
-	didUpdate(updates: ItemEvent[]) {
+	#didUpdate(updates: ItemEvent[]) {
 		// If packages were added or removed, rebuild the root's package
 		// relations. It could make sense to do this on a per-package basis, but
 		// it's a lot simpler just to rebuild the relation map.
@@ -367,8 +368,7 @@ export class ModelViewPresenter {
 
 		// If tests were added or removed, rebuild the package's test relations.
 		const testChanges = updates.filter(
-			(x): x is ModelUpdateEvent<TestCase> =>
-				x.item instanceof TestCase && (x.type === 'added' || x.type === 'removed'),
+			(x): x is ItemEvent<TestCase> => x.item instanceof TestCase && (x.type === 'added' || x.type === 'removed'),
 		);
 		const testPkgs = new Set(testChanges.map((x) => x.item.file.package));
 		for (const pkg of testPkgs) {

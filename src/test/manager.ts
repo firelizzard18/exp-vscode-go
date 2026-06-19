@@ -1,6 +1,7 @@
 import { Context } from '@/utils/common';
+import { Disposer } from '@/utils/disposable';
 import { doSafe, TestController } from '@/utils/testing';
-import type { CancellationToken, Disposable, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
+import type { CancellationToken, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode, {
 	CancellationTokenSource,
 	TestRunProfileKind,
@@ -20,8 +21,7 @@ import { WorkspaceConfig } from './workspaceConfig';
 /**
  * Entry point for the test explorer implementation.
  */
-export class TestManager {
-	readonly #disposable: Disposable[] = [];
+export class TestManager extends Disposer {
 	readonly #context: Context;
 	readonly #config: WorkspaceConfig;
 
@@ -44,6 +44,7 @@ export class TestManager {
 	#presenter?: ModelViewPresenter;
 
 	constructor(context: Context) {
+		super();
 		this.#context = context;
 		this.#config = new WorkspaceConfig(context.workspace);
 
@@ -86,7 +87,7 @@ export class TestManager {
 		this.#resolver = resolver;
 		this.#presenter = presenter;
 
-		this.#disposable.push(ctrl, resolver);
+		this.disposeOf = [ctrl, resolver, presenter];
 
 		// Listen to update events.
 		model.onDidUpdate((events) => {
@@ -94,8 +95,9 @@ export class TestManager {
 		});
 
 		// Register the legacy code lens provider.
-		this.#disposable.push(
-			args.registerCodeLensProvider({ language: 'go', scheme: 'file', pattern: '**/*_test.go' }, codeLens),
+		this.disposeOf = args.registerCodeLensProvider(
+			{ language: 'go', scheme: 'file', pattern: '**/*_test.go' },
+			codeLens,
 		);
 
 		// Set up resolve/refresh handlers.
@@ -111,8 +113,7 @@ export class TestManager {
 		// Set up run profiles.
 		const createRunProfile = (config: RunConfig) => {
 			const run = (rq: VSCTestRunRequest, token: CancellationToken) => this.#executeTestRun(config, rq, token);
-			const profile = config.createRunProfile(args, ctrl, run);
-			this.#disposable.push(profile);
+			this.disposeOf = config.createRunProfile(args, ctrl, run);
 		};
 
 		createRunProfile(this.#run);
@@ -137,8 +138,7 @@ export class TestManager {
 	 * The inverse of {@link setup}. Tears down the test explorer.
 	 */
 	dispose() {
-		this.#disposable.forEach((x) => x.dispose());
-		this.#disposable.splice(0, this.#disposable.length);
+		super.dispose();
 		this.#ctrl = undefined;
 		this.#resolver = undefined;
 	}
@@ -318,11 +318,6 @@ export class TestManager {
 	}
 
 	#didUpdate(updates: ItemEvent[]) {
-		if (!this.#presenter || !this.#ctrl) return;
-
-		// Notify the presenter of changes
-		this.#presenter.didUpdate(updates);
-
 		// Queue uncommitted updates (unsaved changes) for execution.
 		const tests = updates.filter(
 			(x): x is ItemEvent<TestCase> => x.item instanceof TestCase && x.type === 'modified',

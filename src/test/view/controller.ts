@@ -1,9 +1,9 @@
 import { Context } from '@/utils/common';
+import { Disposer } from '@/utils/disposable';
 import { MapWithDefault } from '@/utils/map';
 import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
-import path from 'node:path';
-import { Disposable, Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
+import { Range, TestItem, TestItemCollection, TestRun, TestRunRequest, Uri } from 'vscode';
 import {
 	DynamicTestCase,
 	GoTestItem,
@@ -30,16 +30,12 @@ import {
 	ProfileSet,
 } from './presenter';
 
-export type ModelUpdateEvent<T = GoTestItem> = ItemEvent<T> & { view?: TestItem };
-
-export class ViewController {
+export class ViewController extends Disposer {
 	readonly #context;
 	readonly #config;
 	readonly #model;
 	readonly #presenter;
 	readonly #ctrl;
-
-	readonly subscriptions: Disposable[] = [];
 
 	constructor(
 		context: Context,
@@ -48,61 +44,56 @@ export class ViewController {
 		presenter: ModelViewPresenter,
 		ctrl: TestController,
 	) {
+		super();
 		this.#context = context;
 		this.#config = config;
 		this.#model = model;
 		this.#presenter = presenter;
 		this.#ctrl = ctrl;
 
-		this.subscriptions.push(
-			model.onDidUpdate((updates) => {
-				// Synchronize the view model.
-				const refresh = new Map<Presentable, boolean>();
-				for (const { item, type } of updates) {
-					if (type === 'removed') {
-						const parent = this.#presenter.getParent(item);
-						if (parent) refresh.set(parent, false);
-						continue;
-					}
-
-					// Update the package (recursively).
-					if (item.kind === 'package') {
-						refresh.set(item, true);
-					}
-
-					// Update the view parent's view model. TODO: This is
-					// triggered by RunController.#testFor, handle this during
-					// resolveViewItem/#buildViewItem?
-					if (item instanceof DynamicTestCase) {
-						const viewParent = this.#presenter.getParent(item);
-						if (!viewParent) throw new Error('Internal error');
-						refresh.set(viewParent, true);
-					}
+		this.disposeOf = model.onDidUpdate((updates) => {
+			// Synchronize the view model.
+			const refresh = new Map<Presentable, boolean>();
+			for (const { item, type } of updates) {
+				if (type === 'removed') {
+					const parent = this.#presenter.getParent(item);
+					if (parent) refresh.set(parent, false);
+					continue;
 				}
 
-				// Refresh the view model. TODO: Eliminate duplicates
-				// (parent-and-child refreshes)?
-				for (const [item, recurse] of refresh) {
-					this.#updateViewModel(item, undefined, { recurse });
+				// Update the package (recursively).
+				if (item.kind === 'package') {
+					refresh.set(item, true);
 				}
 
-				// Invalidate test results when tests are modified.
-				const tests = updates.filter(
-					(x): x is ItemEvent<TestCase> =>
-						// If a test case is modified
-						(x.item instanceof TestCase && x.type === 'modified') ||
-						// Or a _static_ test case is added;
-						(x.type === 'added' && x.item instanceof StaticTestCase),
-				);
-				if (tests.length) {
-					this.#ctrl.invalidateTestResults?.(tests.map((x) => this.#getViewItem(x.item)).filter((x) => !!x));
+				// Update the view parent's view model. TODO: This is
+				// triggered by RunController.#testFor, handle this during
+				// resolveViewItem/#buildViewItem?
+				if (item instanceof DynamicTestCase) {
+					const viewParent = this.#presenter.getParent(item);
+					if (!viewParent) throw new Error('Internal error');
+					refresh.set(viewParent, true);
 				}
-			}),
-		);
-	}
+			}
 
-	dispose() {
-		this.subscriptions.splice(0, this.subscriptions.length).forEach((x) => x.dispose());
+			// Refresh the view model. TODO: Eliminate duplicates
+			// (parent-and-child refreshes)?
+			for (const [item, recurse] of refresh) {
+				this.#updateViewModel(item, undefined, { recurse });
+			}
+
+			// Invalidate test results when tests are modified.
+			const tests = updates.filter(
+				(x): x is ItemEvent<TestCase> =>
+					// If a test case is modified
+					(x.item instanceof TestCase && x.type === 'modified') ||
+					// Or a _static_ test case is added;
+					(x.type === 'added' && x.item instanceof StaticTestCase),
+			);
+			if (tests.length) {
+				this.#ctrl.invalidateTestResults?.(tests.map((x) => this.#getViewItem(x.item)).filter((x) => !!x));
+			}
+		});
 	}
 
 	/**
@@ -118,23 +109,7 @@ export class ViewController {
 	 */
 
 	workspaceFor(uri: Uri) {
-		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
-		if (!wsf) return;
-
-		// Resolve or create a Workspace.
-		let ws = this.#presenter.tests.workspaces.get(wsf);
-		if (!ws) {
-			ws = new Workspace(wsf);
-			this.#presenter.tests.workspaces.add(ws);
-		}
-
-		// If the path is excluded, ignore it.
-		const config = this.#config.for(ws);
-		const exclude = config.exclude.get() || [];
-		const rel = path.relative(ws.uri.fsPath, uri.fsPath);
-		if (exclude.some((x) => x.match(rel))) return;
-
-		return ws;
+		return this.#model.workspaceFor(uri);
 	}
 
 	resolveViewItem(go: GoTestItem) {
@@ -372,7 +347,7 @@ export class ViewController {
 			include = new Set(rq.include.map((x) => this.#getGoItem(x.id)).filter((x) => !!x && isTestItem(x)));
 		} else {
 			// If include is not specified, include all roots.
-			const workspaces = [...this.#presenter.tests.workspaces];
+			const workspaces = [...this.#model.workspaces];
 			include = new Set([...workspaces, ...workspaces.flatMap((x) => [...x.modules])]);
 		}
 
@@ -523,7 +498,7 @@ export class ViewController {
 		// Get the workspace.
 		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
 		if (!wsf) return;
-		const ws = this.#presenter.tests.workspaces.get(wsf);
+		const ws = this.#model.workspaces.get(wsf);
 		if (!ws || id.kind === 'workspace') return ws;
 
 		// Scan all the modules.

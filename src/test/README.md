@@ -48,6 +48,33 @@ The data model lives in its own package and has no dependency on VSCode's test U
 
 **`testEvent.ts`** defines the types for `go test -json` output and utilities for normalizing them.
 
+## TODO
+
+- **TestManager (`manager.ts`)**: Analyze and clean up. It's doing too much but the scope of the problem hasn't been fully assessed.
+- **`src/test/run/`**: Analyze and clean up. The current state is functional but hasn't been reviewed for design issues.
+
+## Known issues
+
+### `ViewController`
+
+**`updateFile` is a leaky proxy.** It delegates to `ModelController.updateFile` then calls `presenter.markRequested` as a side effect. The view controller has to know that a file update implies a discovery-request, and it has to know the presenter's API to record it. Two separate concerns bolted together.
+
+**`resolveRunRequest` is a god method.** It does at least four distinct things: lazy-loads the model if needed, translates VSCode `TestItem`s back to Go items, resolves workspace/module includes into package sets, and deduplicates the include/exclude sets. The lazy-loading especially feels wrong here.
+
+**`updateViewModel` has a dual input type.** It accepts `TestItem | GoTestItem` and has to figure out which it got. The `TestItem` path exists for VSCode's `resolveHandler`; the `GoTestItem` path is for internal calls. These should be separate entry points.
+
+**`#buildViewItem` uses a `function create(this: ViewController, ...)` inner function** called with `.call(this, ...)` because it needs private field access. Should be a private method.
+
+**`#getPresentable` handles both Go item lookup and profile synthesis** in the same method — very different code paths crammed together.
+
+**`ResolvedTestRunRequest` is still a nested class** accessing `#model`, `#presenter`, and `#updateViewModel` through `this.#resolver`. The README describes it as a standalone class with injected dependencies; that work is not yet done.
+
+### `ModelViewPresenter`
+
+**`#requested` / `markRequested` is owned by the presenter but written by `ViewController`** as a side effect of `updateFile`. The state that controls visibility lives in the presenter, but the trigger that sets it lives in the view controller.
+
+**Profile management (`addProfile`, `removeProfile`, `getProfiles`, `#resolveProfilesParent`) is mixed into the structural presenter.** The profile tree nodes (`ProfileContainer`, `ProfileSet`, `ProfileItem`) drive profiles into `getChildren`/`getParent`/`hasChildren`. The coupling is tight and makes the presenter harder to read.
+
 ## Data flow
 
 ### Discovery
