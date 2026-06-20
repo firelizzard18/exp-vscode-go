@@ -78,6 +78,28 @@ The correct fix is to make `ProfileTracker` emit events when profiles are added 
 
 The correct shape is unclear. One option is for `ModelController` to emit a distinct event type for file updates (vs. population), and for `ModelViewPresenter` to observe that and mark items as requested itself. The current code is tolerable but should be revisited when the profile sync issue is addressed, since both follow the same push-vs-event pattern.
 
+### Run/view coupling
+
+The run layer (`src/test/run/`, `resolvedRunRequest.ts`) currently imports from the view layer (`src/test/view/`). The dependency should flow the other way: view knows about run, run doesn't know about view.
+
+Specific coupling points, in order of priority:
+
+**`shouldRunBenchmarks` is exported from `view/controller.ts`** but is a test execution decision (do we pass `-bench` to `go test`?). It has nothing to do with the view. Should move to `run/`.
+
+**`ContinuousRunTracker` is exported from `view/controller.ts`** but is only there because `resolveRunRequest` used to build it directly. Now that `ResolvedTestRunRequest` is its own class, this type should move to `resolvedRunRequest.ts`.
+
+**`ResolvedTestRunRequest` and `RunController` both hold `ViewController`** solely to call `resolveViewItem(go)` — converting a model item to a `TestItem` on demand. After the `ProfileTracker` event work removes `ModelViewPresenter` from `ResolvedTestRunRequest`, the only remaining view dependency in both classes is this one function. The fix is to inject `resolveViewItem` as a callback `(go: GoTestItem) => TestItem` rather than holding `ViewController`. At that point `src/test/run` and `resolvedRunRequest.ts` have zero imports from `src/test/view`.
+
+### `ResolvedTestRunRequest.packages()` uses `presenter.getParent`
+
+Before yielding each `PackageTestRun`, `packages()` clears dynamic test cases whose parent is being re-run. To decide which tests qualify, it calls `this.#presenter.getParent(test)` and checks whether that parent is in the include/exclude sets. This pulls a presentation concern (how tests are logically parented, which is influenced by nesting config) into a run-layer decision.
+
+The data model already tracks subtest-parent relationships: `Package.findParent(name)` is used by `ModelViewPresenter.#didUpdate` for exactly this purpose. The predicate in `removeDynamicTests` should use model structure instead of asking the presenter.
+
+### `TestManager` fan-out into `ContinuousRunTracker`
+
+`TestManager.#didUpdate` receives model events and calls `tracker.didUpdate(...)` on every active `ContinuousRunTracker`. This makes `TestManager` a middleman in a data path it has no real stake in. Each tracker could subscribe to `model.onDidUpdate` directly inside `forContinuous`, disposing the subscription when the run is canceled. `TestManager` would then only need to call `tracker.run()` on save — which is a legitimate coordination concern (save event → trigger execution) rather than a model fan-out.
+
 ### `resolveRunRequest` is a god method
 
 It lazy-loads the model if needed, translates VSCode `TestItem`s back to Go items, resolves workspace/module includes into package sets, and deduplicates the include/exclude list. These are distinct concerns. The lazy-loading especially doesn't belong here — by the time a run is requested, the model should already be populated. The method should be split, but the right split depends on what `ViewController`'s responsibility boundary ends up being after the other refactors settle.
