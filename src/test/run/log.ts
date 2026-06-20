@@ -1,9 +1,16 @@
 import path from 'node:path';
 import { Location, TestItem, TestMessage, TestRun } from 'vscode';
-import { isOutputEvent, normalizeTestEvent, parseLocation, RichOutputEvent, RichTestEvent, TestEvent } from './event';
+import {
+	isOutputEvent,
+	normalizeTestEvent,
+	parseLocation,
+	RichOutputEvent,
+	RichTestEvent,
+	TestEvent,
+} from './testEvent';
 
 interface TestResolver {
-	(event: TestEvent | Location): TestItem | undefined;
+	(event: Location | string): TestItem | undefined;
 }
 
 /**
@@ -45,7 +52,7 @@ export class TestRunLog {
 			return;
 		}
 
-		const item = this.#testFor(msg);
+		const item = msg.Test ? this.#testFor(msg.Test) : undefined;
 		const rich = normalizeTestEvent(item ?? this.#defaultTestItem, msg);
 
 		// The output location is only shown on the first line so remember what

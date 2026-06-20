@@ -80,21 +80,13 @@ The correct shape is unclear. One option is for `ModelController` to emit a dist
 
 ### Run/view coupling
 
-The run layer (`src/test/run/`, `resolvedRunRequest.ts`) currently imports from the view layer (`src/test/view/`). The dependency should flow the other way: view knows about run, run doesn't know about view.
-
-Specific coupling points, in order of priority:
+The run layer (`src/test/run/`, `resolvedRunRequest.ts`) imports from the view layer (`src/test/view/`). Two of these imports are misplaced and should move; the rest are irreducible.
 
 **`shouldRunBenchmarks` is exported from `view/controller.ts`** but is a test execution decision (do we pass `-bench` to `go test`?). It has nothing to do with the view. Should move to `run/`.
 
 **`ContinuousRunTracker` is exported from `view/controller.ts`** but is only there because `resolveRunRequest` used to build it directly. Now that `ResolvedTestRunRequest` is its own class, this type should move to `resolvedRunRequest.ts`.
 
-**`ResolvedTestRunRequest` and `RunController` both hold `ViewController`** solely to call `resolveViewItem(go)` — converting a model item to a `TestItem` on demand. After the `ProfileTracker` event work removes `ModelViewPresenter` from `ResolvedTestRunRequest`, the only remaining view dependency in both classes is this one function. The fix is to inject `resolveViewItem` as a callback `(go: GoTestItem) => TestItem` rather than holding `ViewController`. At that point `src/test/run` and `resolvedRunRequest.ts` have zero imports from `src/test/view`.
-
-### `ResolvedTestRunRequest.packages()` uses `presenter.getParent`
-
-Before yielding each `PackageTestRun`, `packages()` clears dynamic test cases whose parent is being re-run. To decide which tests qualify, it calls `this.#presenter.getParent(test)` and checks whether that parent is in the include/exclude sets. This pulls a presentation concern (how tests are logically parented, which is influenced by nesting config) into a run-layer decision.
-
-The data model already tracks subtest-parent relationships: `Package.findParent(name)` is used by `ModelViewPresenter.#didUpdate` for exactly this purpose. The predicate in `removeDynamicTests` should use model structure instead of asking the presenter.
+**The remaining `ViewController` references in `RunController` and `ResolvedTestRunRequest` are irreducible.** VSCode's result-reporting API takes `TestItem` instances, so the run layer must be able to convert model items to `TestItem`s on demand. That conversion lives in the view layer and there is no seam to cut it out. Injecting a `(go: GoTestItem) => TestItem` callback instead of holding `ViewController` directly is the same coupling with a thinner type — not a meaningful improvement.
 
 ### `TestManager` fan-out into `ContinuousRunTracker`
 

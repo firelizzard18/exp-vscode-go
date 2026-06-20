@@ -5,15 +5,16 @@ import { Context } from '@/utils/common';
 import { Flags, Spawner } from '@/utils/spawn';
 import { TestController } from '@/utils/testing';
 import path from 'node:path';
-import { CancellationToken, FileCoverage, Location, TestRun, TestRunProfileKind, Uri } from 'vscode';
+import { CancellationToken, EventEmitter, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
 import { parseCoverage } from '../coverage';
-import { DynamicTestCase, ModelController, Package, TestCase } from '../model';
+import { ModelController, TestCase } from '../model';
 import { ResolvedTestRunRequest } from '../resolvedRunRequest';
 import { shouldRunBenchmarks, ViewController } from '../view/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
 import { RunConfig } from './config';
 import { TestRunLog } from './log';
 import { PackageTestRun } from './pkgTestRun';
+import { RunEvent } from './runEvent';
 
 export class RunController {
 	readonly #context;
@@ -23,6 +24,7 @@ export class RunController {
 	readonly #token;
 	readonly #resolver;
 	readonly #model;
+	readonly #runEvents;
 
 	constructor(
 		context: Context,
@@ -32,6 +34,7 @@ export class RunController {
 		token: CancellationToken,
 		resolver: ViewController,
 		model: ModelController,
+		runEvents: EventEmitter<RunEvent>,
 	) {
 		this.#context = context;
 		this.#wsConfig = wsConfig;
@@ -40,6 +43,7 @@ export class RunController {
 		this.#token = token;
 		this.#resolver = resolver;
 		this.#model = model;
+		this.#runEvents = runEvents;
 	}
 
 	async run(rq: ResolvedTestRunRequest) {
@@ -156,9 +160,29 @@ export class RunController {
 		}
 
 		const cfg = this.#wsConfig.for(pkg.goItem);
-		const log = new TestRunLog(pkg.run, pkg.testItem, (event) => {
-			const query = event instanceof Location ? event : event.Test;
-			return query ? this.#testFor(pkg.run, pkg.goItem, query) : undefined;
+		const seen = new Set<string>();
+		const log = new TestRunLog(pkg.run, pkg.testItem, (query) => {
+			// Have we see this test before? If it's a new dynamic subtest, the
+			// model will create a new item for it in response to the event,
+			// which will trigger an update event, which will trigger a
+			// recursive update of the parent.
+			//
+			// TODO: Can we remove the onDidUpdate case and rely purely on
+			// resolveViewItem.
+			if (typeof query === 'string' && query.includes('/') && !seen.has(query)) {
+				seen.add(query);
+				this.#runEvents.fire({
+					type: 'subtest',
+					run: pkg.run,
+					pkg: pkg.goItem,
+					name: query,
+				});
+			}
+
+			// Locate the test, and if it exists then resolve and return the
+			// view item.
+			const test = this.#model.findTest(pkg.goItem, query);
+			return test && this.#resolver.resolveViewItem(test);
 		});
 
 		const r = await this.#spawn(this.#context, pkg.run, pkg.testItem.uri!, log, flags, cfg.testFlags.get(), [], {
@@ -224,30 +248,6 @@ export class RunController {
 			default:
 				return this.#context.spawn(...args);
 		}
-	}
-
-	/** Resolves the TestItem for the given test event or location. */
-	#testFor(run: TestRun, pkg: Package, query: string | Location) {
-		// Check for an exact match. If it's a dynamic test, reassociate with
-		// the current run.
-		let test = this.#model.findTest(pkg, query);
-		if (test) {
-			if (test instanceof DynamicTestCase) {
-				test.run = run;
-			}
-
-			return this.#resolver.resolveViewItem(test);
-		}
-
-		// We can't create a new test from a location
-		if (query instanceof Location) return;
-
-		// Creating the new test will trigger an update event, which will
-		// trigger a recursive update of the parent, so we should be guaranteed
-		// to have an item here. TODO: Can we remove the onDidUpdate case and
-		// rely purely on resolveViewItem.
-		test = this.#model.createDynamicSubtest(pkg, query);
-		return test && this.#resolver.resolveViewItem(test);
 	}
 }
 

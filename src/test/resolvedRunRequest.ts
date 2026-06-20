@@ -1,8 +1,9 @@
 import { MapWithDefault } from '@/utils/map';
-import { TestRun, TestRunRequest, Uri } from 'vscode';
+import { EventEmitter, TestRun, TestRunRequest, Uri } from 'vscode';
 import { GoTestItem, ModelController, Package, TestCase } from './model';
 import { ProfileType } from './profiles';
 import { PackageTestRun } from './run/pkgTestRun';
+import { RunEvent } from './run/runEvent';
 import { ContinuousRunTracker, ViewController } from './view/controller';
 import { ModelViewPresenter } from './view/presenter';
 
@@ -16,6 +17,7 @@ export class ResolvedTestRunRequest {
 	readonly #exclude;
 	readonly #pkgInclude;
 	readonly #pkgExclude;
+	readonly #runEvents;
 
 	constructor(
 		model: ModelController,
@@ -25,6 +27,7 @@ export class ResolvedTestRunRequest {
 		packages: Set<Package>,
 		include: Set<GoTestItem>,
 		exclude: Set<GoTestItem>,
+		runEvents: EventEmitter<RunEvent>,
 	) {
 		this.#model = model;
 		this.#presenter = presenter;
@@ -35,6 +38,7 @@ export class ResolvedTestRunRequest {
 		this.#exclude = exclude;
 		this.#pkgInclude = mapTestsByPackage(include);
 		this.#pkgExclude = mapTestsByPackage(exclude);
+		this.#runEvents = runEvents;
 	}
 
 	get size() {
@@ -46,7 +50,7 @@ export class ResolvedTestRunRequest {
 		// associated with it.
 		run.onDidDispose?.(() => {
 			for (const pkg of this.#packages) {
-				this.#model.removeDynamicTests(pkg, (test) => test.run === run);
+				this.#runEvents.fire({ type: 'disposed', run, pkg });
 			}
 		});
 
@@ -62,21 +66,15 @@ export class ResolvedTestRunRequest {
 			const include = mode === 'all' ? map([...pkg.allTests()]) : map(this.#pkgInclude.get(pkg) ?? []);
 			const exclude = map(this.#pkgExclude.get(pkg) ?? []);
 
-			// This is called immediately before executing a test run. So, we'll
-			// clear the dynamic test cases now.
 			if (mode === 'all') {
-				// We're running all tests, so remove all dynamic tests.
-				this.#model.removeDynamicTests(pkg, () => true);
+				this.#runEvents.fire({ type: 'start', run, pkg });
 			} else {
-				// We're running specific tests, so remove dynamic tests if
-				// their parent is being run.
-				this.#model.removeDynamicTests(pkg, (test) => {
-					const parent = this.#presenter.getParent(test);
-					if (parent) {
-						if (exclude.has(parent as any)) return false;
-						if (include.has(parent as any)) return true;
-					}
-					return false;
+				this.#runEvents.fire({
+					type: 'start',
+					run,
+					pkg,
+					include: new Set([...include.keys()]),
+					exclude: new Set([...exclude.keys()]),
 				});
 			}
 
@@ -159,6 +157,7 @@ export class ResolvedTestRunRequest {
 					packages,
 					include,
 					rq.#exclude,
+					rq.#runEvents,
 				);
 				packages = new Set();
 				include = new Set();

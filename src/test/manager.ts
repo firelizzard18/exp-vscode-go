@@ -4,6 +4,7 @@ import { doSafe, TestController } from '@/utils/testing';
 import type { CancellationToken, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
 import vscode, {
 	CancellationTokenSource,
+	EventEmitter,
 	TestRunProfileKind,
 	TestRunRequest,
 	Uri,
@@ -14,6 +15,7 @@ import { GoTestItem, ItemEvent, ModelController, TestCase } from './model';
 import { ProfileTracker } from './profiles';
 import { RunConfig } from './run/config';
 import { RunController } from './run/controller';
+import { RunEvent } from './run/runEvent';
 import { ContinuousRunTracker, ViewController } from './view/controller';
 import { ModelViewPresenter } from './view/presenter';
 import { WorkspaceConfig } from './workspaceConfig';
@@ -32,9 +34,9 @@ export class TestManager extends Disposer {
 	readonly #rrDebug: RunConfig;
 	readonly #coverage: RunConfig;
 
-	// Events.
 	readonly #docVersion = new Map<string, number>();
 	readonly #continuousRuns = new Set<ContinuousRunTracker>();
+	readonly #runEvents = new EventEmitter<RunEvent>();
 
 	// Transients.
 	#configureProfiles?: () => Promise<boolean>;
@@ -76,7 +78,7 @@ export class TestManager extends Disposer {
 		const ctrl = args.createTestController('goExp', 'Go (experimental)');
 
 		// Set up the components.
-		const model = new ModelController(this.#context, this.#config);
+		const model = new ModelController(this.#context, this.#config, this.#runEvents.event);
 		const profiles = new ProfileTracker();
 		const presenter = new ModelViewPresenter(this.#config, model, profiles);
 		const resolver = new ViewController(this.#context, this.#config, model, presenter, ctrl);
@@ -204,7 +206,7 @@ export class TestManager extends Disposer {
 			token = cancel.token;
 		}
 
-		const request = await this.#resolver.resolveRunRequest(rq);
+		const request = await this.#resolver.resolveRunRequest(rq, this.#runEvents);
 
 		// Set up the runner.
 		const runner = new RunController(
@@ -215,6 +217,7 @@ export class TestManager extends Disposer {
 			token,
 			this.#resolver,
 			this.#model,
+			this.#runEvents,
 		);
 
 		if (rq instanceof Array || !rq.continuous) {

@@ -2,7 +2,7 @@ import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
-import { Range, TestItem, TestItemCollection, TestRunRequest, Uri } from 'vscode';
+import { EventEmitter, Range, TestItem, TestItemCollection, TestRunRequest, Uri } from 'vscode';
 import {
 	DynamicTestCase,
 	GoTestItem,
@@ -17,6 +17,7 @@ import {
 	Workspace,
 } from '../model';
 import { ResolvedTestRunRequest } from '../resolvedRunRequest';
+import { RunEvent } from '../run/runEvent';
 import { WorkspaceConfig } from '../workspaceConfig';
 import {
 	idFor,
@@ -322,7 +323,7 @@ export class ViewController extends Disposer {
 		}
 	}
 
-	async resolveRunRequest(rq: TestRunRequest | GoTestItem[]) {
+	async resolveRunRequest(rq: TestRunRequest | GoTestItem[], runEvents: EventEmitter<RunEvent>) {
 		// IDs of items to exclude. Don't try to resolve to test items because
 		// those might not have been loaded yet.
 		const exclude = new Set(rq instanceof Array ? [] : rq.exclude?.map((x) => x.id) ?? []);
@@ -417,7 +418,16 @@ export class ViewController extends Disposer {
 		}
 
 		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x && isTestItem(x)));
-		return new ResolvedTestRunRequest(this.#model, this.#presenter, this, rq, packages, include, excludeItems);
+		return new ResolvedTestRunRequest(
+			this.#model,
+			this.#presenter,
+			this,
+			rq,
+			packages,
+			include,
+			excludeItems,
+			runEvents,
+		);
 	}
 
 	#didLoad(scope?: Presentable) {

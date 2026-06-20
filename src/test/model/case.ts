@@ -1,6 +1,6 @@
 import { Commands } from '@/utils/common';
 import deepEqual from 'deep-equal';
-import { Range, TestRun, Uri } from 'vscode';
+import { Range, Uri } from 'vscode';
 import type { ItemEvent, TestFile } from '.';
 
 export abstract class TestCase {
@@ -82,11 +82,6 @@ export class StaticTestCase extends TestCase {
 
 export class DynamicTestCase extends TestCase {
 	readonly range: undefined;
-
-	/**
-	 * The {@link TestRun} that created this dynamic test case.
-	 */
-	run: TestRun | undefined;
 
 	constructor(parent: TestCase, name: string) {
 		super(parent.file, parent.uri, parent.kind, name);

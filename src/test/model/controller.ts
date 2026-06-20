@@ -1,8 +1,11 @@
 import { Commands, Context } from '@/utils/common';
+import { Disposer } from '@/utils/disposable';
+import { WeakMapWithDefault } from '@/utils/map';
 import { pathContains } from '@/utils/util';
 import path from 'node:path';
-import { EventEmitter, Location, Range, Uri } from 'vscode';
+import { Event, EventEmitter, Location, Range, TestRun, Uri } from 'vscode';
 import { GoTestItem, ItemEvent } from '.';
+import { RunEvent } from '../run/runEvent';
 import { WorkspaceConfig } from '../workspaceConfig';
 import { DynamicTestCase, StaticTestCase, TestCase } from './case';
 import { TestFile } from './file';
@@ -11,8 +14,9 @@ import { Package } from './package';
 import { ItemSet } from './set';
 import { Workspace } from './workspace';
 
-export class ModelController {
+export class ModelController extends Disposer {
 	readonly #didUpdate = new EventEmitter<ItemEvent<GoTestItem>[]>();
+	readonly #testRuns = new WeakMapWithDefault((_: TestRun) => new Set<DynamicTestCase>());
 
 	readonly onDidUpdate = this.#didUpdate.event;
 	readonly workspaces = new ItemSet<Workspace, Uri | { uri: Uri }>((x) => `${x instanceof Uri ? x : x.uri}`);
@@ -20,9 +24,11 @@ export class ModelController {
 	readonly #context;
 	readonly #config;
 
-	constructor(context: Context, config: WorkspaceConfig) {
+	constructor(context: Context, config: WorkspaceConfig, runEvents: Event<RunEvent>) {
+		super();
 		this.#context = context;
 		this.#config = config;
+		this.disposeOf = runEvents((e) => this.#onRunEvent(e));
 	}
 
 	workspaceFor(uri: Uri) {
@@ -62,17 +68,6 @@ export class ModelController {
 				return test;
 			}
 		}
-	}
-
-	createDynamicSubtest(pkg: Package, name: string) {
-		const parent = pkg.findParent(name);
-		if (!parent) return;
-
-		// Create a dynamic subtest.
-		const child = new DynamicTestCase(parent, name);
-		parent.file.tests.add(child);
-		this.#didUpdate.fire([{ item: child, type: 'added' }]);
-		return child;
 	}
 
 	/**
@@ -332,7 +327,67 @@ export class ModelController {
 		return results;
 	}
 
-	removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean): void {
+	#onRunEvent(event: RunEvent) {
+		switch (event.type) {
+			case 'start': {
+				// Delete dynamic test cases if their parents are being executed
+				const { pkg, include, exclude } = event;
+				this.#removeDynamicTests(pkg, (test) => {
+					const included = include && covers(include, test);
+					const excluded = exclude && covers(exclude, test);
+
+					// Leave the test if it IS included ITSELF.
+					if (included === test) return false;
+
+					// Leave the test if it IS NOT included THROUGH AN ANCESTOR.
+					if (include && !included) return false;
+
+					// Leave the test if it or any ancestor is excluded.
+					if (excluded) return false;
+
+					// Remove the test - the parent that defined it will run,
+					// either because all package tests are being run
+					// unconditionally, or because the parent or an ancestor is
+					// explicitly included, and neither the test nor any of its
+					// ancestors are excluded.
+					return true;
+				});
+				break;
+			}
+
+			case 'subtest': {
+				// If there's an existing test, update it's test run association
+				// and return.
+				const { pkg, run, name } = event;
+				const test = this.findTest(pkg, name);
+				if (test) {
+					if (test instanceof DynamicTestCase) {
+						this.#testRuns.get(run).add(test);
+					}
+					return;
+				}
+
+				// Otherwise, find the correct parent and give it a new subtest.
+				const parent = pkg.findParent(name);
+				if (!parent) break;
+
+				const child = new DynamicTestCase(parent, name);
+				parent.file.tests.add(child);
+				this.#testRuns.get(run).add(child);
+				this.#didUpdate.fire([{ item: child, type: 'added' }]);
+				break;
+			}
+
+			case 'disposed': {
+				const tests = this.#testRuns.get(event.run);
+				if (tests.size === 0) return;
+				this.#removeDynamicTests(event.pkg, (test) => tests.has(test));
+				break;
+			}
+		}
+	}
+
+	#removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean): void {
 		// Find all the directly matching dynamic test cases.
 		const toRemove = new Set(
 			[...pkg.files]
@@ -359,5 +414,22 @@ export class ModelController {
 
 		// Notify listeners.
 		this.#didUpdate.fire(updates);
+	}
+}
+
+/**
+ * Determines whether the set contains the test or an ancestor of the test.
+ */
+function covers(set: Set<TestCase>, test: TestCase) {
+	for (;;) {
+		if (set.has(test)) return test;
+
+		const i = test.name.lastIndexOf('/');
+		if (i < 0) return;
+		const name = test.name.substring(0, i);
+
+		const parent = [...test.file.tests].find((t) => t.name === name);
+		if (!parent) return;
+		test = parent;
 	}
 }
