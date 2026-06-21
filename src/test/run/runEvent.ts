@@ -1,5 +1,6 @@
 import { TestRun } from 'vscode';
-import { Package, TestCase } from '../model';
+import { GoTestItem, Package, TestCase } from '../model';
+import { CapturedProfile } from '../profiles';
 
 export type RunEvent =
 	| {
@@ -14,6 +15,13 @@ export type RunEvent =
 			run: TestRun;
 			pkg: Package;
 			name: string;
+	  }
+	| {
+			type: 'captured';
+			run: TestRun;
+			pkg: Package;
+			scope: GoTestItem;
+			profile: CapturedProfile;
 	  }
 	| {
 			type: 'disposed';

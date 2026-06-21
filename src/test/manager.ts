@@ -12,7 +12,6 @@ import vscode, {
 } from 'vscode';
 import { CodeLensProvider } from './codeLens';
 import { GoTestItem, ItemEvent, ModelController, TestCase } from './model';
-import { ProfileTracker } from './profiles';
 import { RunConfig } from './run/config';
 import { RunController } from './run/controller';
 import { RunEvent } from './run/runEvent';
@@ -79,9 +78,8 @@ export class TestManager extends Disposer {
 
 		// Set up the components.
 		const model = new ModelController(this.#context, this.#config, this.#runEvents.event);
-		const profiles = new ProfileTracker();
-		const presenter = new ModelViewPresenter(this.#config, model, profiles);
-		const resolver = new ViewController(this.#context, this.#config, model, presenter, ctrl);
+		const presenter = new ModelViewPresenter(this.#config, model, this.#runEvents.event);
+		const resolver = new ViewController(this.#context, this.#config, model, presenter, ctrl, this.#runEvents.event);
 		const codeLens = new CodeLensProvider(this.#config, resolver);
 
 		this.#ctrl = ctrl;
@@ -89,12 +87,10 @@ export class TestManager extends Disposer {
 		this.#resolver = resolver;
 		this.#presenter = presenter;
 
-		this.disposeOf = [ctrl, resolver, presenter];
+		this.disposeOf = [ctrl, model, presenter, resolver];
 
 		// Listen to update events.
-		model.onDidUpdate((events) => {
-			this.#didUpdate(events);
-		});
+		this.disposeOf = model.onDidUpdate((x) => this.#didUpdate(x));
 
 		// Register the legacy code lens provider.
 		this.disposeOf = args.registerCodeLensProvider(

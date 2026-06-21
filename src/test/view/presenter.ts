@@ -2,7 +2,7 @@ import { Disposer } from '@/utils/disposable';
 import { RelationMap, WeakMapWithDefault } from '@/utils/map';
 import moment from 'moment';
 import path from 'node:path';
-import { Uri } from 'vscode';
+import { Event, Uri } from 'vscode';
 import {
 	DynamicTestCase,
 	GoTestItem,
@@ -14,7 +14,8 @@ import {
 	TestCase,
 	Workspace,
 } from '../model';
-import { CapturedProfile, ProfileTracker, ProfileType } from '../profiles';
+import { CapturedProfile } from '../profiles';
+import { RunEvent } from '../run/runEvent';
 import { WorkspaceConfig } from '../workspaceConfig';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
@@ -49,20 +50,20 @@ export class ProfileItem {
 export class ModelViewPresenter extends Disposer {
 	readonly #config;
 	readonly #model;
-	readonly #profiles;
+	readonly #profiles = new WeakMap<GoTestItem, Set<CapturedProfile>>();
 	readonly #pkgRel = new WeakMapWithDefault(
 		(_: Workspace | Module) => new RelationMap<Package, Package | undefined>(),
 	);
 	readonly #testRel = new WeakMapWithDefault((_: Package) => new RelationMap<TestCase, TestCase | undefined>());
 	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
-	constructor(config: WorkspaceConfig, tests: ModelController, profiles: ProfileTracker) {
+	constructor(config: WorkspaceConfig, tests: ModelController, runEvents: Event<RunEvent>) {
 		super();
 		this.#config = config;
 		this.#model = tests;
-		this.#profiles = profiles;
 
 		this.disposeOf = tests.onDidUpdate((x) => this.#didUpdate(x));
+		this.disposeOf = runEvents((x) => this.#onRunEvent(x));
 	}
 
 	markRequested(item: Workspace | Module | Package) {
@@ -219,7 +220,7 @@ export class ModelViewPresenter extends Disposer {
 		// If the item has a non-empty profile container, include it.
 		if (isTestItem(item) && this.#profiles.has(item)) {
 			const profiles = this.#profiles.get(item);
-			if (profiles.length > 0) {
+			if (profiles && profiles.size > 0) {
 				yield new ProfileContainer(item);
 			}
 		}
@@ -282,23 +283,30 @@ export class ModelViewPresenter extends Disposer {
 				return;
 			}
 
-			case 'profile-container':
+			case 'profile-container': {
 				// Create a profile set for each unique time.
 				const profiles = this.#profiles.get(item.parent);
-				for (const time of new Set(profiles.map((x) => x.time))) {
+				if (!profiles) return;
+
+				for (const time of new Set([...profiles].map((x) => x.time))) {
 					yield new ProfileSet(item, time);
 				}
 				return;
+			}
 
-			case 'profile-set':
+			case 'profile-set': {
 				// Return a profile item for each profile that belongs to the
 				// set (that has the same time).
-				for (const profile of this.#profiles.get(item.parent.parent)) {
+				const profiles = this.#profiles.get(item.parent.parent);
+				if (!profiles) return;
+
+				for (const profile of profiles) {
 					if (profile.time === item.time) {
 						yield new ProfileItem(item, profile);
 					}
 				}
 				return;
+			}
 
 			case 'profile':
 				// Profiles do not have children.
@@ -314,37 +322,6 @@ export class ModelViewPresenter extends Disposer {
 				return;
 			}
 		}
-	}
-
-	getProfiles(scope: Presentable) {
-		return this.#profiles.get(this.#resolveProfilesParent(scope));
-	}
-
-	addProfile(scope: Presentable, dir: Uri, type: ProfileType, time: Date) {
-		scope = this.#resolveProfilesParent(scope);
-		const profile = new CapturedProfile(scope, type, time, dir);
-		this.#profiles.add(profile);
-		return profile;
-	}
-
-	removeProfile(profile: CapturedProfile) {
-		this.#profiles.remove(profile);
-	}
-
-	#resolveProfilesParent(scope: Presentable) {
-		// Don't attach profiles to profiles (this probably shouldn't ever
-		// happen) or to dynamic test cases (since they are destroyed and
-		// recreated on each run).
-		while (
-			scope instanceof DynamicTestCase ||
-			scope.kind === 'profile' ||
-			scope.kind === 'profile-set' ||
-			scope.kind === 'profile-container'
-		) {
-			scope = this.getParent(scope)!;
-		}
-
-		return scope;
 	}
 
 	#didUpdate(updates: ItemEvent[]) {
@@ -375,6 +352,44 @@ export class ModelViewPresenter extends Disposer {
 			const tests = [...pkg.allTests()];
 			this.#testRel.get(pkg).replace(tests.map((test) => [test, pkg.findParent(test.name)]));
 		}
+	}
+
+	#onRunEvent(event: RunEvent) {
+		if (event.type !== 'captured') return;
+
+		// Is this really what makes sense? Should the presenter really be
+		// handling the lifecycle of captured profiles? The presenter's job is
+		// presentation, not tracking state. Or is this an acceptable digression
+		// (would any other solution be clearer and easier to read)?
+
+		const scope = this.resolveProfilesParent(event.scope);
+		let profiles = this.#profiles.get(scope);
+		if (!profiles) {
+			profiles = new Set();
+			this.#profiles.set(scope, profiles);
+		}
+
+		profiles.add(event.profile);
+
+		if (event.run.onDidDispose) {
+			this.disposeOf = event.run.onDidDispose(() => profiles.delete(event.profile));
+		}
+	}
+
+	resolveProfilesParent(scope: Presentable) {
+		// Don't attach profiles to profiles (this probably shouldn't ever
+		// happen) or to dynamic test cases (since they are destroyed and
+		// recreated on each run).
+		while (
+			scope instanceof DynamicTestCase ||
+			scope.kind === 'profile' ||
+			scope.kind === 'profile-set' ||
+			scope.kind === 'profile-container'
+		) {
+			scope = this.getParent(scope)!;
+		}
+
+		return scope;
 	}
 }
 

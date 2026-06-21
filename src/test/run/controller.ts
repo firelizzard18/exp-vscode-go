@@ -7,7 +7,8 @@ import { TestController } from '@/utils/testing';
 import path from 'node:path';
 import { CancellationToken, EventEmitter, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
 import { parseCoverage } from '../coverage';
-import { ModelController, TestCase } from '../model';
+import { GoTestItem, ModelController, TestCase } from '../model';
+import { CapturedProfile } from '../profiles';
 import { ResolvedTestRunRequest } from '../resolvedRunRequest';
 import { shouldRunBenchmarks, ViewController } from '../view/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
@@ -147,15 +148,22 @@ export class RunController {
 			flags.outputdir = dir.fsPath;
 			flags.o = Uri.joinPath(dir, 'test.exe').fsPath;
 
-			for (const profile of this.#config.settings.profile) {
-				if (!profile.enabled) {
+			// Where should we attach the profiles? If there is a single
+			// item included, attach to it, otherwise attach to the package.
+			const scope: GoTestItem = pkg.tests.size === 1 ? [...pkg.tests][0][0] : pkg.goItem;
+
+			for (const type of this.#config.settings.profile) {
+				if (!type.enabled) {
 					continue;
 				}
 
+				// Create the object and fire a notification.
+				const profile = new CapturedProfile(type, time, dir);
+				this.#runEvents.fire({ type: 'captured', pkg: pkg.goItem, run: pkg.run, scope, profile });
+
 				// Use rel to make the cmdline nicer.
-				const { file } = rq.attachProfile(pkg, dir, profile, time);
-				const rel = path.relative(dir.fsPath, file.fsPath);
-				flags[`${profile.id}profile`] = rel.startsWith('.') ? file.fsPath : rel;
+				const rel = path.relative(dir.fsPath, profile.file.fsPath);
+				flags[`${type.id}profile`] = rel.startsWith('.') ? profile.file.fsPath : rel;
 			}
 		}
 

@@ -1,7 +1,6 @@
 import { MapWithDefault } from '@/utils/map';
-import { EventEmitter, TestRun, TestRunRequest, Uri } from 'vscode';
+import { EventEmitter, TestRun, TestRunRequest } from 'vscode';
 import { GoTestItem, ModelController, Package, TestCase } from './model';
-import { ProfileType } from './profiles';
 import { PackageTestRun } from './run/pkgTestRun';
 import { RunEvent } from './run/runEvent';
 import { ContinuousRunTracker, ViewController } from './view/controller';
@@ -87,37 +86,6 @@ export class ResolvedTestRunRequest {
 				exclude,
 			});
 		}
-	}
-
-	attachProfile(run: PackageTestRun, dir: Uri, type: ProfileType, time: Date) {
-		// Where should we attach the profiles? If there is a single
-		// item included, attach to it, otherwise attach to the package.
-		let scope: GoTestItem = run.tests.size === 1 ? [...run.tests][0][0] : run.goItem;
-		const profile = this.#presenter.addProfile(scope, dir, type, time);
-
-		// The presenter may decide to attach the profile to something other
-		// than the scope we passed it, so we need to update the scope. For
-		// example, if the target item is a dynamic test case, the presenter
-		// will walk up the chain until it reaches a static test case, since
-		// dynamic test cases get deleted each time the parent test is run.
-		scope = profile.item;
-
-		// Update the view model. Because the presentation items for profiles
-		// don't actually exist in the data model, to make them appear we need
-		// to recursively update the scope and it's children.
-		//
-		// TODO: When scope is a package, this unnecessarily re-queries gopls
-		// via model.populate. ProfileTracker should emit events so components
-		// can subscribe and sync the view themselves, removing this push-style
-		// call.
-		this.#resolver.updateViewModel(scope, { recurse: true });
-
-		// Remove when the run is disposed.
-		run.run.onDidDispose?.(async () => {
-			this.#presenter.removeProfile(profile);
-			this.#resolver.updateViewModel(scope, { recurse: true });
-		});
-		return profile;
 	}
 
 	/**

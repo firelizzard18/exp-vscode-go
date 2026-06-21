@@ -2,7 +2,7 @@ import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
-import { EventEmitter, Range, TestItem, TestItemCollection, TestRunRequest, Uri } from 'vscode';
+import { Event, EventEmitter, Range, TestItem, TestItemCollection, TestRunRequest, Uri } from 'vscode';
 import {
 	DynamicTestCase,
 	GoTestItem,
@@ -42,6 +42,7 @@ export class ViewController extends Disposer {
 		model: ModelController,
 		presenter: ModelViewPresenter,
 		ctrl: TestController,
+		runEvent: Event<RunEvent>,
 	) {
 		super();
 		this.#context = context;
@@ -92,6 +93,8 @@ export class ViewController extends Disposer {
 				this.#ctrl.invalidateTestResults?.(tests.map((x) => this.#getViewItem(x.item)).filter((x) => !!x));
 			}
 		});
+
+		this.disposeOf = runEvent((x) => this.#onRunEvent(x));
 	}
 
 	/**
@@ -458,12 +461,13 @@ export class ViewController extends Disposer {
 			const parent = this.#getPresentable(uri.with({ query: `${query}` }));
 			if (!(parent instanceof ProfileSet)) return;
 
-			const profile = this.#presenter
-				.getProfiles(parent.parent.parent)
-				.find((x) => x.type.id === id.profile && x.time.getTime() === id.at?.getTime());
-			if (!profile) return;
-
-			return new ProfileItem(parent, profile);
+			for (const child of this.#presenter.getChildren(parent)) {
+				if (!(child instanceof ProfileItem)) continue;
+				if (child.profile.type.id !== id.profile) continue;
+				if (child.profile.time.getTime() !== id.at?.getTime()) continue;
+				return child;
+			}
+			return;
 		}
 
 		if (id.at) {
@@ -558,6 +562,38 @@ export class ViewController extends Disposer {
 			item.parent.children.delete(item.id);
 		} else {
 			this.#ctrl.items.delete(item.id);
+		}
+	}
+
+	#onRunEvent(event: RunEvent) {
+		if (event.type !== 'captured') return;
+
+		// Parallel what the presenter does so we can refresh the correct item
+		// (and not refresh too much). This is gross, but it seems like the
+		// least gross option.
+
+		// The presenter may decide to attach the profile to something other
+		// than the scope we passed it, so we need to update the scope. For
+		// example, if the target item is a dynamic test case, the presenter
+		// will walk up the chain until it reaches a static test case, since
+		// dynamic test cases get deleted each time the parent test is run.
+		const scope = this.#presenter.resolveProfilesParent(event.scope);
+
+		// Update the view model. Because the presentation items for profiles
+		// don't actually exist in the data model, to make them appear we need
+		// to recursively update the scope and it's children.
+		//
+		// TODO: Consider adding a "only update new children" option. Though
+		// honestly, #updateViewModel should be smart, regardless - if
+		// presenter.hasChildren returns 'eager' or 'none', updateViewModel
+		// should recurse regardless (I think?).
+		this.#updateViewModel(scope, undefined, { recurse: true });
+
+		// Remove when the run is disposed.
+		if (event.run.onDidDispose) {
+			this.disposeOf = event.run.onDidDispose(() => {
+				this.#updateViewModel(scope, undefined, { recurse: true });
+			});
 		}
 	}
 }

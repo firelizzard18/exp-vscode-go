@@ -1,5 +1,4 @@
 import { Uri } from 'vscode';
-import { GoTestItem } from './model';
 
 /**
  * A type of profile that can be captured by Go's profiling tools.
@@ -37,36 +36,10 @@ export class CapturedProfile {
 	readonly file: Uri;
 
 	constructor(
-		public readonly item: GoTestItem,
 		public readonly type: ProfileType,
 		public readonly time: Date,
 		dir: Uri,
 	) {
 		this.file = Uri.joinPath(dir, `${type.id}.pprof`);
-	}
-}
-
-export class ProfileTracker {
-	readonly #profiles = new WeakMap<GoTestItem, Set<CapturedProfile>>();
-
-	has(item: GoTestItem) {
-		return this.#profiles.has(item);
-	}
-
-	get(item: GoTestItem): CapturedProfile[] {
-		return [...(this.#profiles.get(item) || [])];
-	}
-
-	add(profile: CapturedProfile) {
-		let profiles = this.#profiles.get(profile.item);
-		if (!profiles) {
-			profiles = new Set();
-			this.#profiles.set(profile.item, profiles);
-		}
-		profiles.add(profile);
-	}
-
-	remove(profile: CapturedProfile) {
-		this.#profiles.get(profile.item)?.delete(profile);
 	}
 }

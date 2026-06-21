@@ -32,39 +32,6 @@ export class WeakMapWithDefault<K extends WeakKey, V extends NonNullable<any>> e
 	}
 }
 
-export class BiMap<A, B> {
-	readonly #a2b = new Map<A, B>();
-	readonly #b2a = new Map<B, A>();
-
-	has(v: A | B) {
-		return this.#a2b.has(v as any) || this.#b2a.has(v as any);
-	}
-
-	get(a: A): B | undefined;
-	get(b: B): A | undefined;
-	get(v: A | B) {
-		return (this.#a2b.get(v as any) ?? this.#b2a.get(v as any)) as any;
-	}
-
-	add(a: A, b: B) {
-		this.#a2b.set(a, b);
-		this.#b2a.set(b, a);
-	}
-
-	delete(v: A | B) {
-		this.#a2b.delete(v as any);
-		this.#b2a.delete(v as any);
-	}
-
-	get a() {
-		return this.#a2b.keys();
-	}
-
-	get b() {
-		return this.#b2a.keys();
-	}
-}
-
 /**
  * Bidirectional map for parent-child relationships.
  */
