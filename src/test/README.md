@@ -30,9 +30,7 @@ The data model lives in its own package and has no dependency on VSCode's test U
 
 ### Presentation layer
 
-**`ItemPresenter`** translates the data model into a presentable tree. It decides how items are labelled, what parent-child relationships look like (e.g. whether packages are nested, whether files are shown, whether subtests are nested), and which items are visible. It integrates captured profiles from `ProfileTracker` as presentation-level tree nodes — profiles are not part of the data model itself. `ItemPresenter` does not interact with the `TestItem` API directly; it only answers structural questions.
-
-**`ProfileTracker`** records profiles captured during test runs and emits events when they are added or removed. It is kept separate from the data model because profiles are a presentation concern (they appear in the test tree) rather than a model concern (they say nothing about what tests exist).
+**`ItemPresenter`** translates the data model into a presentable tree. It decides how items are labelled, what parent-child relationships look like (e.g. whether packages are nested, whether files are shown, whether subtests are nested), and which items are visible. It also manages captured profiles as presentation-level tree nodes: profiles are not part of the data model, but they appear in the test tree under the test or package they were captured for. `ItemPresenter` does not interact with the `TestItem` API directly; it only answers structural questions.
 
 ### View controller
 
@@ -40,7 +38,7 @@ The data model lives in its own package and has no dependency on VSCode's test U
 
 ### Test execution
 
-**`ResolvedTestRunRequest`** represents a fully resolved test run: the set of packages and tests to execute. It is a standalone class (not nested inside the view controller) with explicit dependencies, so it can be constructed and tested independently. During a run, it is also responsible for creating `DynamicTestCase`s in the data model and obtaining the corresponding `TestItem`s when subtests are discovered in output — via injected callbacks to `DataModel` and `ViewController` respectively.
+**`runEvent.ts`** (`RunEvent`) defines a discriminated union of run lifecycle events fired by `RunController` and `ResolvedTestRunRequest`: `start` (a package is about to run, carrying the include/exclude sets so stale dynamic tests can be cleared), `subtest` (a new dynamic subtest was discovered in `go test` output), `captured` (a profile was captured for a scope), and `disposed` (a run's results were discarded by the user). `ModelController`, `ModelViewPresenter`, and `ViewController` subscribe to these events to react to run lifecycle changes in their respective domains.
 
 **`testRunner.ts`** (`TestRunner`) executes a resolved run. It iterates packages, builds `go test` flags (run/skip filters, benchmark flags, etc.), and spawns the process.
 
@@ -66,17 +64,11 @@ The migration is ongoing and incremental. A few constraints that apply to every 
 
 The issues below are understood well enough to have a direction, even if the work isn't done yet.
 
-### Profile view sync
-
-`ResolvedTestRunRequest.attachProfile` currently pushes profile state directly into `ModelViewPresenter` and then manually calls `ViewController.updateViewModel` to sync the view. This violates the event-driven principle: `ResolvedTestRunRequest` has no business knowing that attaching a profile requires a view sync, and `ViewController` has no business being called imperatively from outside to react to something that's really a `ProfileTracker` event.
-
-The correct fix is to make `ProfileTracker` emit events when profiles are added or removed. `ViewController` subscribes to those events and updates the view model itself — the same way it handles `ModelController` events. `ResolvedTestRunRequest` then only needs to call `ProfileTracker.add/remove`; it doesn't touch the view at all.
-
 ### Discovery visibility (`markRequested`)
 
 `ViewController.updateFile` calls `presenter.markRequested` as a side effect after delegating to `ModelController.updateFile`. The visibility state (whether a workspace/package has been "requested" by the user opening a file) lives in `ModelViewPresenter`, but the trigger that sets it lives in `ViewController`. These are two different concerns that happen to be co-located.
 
-The correct shape is unclear. One option is for `ModelController` to emit a distinct event type for file updates (vs. population), and for `ModelViewPresenter` to observe that and mark items as requested itself. The current code is tolerable but should be revisited when the profile sync issue is addressed, since both follow the same push-vs-event pattern.
+The correct shape is unclear. One option is for `ModelController` to emit a distinct event type for file updates (vs. population), and for `ModelViewPresenter` to observe that and mark items as requested itself. The current code is tolerable but the direction isn't settled.
 
 ### Run/view coupling
 
@@ -102,7 +94,7 @@ It lazy-loads the model if needed, translates VSCode `TestItem`s back to Go item
 
 **`#buildViewItem` uses a `function create(this: ViewController, ...)` inner function** called with `.call(this, ...)` because it needs private field access. Should just be a private method.
 
-**`#getPresentable` handles both Go item lookup and profile synthesis** in the same method. These are very different code paths that should be separated — the profile case in particular should shrink significantly once `ProfileTracker` emits events.
+**`#getPresentable` handles both Go item lookup and profile synthesis** in the same method. These are very different code paths that should be separated.
 
 ## Data flow
 
@@ -130,8 +122,9 @@ VSCode TestRunRequest (or programmatic model items[])
     → for each Package: PackageTestRun
       → go test -json / dlv
       → PackageTestRun.onStdout/onStderr
-        → ResolvedTestRunRequest: find or create test
-            → DataModel: create DynamicTestCase → ItemEvent
-            → ViewController: sync TestItem → return TestItem
+        → RunController: look up test by name
+            → RunEvent 'subtest' → ModelController: create DynamicTestCase → ItemEvent
+            → ViewController: sync TestItem
+          → ViewController.resolveViewItem → TestItem
         → run.started / passed / failed / skipped / errored
 ```
