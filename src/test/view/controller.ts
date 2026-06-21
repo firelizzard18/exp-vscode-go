@@ -51,49 +51,7 @@ export class ViewController extends Disposer {
 		this.#presenter = presenter;
 		this.#ctrl = ctrl;
 
-		this.disposeOf = model.onDidUpdate((updates) => {
-			// Synchronize the view model.
-			const refresh = new Map<Presentable, boolean>();
-			for (const { item, type } of updates) {
-				if (type === 'removed') {
-					const parent = this.#presenter.getParent(item);
-					if (parent) refresh.set(parent, false);
-					continue;
-				}
-
-				// Update the package (recursively).
-				if (item.kind === 'package') {
-					refresh.set(item, true);
-				}
-
-				// Update the view parent's view model. TODO: This is
-				// triggered by RunController.#testFor, handle this during
-				// resolveViewItem/#buildViewItem?
-				if (item instanceof DynamicTestCase) {
-					const viewParent = this.#presenter.getParent(item);
-					if (!viewParent) throw new Error('Internal error');
-					refresh.set(viewParent, true);
-				}
-			}
-
-			// Refresh the view model.
-			for (const [item, recurse] of refresh) {
-				this.#updateViewModel(item, undefined, { recurse });
-			}
-
-			// Invalidate test results when tests are modified.
-			const tests = updates.filter(
-				(x): x is ItemEvent<TestCase> =>
-					// If a test case is modified
-					(x.item instanceof TestCase && x.type === 'modified') ||
-					// Or a _static_ test case is added;
-					(x.type === 'added' && x.item instanceof StaticTestCase),
-			);
-			if (tests.length) {
-				this.#ctrl.invalidateTestResults?.(tests.map((x) => this.#getViewItem(x.item)).filter((x) => !!x));
-			}
-		});
-
+		this.disposeOf = model.onDidUpdate((x) => this.#onDidUpdate(x));
 		this.disposeOf = runEvent((x) => this.#onRunEvent(x));
 	}
 
@@ -562,6 +520,49 @@ export class ViewController extends Disposer {
 			item.parent.children.delete(item.id);
 		} else {
 			this.#ctrl.items.delete(item.id);
+		}
+	}
+
+	#onDidUpdate(updates: ItemEvent[]) {
+		// Synchronize the view model.
+		const refresh = new Map<Presentable, boolean>();
+		for (const { item, type } of updates) {
+			if (type === 'removed') {
+				const parent = this.#presenter.getParent(item);
+				if (parent) refresh.set(parent, false);
+				continue;
+			}
+
+			// Update the package (recursively).
+			if (item.kind === 'package') {
+				refresh.set(item, true);
+			}
+
+			// Update the view parent's view model. TODO: This is
+			// triggered by RunController.#testFor, handle this during
+			// resolveViewItem/#buildViewItem?
+			if (item instanceof DynamicTestCase) {
+				const viewParent = this.#presenter.getParent(item);
+				if (!viewParent) throw new Error('Internal error');
+				refresh.set(viewParent, true);
+			}
+		}
+
+		// Refresh the view model.
+		for (const [item, recurse] of refresh) {
+			this.#updateViewModel(item, undefined, { recurse });
+		}
+
+		// Invalidate test results when tests are modified.
+		const tests = updates.filter(
+			(x): x is ItemEvent<TestCase> =>
+				// If a test case is modified
+				(x.item instanceof TestCase && x.type === 'modified') ||
+				// Or a _static_ test case is added;
+				(x.type === 'added' && x.item instanceof StaticTestCase),
+		);
+		if (tests.length) {
+			this.#ctrl.invalidateTestResults?.(tests.map((x) => this.#getViewItem(x.item)).filter((x) => !!x));
 		}
 	}
 
