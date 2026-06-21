@@ -7,13 +7,13 @@ import { ItemSet } from './set';
 
 export class Package {
 	readonly kind = 'package';
-	readonly parent; // TODO: Rename to 'root'
+	readonly root;
 	readonly uri;
 	readonly path;
 	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package, mod?: Commands.Module) {
-		this.parent = parent;
+		this.root = parent;
 		this.path = pkg.Path;
 
 		if (pkg.ModulePath) {
@@ -48,7 +48,7 @@ export class Package {
 	 * Returns whether the package is the root package of the parent.
 	 */
 	get isRootPkg() {
-		return `${this.uri}` === `${this.parent.dir}`;
+		return `${this.uri}` === `${this.root.dir}`;
 	}
 
 	*allTests() {

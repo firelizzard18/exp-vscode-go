@@ -82,12 +82,12 @@ export class ModelViewPresenter extends Disposer {
 					return '(root package)';
 				}
 				const config = this.#config.for(item);
-				const pkgParent = this.#pkgRel.get(item.parent).getParent(item);
+				const pkgParent = this.#pkgRel.get(item.root).getParent(item);
 				if (pkgParent && config.nestPackages.get()) {
 					return item.path.substring(pkgParent.path.length + 1);
 				}
-				if (item.parent instanceof Module && item.path.startsWith(`${item.parent.path}/`)) {
-					return item.path.substring(item.parent.path.length + 1);
+				if (item.root instanceof Module && item.path.startsWith(`${item.root.path}/`)) {
+					return item.path.substring(item.root.path.length + 1);
 				}
 				return item.path;
 			}
@@ -134,11 +134,11 @@ export class ModelViewPresenter extends Disposer {
 
 			case 'package': {
 				if (!config.nestPackages.get()) {
-					return item.parent;
+					return item.root;
 				}
 
-				const parent = this.#pkgRel.get(item.parent).getParent(item);
-				result = parent ?? item.parent;
+				const parent = this.#pkgRel.get(item.root).getParent(item);
+				result = parent ?? item.root;
 				break;
 			}
 
@@ -247,7 +247,7 @@ export class ModelViewPresenter extends Disposer {
 			case 'package': {
 				// If packages are nested, return child packages.
 				const config = this.#config.for(item);
-				const rel = this.#pkgRel.get(item.parent);
+				const rel = this.#pkgRel.get(item.root);
 				if (config.nestPackages.get()) {
 					yield* rel.getChildren(item) ?? [];
 				}
@@ -354,7 +354,7 @@ export class ModelViewPresenter extends Disposer {
 		const pkgChanges = updates.filter(
 			(x): x is ItemEvent<Package> => x.item instanceof Package && (x.type === 'added' || x.type === 'removed'),
 		);
-		const pkgRoots = new Set(pkgChanges.map((x) => x.item.parent));
+		const pkgRoots = new Set(pkgChanges.map((x) => x.item.root));
 		for (const root of pkgRoots) {
 			const pkgs = [...root.packages];
 			this.#pkgRel.get(root).replace(

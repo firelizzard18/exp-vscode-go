@@ -273,8 +273,6 @@ export class TestManager extends Disposer {
 		uri: Uri,
 		event?: { type: 'changed'; ranges: Range[] } | { type: 'saved' | 'created' | 'deleted' },
 	) {
-		// TODO(ethan.reesor): Can gopls emit an event when tests/etc change?
-
 		// Are tests enabled?
 		if (!this.#resolver) return;
 

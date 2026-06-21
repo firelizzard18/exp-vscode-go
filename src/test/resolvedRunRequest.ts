@@ -168,7 +168,7 @@ export class ResolvedTestRunRequest {
 }
 
 function belongsTo(item: TestCase, set: Set<GoTestItem>) {
-	return set.has(item) || set.has(item.file) || set.has(item.file.package) || set.has(item.file.package.parent);
+	return set.has(item) || set.has(item.file) || set.has(item.file.package) || set.has(item.file.package.root);
 }
 
 function mapTestsByPackage(items: Iterable<GoTestItem>) {

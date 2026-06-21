@@ -162,7 +162,7 @@ export class WorkspaceConfig extends ConfigSet {
 					item = item.workspace;
 					continue;
 				case 'package':
-					item = item.parent;
+					item = item.root;
 					continue;
 				case 'file':
 					item = item.package;

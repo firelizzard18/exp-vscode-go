@@ -123,7 +123,7 @@ export class RunController {
 			flags.coverprofile = coveragePath.fsPath;
 			flags.covermode = 'count';
 
-			let expr = path.join(path.relative(pkg.goItem.uri.fsPath, pkg.goItem.parent.dir.fsPath));
+			let expr = path.join(path.relative(pkg.goItem.uri.fsPath, pkg.goItem.root.dir.fsPath));
 			if (!expr.startsWith('.')) {
 				expr = path.join('.', expr);
 			}
@@ -168,7 +168,7 @@ export class RunController {
 			// recursive update of the parent.
 			//
 			// TODO: Can we remove the onDidUpdate case and rely purely on
-			// resolveViewItem.
+			// resolveViewItem?
 			if (typeof query === 'string' && query.includes('/') && !seen.has(query)) {
 				seen.add(query);
 				this.#runEvents.fire({
@@ -231,7 +231,7 @@ export class RunController {
 		}
 
 		if (coveragePath && pkg.run.addCoverage && 'code' in r && r.code === 0) {
-			const coverage = await parseCoverage(this.#context, pkg.goItem.parent, coveragePath);
+			const coverage = await parseCoverage(this.#context, pkg.goItem.root, coveragePath);
 			for (const [file, statements] of coverage) {
 				const summary = FileCoverage.fromDetails(Uri.parse(file), statements);
 				this.#config.coverage.set(summary, statements);

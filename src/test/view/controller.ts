@@ -75,8 +75,7 @@ export class ViewController extends Disposer {
 				}
 			}
 
-			// Refresh the view model. TODO: Eliminate duplicates
-			// (parent-and-child refreshes)?
+			// Refresh the view model.
 			for (const [item, recurse] of refresh) {
 				this.#updateViewModel(item, undefined, { recurse });
 			}
@@ -113,7 +112,7 @@ export class ViewController extends Disposer {
 
 	resolveViewItem(go: GoTestItem) {
 		if (go.kind === 'package' && go.isRootPkg) {
-			go = go.parent;
+			go = go.root;
 		}
 		return this.#getViewItem(go) ?? this.#buildViewItem(go);
 	}
@@ -126,7 +125,7 @@ export class ViewController extends Disposer {
 		// used to happen at the end of the `for (const src of packages)` loop.
 		for (const file of resolved) {
 			this.#presenter.markRequested(file.package);
-			this.#presenter.markRequested(file.package.parent);
+			this.#presenter.markRequested(file.package.root);
 		}
 
 		return resolved;
@@ -206,7 +205,7 @@ export class ViewController extends Disposer {
 	): TestItem | undefined {
 		// Root packages should be transparent to the presentation layer.
 		if (go.kind === 'package' && go.isRootPkg) {
-			return this.#updateViewModel(go.parent, undefined, options);
+			return this.#updateViewModel(go.root, undefined, options);
 		}
 
 		// Resolve or create the view item.
