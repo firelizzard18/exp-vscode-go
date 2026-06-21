@@ -16,7 +16,10 @@ export { DynamicTestCase, Module, Package, StaticTestCase, TestCase, TestFile, W
  *  - `moved` indicates that the item's range changed without changing its contents.
  *  - `modified` indicates that the item's contents and possibly its range changed.
  */
-export type ItemEvent<T = GoTestItem> = { item: T; type: 'added' | 'removed' | 'moved' | 'modified' };
+export type ItemEvent<T = GoTestItem> =
+	| { item: T; type: 'moved' | 'modified' }
+	| { item: T; type: 'added'; to?: GoTestItem }
+	| { item: T; type: 'removed'; from?: GoTestItem };
 
 export type GoTestItem = Module | Workspace | Package | TestFile | TestCase;
 

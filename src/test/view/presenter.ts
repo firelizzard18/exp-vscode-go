@@ -62,7 +62,7 @@ export class ModelViewPresenter extends Disposer {
 		this.#config = config;
 		this.#model = tests;
 
-		this.disposeOf = tests.onDidUpdate((x) => this.#didUpdate(x));
+		this.disposeOf = tests.onDidUpdate((x) => this.#onDidUpdate(x));
 		this.disposeOf = runEvents((x) => this.#onRunEvent(x));
 	}
 
@@ -126,7 +126,6 @@ export class ModelViewPresenter extends Disposer {
 
 	getParent(item: Presentable): Presentable | undefined {
 		const config = this.#config.for(item);
-		let result: Presentable;
 		switch (item.kind) {
 			case 'workspace':
 			case 'module':
@@ -134,43 +133,70 @@ export class ModelViewPresenter extends Disposer {
 				return undefined;
 
 			case 'package': {
-				if (!config.nestPackages.get()) {
-					return item.root;
+				// If the package is the root or its path doesn't have a slash
+				// or nesting is disabled, the parent is the module or
+				// workspace.
+				if (item.isRootPkg || !item.path.includes('/') || !config.nestPackages.get()) {
+					return this.asPresented(item.root);
 				}
 
-				const parent = this.#pkgRel.get(item.root).getParent(item);
-				result = parent ?? item.root;
-				break;
+				// Check the cached relations for a parent.
+				let parent = this.#pkgRel.get(item.root).getParent(item);
+				if (parent) return this.asPresented(parent);
+
+				// Fall back to a name-based scan.
+				parent = findPkgParent(item);
+				if (parent) return this.asPresented(parent);
+
+				// If there is no other package, the parent is the module or workspace.
+				return this.asPresented(item.root);
 			}
 
 			case 'file': {
-				result = item.package;
-				break;
+				return this.asPresented(item.package);
 			}
 
 			case 'profile-container':
 			case 'profile-set':
 			case 'profile':
-				result = item.parent;
-				break;
+				return this.asPresented(item.parent);
 
 			default: {
-				const parentTest = config.nestSubtests.get() && this.#testRel.get(item.file.package).getParent(item);
-				if (parentTest) {
-					return parentTest;
+				// If the name doesn't have a slash or nesting is disabled, the
+				// parent is the file.
+				if (!item.name.includes('/') || !config.nestSubtests.get()) {
+					return this.asPresented(item.file);
 				}
 
-				result = item.file;
-				break;
+				// Check the cached relations for a parent. There *should* be
+				// one.
+				let parent = this.#testRel.get(item.file.package).getParent(item);
+				if (parent) return parent;
+
+				// Fall back to a name-based scan.
+				parent = item.file.package.findParent(item.name);
+				if (parent) return parent;
+
+				// If all else fails, fall back to the file.
+				return this.asPresented(item.file);
 			}
 		}
+	}
 
-		// If the parent is a root package, or it's a file and we're not showing
-		// files, resolve to the grandparent instead.
-		if ((result.kind === 'package' && result.isRootPkg) || (result.kind === 'file' && !config.showFiles.get())) {
-			return this.getParent(result);
+	/**
+	 * Returns the item that should be presented. For example, a root package
+	 * should not be presented and is resolved to its parent.
+	 */
+	asPresented(item: Presentable): Presentable {
+		if (item.kind === 'package' && item.isRootPkg) {
+			return this.getParent(item)!;
 		}
-		return result;
+
+		if (item.kind === 'file' && !this.#config.for(item).showFiles.get()) {
+			return this.getParent(item)!;
+		}
+
+		return item;
 	}
 
 	hasChildren(item: Presentable): 'none' | 'lazy' | 'eager' {
@@ -324,7 +350,7 @@ export class ModelViewPresenter extends Disposer {
 		}
 	}
 
-	#didUpdate(updates: ItemEvent[]) {
+	#onDidUpdate(updates: ItemEvent[]) {
 		// If packages were added or removed, rebuild the root's package
 		// relations. It could make sense to do this on a per-package basis, but
 		// it's a lot simpler just to rebuild the relation map.
@@ -445,4 +471,19 @@ export function parseID(id: string | Uri) {
 	}
 
 	return obj;
+}
+
+function findPkgParent(pkg: Package) {
+	const { root } = pkg;
+	let path = pkg.path;
+	for (;;) {
+		const i = path.lastIndexOf('/');
+		if (i < 0) return;
+		path = path.substring(0, i);
+		for (const pkg of root.packages) {
+			if (pkg.path === path) {
+				return pkg;
+			}
+		}
+	}
 }

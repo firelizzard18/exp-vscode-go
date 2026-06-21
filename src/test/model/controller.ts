@@ -144,7 +144,7 @@ export class ModelController extends Disposer {
 			if (!mod) {
 				mod = new Module(ws, src);
 				ws.modules.add(mod);
-				yield { item: mod, type: 'added' };
+				yield { item: mod, type: 'added', to: ws };
 			}
 			mods.set(src.Path, mod);
 		}
@@ -170,7 +170,7 @@ export class ModelController extends Disposer {
 				if (pkg) {
 					// Remove it from the workspace or module and notify listeners.
 					root.packages.remove(pkg);
-					yield { item: pkg, type: 'removed' };
+					yield { item: pkg, type: 'removed', from: root };
 				}
 				continue;
 			}
@@ -181,7 +181,7 @@ export class ModelController extends Disposer {
 			} else {
 				pkg = new Package(root, src, r.Module?.[src.ModulePath as string]);
 				root.packages.add(pkg);
-				yield { item: pkg, type: 'added' };
+				yield { item: pkg, type: 'added', to: root };
 			}
 
 			// Update the package's files.
@@ -374,7 +374,7 @@ export class ModelController extends Disposer {
 				const child = new DynamicTestCase(parent, name);
 				parent.file.tests.add(child);
 				this.#testRuns.get(run).add(child);
-				this.#didUpdate.fire([{ item: child, type: 'added' }]);
+				this.#didUpdate.fire([{ item: child, type: 'added', to: parent.file }]);
 				break;
 			}
 
@@ -409,7 +409,7 @@ export class ModelController extends Disposer {
 		const updates: ItemEvent<TestCase>[] = [];
 		for (const test of toRemove) {
 			test.file.tests.remove(test);
-			updates.push({ item: test, type: 'removed' });
+			updates.push({ item: test, type: 'removed', from: test.file });
 		}
 
 		// Notify listeners.

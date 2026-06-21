@@ -4,7 +4,6 @@ import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
 import { Event, EventEmitter, Range, TestItem, TestItemCollection, TestRunRequest, Uri } from 'vscode';
 import {
-	DynamicTestCase,
 	GoTestItem,
 	isTestItem,
 	ItemEvent,
@@ -71,10 +70,8 @@ export class ViewController extends Disposer {
 		return this.#model.workspaceFor(uri);
 	}
 
-	resolveViewItem(go: GoTestItem) {
-		if (go.kind === 'package' && go.isRootPkg) {
-			go = go.root;
-		}
+	resolveViewItem(go: Presentable) {
+		go = this.#presenter.asPresented(go);
 		return this.#getViewItem(go) ?? this.#buildViewItem(go);
 	}
 
@@ -164,13 +161,12 @@ export class ViewController extends Disposer {
 		view: TestItem | undefined,
 		options: { recurse?: boolean },
 	): TestItem | undefined {
-		// Root packages should be transparent to the presentation layer.
-		if (go.kind === 'package' && go.isRootPkg) {
-			return this.#updateViewModel(go.root, undefined, options);
-		}
+		// Root packages (and other items) should be transparent to the
+		// presentation layer.
+		go = this.#presenter.asPresented(go);
 
 		// Resolve or create the view item.
-		view = view ?? this.#getViewItem(go) ?? this.#buildViewItem(go);
+		view = view ?? this.resolveViewItem(go);
 
 		// Ensure mutable properties are synced.
 		if (go instanceof StaticTestCase) {
@@ -181,7 +177,12 @@ export class ViewController extends Disposer {
 		// lazily resolved. Exit if there are no children.
 		const hasChildren = this.#presenter.hasChildren(go);
 		view.canResolveChildren = hasChildren === 'lazy';
-		if (hasChildren === 'none') return view;
+		if (hasChildren === 'none') {
+			for (const [, item] of view.children) {
+				this.#delete(item);
+			}
+			return view;
+		}
 
 		// Should we update children? If the item is a workspace, module, or
 		// package that has not yet had its children loaded, do not update them.
@@ -374,7 +375,7 @@ export class ViewController extends Disposer {
 
 		// We need a TestRunRequest, so construct one if necessary.
 		if (rq instanceof Array) {
-			rq = new TestRunRequest(rq.map((x) => this.#getViewItem(x) ?? this.#buildViewItem(x)));
+			rq = new TestRunRequest(rq.map((x) => this.resolveViewItem(x)));
 		}
 
 		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x && isTestItem(x)));
@@ -524,27 +525,23 @@ export class ViewController extends Disposer {
 	}
 
 	#onDidUpdate(updates: ItemEvent[]) {
-		// Synchronize the view model.
+		// Synchronize the view model. Queue non-recursive updates first.
 		const refresh = new Map<Presentable, boolean>();
-		for (const { item, type } of updates) {
-			if (type === 'removed') {
-				const parent = this.#presenter.getParent(item);
+		for (const update of updates) {
+			// Refresh the parent of removed items.
+			if (update.type === 'removed') {
+				const parent = this.#presenter.getParent(update.item) ?? update.from;
 				if (parent) refresh.set(parent, false);
 				continue;
 			}
+		}
 
-			// Update the package (recursively).
-			if (item.kind === 'package') {
-				refresh.set(item, true);
-			}
-
-			// Update the view parent's view model. TODO: This is
-			// triggered by RunController.#testFor, handle this during
-			// resolveViewItem/#buildViewItem?
-			if (item instanceof DynamicTestCase) {
-				const viewParent = this.#presenter.getParent(item);
-				if (!viewParent) throw new Error('Internal error');
-				refresh.set(viewParent, true);
+		// Queue recursive updates after, so "update X recursively" wins if
+		// "update X" was already set by the previous loop.
+		for (const update of updates) {
+			// Refresh added/updated packages.
+			if (update.type !== 'removed' && update.item.kind === 'package') {
+				refresh.set(update.item, true);
 			}
 		}
 

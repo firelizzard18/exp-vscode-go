@@ -174,9 +174,6 @@ export class RunController {
 			// model will create a new item for it in response to the event,
 			// which will trigger an update event, which will trigger a
 			// recursive update of the parent.
-			//
-			// TODO: Can we remove the onDidUpdate case and rely purely on
-			// resolveViewItem?
 			if (typeof query === 'string' && query.includes('/') && !seen.has(query)) {
 				seen.add(query);
 				this.#runEvents.fire({
