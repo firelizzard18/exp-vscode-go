@@ -3,7 +3,7 @@ import { Disposer } from '@/utils/disposable';
 import { WeakMapWithDefault } from '@/utils/map';
 import { pathContains } from '@/utils/util';
 import path from 'node:path';
-import { Event, EventEmitter, Location, Range, TestRun, Uri } from 'vscode';
+import { Event, EventEmitter, Location, Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
 import { GoTestItem, ItemEvent } from '.';
 import { RunEvent } from '../run/runEvent';
 import { WorkspaceConfig } from '../workspaceConfig';
@@ -31,15 +31,24 @@ export class ModelController extends Disposer {
 		this.disposeOf = runEvents((e) => this.#onRunEvent(e));
 	}
 
-	workspaceFor(uri: Uri) {
-		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
-		if (!wsf) return;
+	workspaceFor(uri: Uri): Workspace | undefined;
+	workspaceFor(wsf: WorkspaceFolder): Workspace;
+	workspaceFor(uri: Uri | WorkspaceFolder) {
+		let wsf: WorkspaceFolder | undefined;
+		if (uri instanceof Uri) {
+			wsf = this.#context.workspace.getWorkspaceFolder(uri);
+			if (!wsf) return;
+		} else {
+			wsf = uri;
+			uri = wsf.uri;
+		}
 
 		// Resolve or create a Workspace.
 		let ws = this.workspaces.get(wsf);
 		if (!ws) {
 			ws = new Workspace(wsf);
 			this.workspaces.add(ws);
+			this.#didUpdate.fire([{ type: 'added', item: ws }]);
 		}
 
 		// If the path is excluded, ignore it.
@@ -90,6 +99,10 @@ export class ModelController extends Disposer {
 
 		switch (scope.kind) {
 			case 'workspace':
+				await this.#loadModules(scope);
+				await this.#loadPackages(scope);
+				return;
+
 			case 'module':
 				await this.#loadPackages(scope);
 				return;
@@ -196,9 +209,6 @@ export class ModelController extends Disposer {
 	async #loadRoots() {
 		// Update the workspace item set.
 		this.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
-
-		// Update the workspaces' modules list.
-		await Promise.all([...this.workspaces].map(async (ws) => this.#loadModules(ws)));
 	}
 
 	/**

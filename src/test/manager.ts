@@ -17,7 +17,7 @@ import { RunConfig } from './run/config';
 import { RunController } from './run/controller';
 import { RunEvent } from './run/runEvent';
 import { ContinuousRunTracker, ViewController } from './view/controller';
-import { ModelViewPresenter } from './view/presenter';
+import { ModelViewPresenter, Presentable } from './view/presenter';
 import { WorkspaceConfig } from './workspaceConfig';
 
 export type EditorEvent =
@@ -81,7 +81,7 @@ export class TestManager extends Disposer {
 	 * Sets up the test explorer. Can be called multiple times as long as calls
 	 * to {@link setup} are alternated with calls to {@link dispose}.
 	 */
-	async setup(
+	setup(
 		args: Pick<typeof vscode.languages, 'registerCodeLensProvider'> &
 			Pick<typeof vscode.window, 'showQuickPick' | 'showWarningMessage'> & {
 				createTestController(id: string, label: string): TestController;
@@ -93,7 +93,7 @@ export class TestManager extends Disposer {
 		const model = new ModelController(this.#context, this.#config, this.#runEvents.event);
 		const presenter = new ModelViewPresenter(this.#config, model, this.#runEvents.event);
 		const resolver = new ViewController(this.#context, this.#config, model, presenter, ctrl, this.#runEvents.event);
-		const codeLens = new CodeLensProvider(this.#config, resolver);
+		const codeLens = new CodeLensProvider(this.#config, model);
 
 		this.#ctrl = ctrl;
 		this.#model = model;
@@ -112,10 +112,18 @@ export class TestManager extends Disposer {
 		);
 
 		// Set up resolve/refresh handlers.
-		ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
+		ctrl.resolveHandler = (view) =>
+			doSafe(this.#context, 'resolve test', async () => {
+				if (!view) {
+					await this.#resolveRoots();
+				} else {
+					const go = resolver.resolveGoItem(view);
+					go && (await this.#resolveChildren(go));
+				}
+			});
 		ctrl.refreshHandler = () =>
 			doSafe(this.#context, 'refresh tests', async () => {
-				await this.#refresh();
+				await this.#refreshRoots();
 			});
 
 		// Set up run profiles.
@@ -181,16 +189,6 @@ export class TestManager extends Disposer {
 	}
 
 	/**
-	 * Refreshes a test item and its descendants, or the entire tree if called
-	 * without an item. Unless `options.recurse` is disabled, in which case only
-	 * the item itself and it's direct children are updated.
-	 */
-	async #refresh(item?: TestItem, options: { recurse?: boolean } = { recurse: true }) {
-		if (!this.#resolver) return;
-		await this.#resolver.updateViewModel(item, options);
-	}
-
-	/**
 	 * Execute a test run.
 	 * @param config - The config for the run.
 	 * @param rq - The test run request.
@@ -252,22 +250,28 @@ export class TestManager extends Disposer {
 		if (!this.#model || !this.#resolver) return;
 
 		switch (event.type) {
-			case 'force-refresh':
+			case 'force-refresh': {
 				// The user explicitly requested a refresh, so we need to
 				// force-refresh the view model, recursively.
-				await this.#refresh(event.item);
+				if (!event.item) {
+					await this.#refreshRoots();
+					return;
+				}
+
+				const go = this.#resolver.resolveGoItem(event.item);
+				go && (await this.#refreshChildren(go));
 				break;
+			}
 
 			case 'config-change':
 				// There was a configuration change, so we need to force-refresh
 				// the entire view model.
-				await this.#refresh();
+				await this.#refreshRoots();
 				break;
 
 			case 'workspace-changed':
-				// The user changed workspace. All we need to do is refresh the
-				// roots.
-				await this.#model.populate();
+				// The user changed workspace(s), so update the roots.
+				await this.#resolveRoots();
 				break;
 
 			case 'file-opened':
@@ -311,7 +315,7 @@ export class TestManager extends Disposer {
 		event?: { type: 'changed'; ranges: Range[] } | { type: 'saved' | 'created' | 'deleted' },
 	) {
 		// Are tests enabled?
-		if (!this.#resolver) return;
+		if (!this.#model) return;
 
 		// Only support the file: URIs. It is necessary to exclude git: URIs
 		// because gopls will not handle them. Excluding everything except file:
@@ -323,7 +327,7 @@ export class TestManager extends Disposer {
 		if (!uri.path.endsWith('.go')) return;
 
 		// Check if the file is ignored.
-		const ws = this.#resolver.workspaceFor(uri);
+		const ws = this.#model.workspaceFor(uri);
 		if (!ws) return;
 
 		// Update the file. Check the update mode and set the appropriate
@@ -332,18 +336,18 @@ export class TestManager extends Disposer {
 		switch (event?.type) {
 			case 'saved':
 				if (mode === 'on-save') {
-					await this.#resolver.updateFile(uri, {});
+					await this.#model.updateFile(uri, {});
 				}
 				break;
 
 			case 'changed':
 				if (mode === 'on-edit') {
-					await this.#resolver.updateFile(uri, { modified: event.ranges });
+					await this.#model.updateFile(uri, { modified: event.ranges });
 				}
 				break;
 
 			default:
-				await this.#resolver.updateFile(uri, {});
+				await this.#model.updateFile(uri, {});
 				break;
 		}
 
@@ -362,6 +366,93 @@ export class TestManager extends Disposer {
 		);
 		for (const tracker of this.#continuousRuns) {
 			tracker.didUpdate(tests.map((x) => x.item));
+		}
+	}
+
+	async #resolveRoots() {
+		if (!this.#model) return;
+
+		// Populate workspaces that have discovery enabled. Do not trigger
+		// creation of Workspace items for workspaces with discovery disabled.
+		for (const wsf of this.#context.workspace.workspaceFolders ?? []) {
+			if (this.#config.for(wsf).discovery.get() === 'on') {
+				const ws = this.#model.workspaceFor(wsf);
+				await this.#model.populate(ws);
+			}
+		}
+	}
+
+	async #resolveChildren(go: Presentable) {
+		if (!this.#resolver || !this.#model) return;
+
+		// If discovery is disabled, do nothing.
+		if (this.#config.for(go).discovery.get() !== 'on') return;
+
+		switch (go.kind) {
+			case 'workspace':
+			case 'module':
+			case 'package':
+				await this.#model.populate(go);
+				break;
+
+			default:
+				// There's nothing to do here.
+				break;
+		}
+	}
+
+	async #refreshRoots() {
+		if (!this.#model) return;
+
+		// Resolve workspaces according to the normal rules, and refresh
+		// whichever ones have been populated.
+
+		await this.#resolveRoots();
+
+		for (const ws of this.#model.workspaces) {
+			await this.#refreshChildren(ws);
+		}
+	}
+
+	async #refreshChildren(go: Presentable) {
+		if (!this.#model) return;
+
+		switch (go.kind) {
+			case 'workspace':
+				// If a workspace has discovery enabled, repopulate its modules
+				// and packages.
+				if (this.#config.for(go).discovery.get() === 'on') {
+					await this.#model.populate(go);
+				}
+
+				for (const mod of go.modules) {
+					await this.#refreshChildren(mod);
+				}
+				for (const pkg of go.packages) {
+					await this.#refreshChildren(pkg);
+				}
+				break;
+
+			case 'module':
+				// If a module has discovery enabled, repopulate its packages.
+				if (this.#config.for(go).discovery.get() === 'on') {
+					await this.#model.populate(go);
+				}
+
+				for (const pkg of go.packages) {
+					await this.#refreshChildren(pkg);
+				}
+				break;
+
+			case 'package':
+				// Unconditionally repopulate the package (this is not gated on
+				// the discovery mode).
+				await this.#model.populate(go);
+				break;
+
+			default:
+				// Nothing to do.
+				break;
 		}
 	}
 }

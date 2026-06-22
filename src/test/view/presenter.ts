@@ -55,7 +55,6 @@ export class ModelViewPresenter extends Disposer {
 		(_: Workspace | Module) => new RelationMap<Package, Package | undefined>(),
 	);
 	readonly #testRel = new WeakMapWithDefault((_: Package) => new RelationMap<TestCase, TestCase | undefined>());
-	readonly #requested = new WeakSet<Workspace | Module | Package>();
 
 	constructor(config: WorkspaceConfig, tests: ModelController, runEvents: Event<RunEvent>) {
 		super();
@@ -64,10 +63,6 @@ export class ModelViewPresenter extends Disposer {
 
 		this.disposeOf = tests.onDidUpdate((x) => this.#onDidUpdate(x));
 		this.disposeOf = runEvents((x) => this.#onRunEvent(x));
-	}
-
-	markRequested(item: Workspace | Module | Package) {
-		this.#requested.add(item);
 	}
 
 	labelFor(item: Presentable) {
@@ -224,13 +219,6 @@ export class ModelViewPresenter extends Disposer {
 	*getChildren(item?: Presentable | null): Iterable<Presentable, void, void> {
 		if (!item) {
 			for (const ws of this.#model.workspaces) {
-				// If the workspace has discovery disabled and has _not_
-				// been requested (e.g. by opening a file), skip it.
-				const mode = this.#config.for(ws).discovery.get();
-				if (mode !== 'on' && !this.#requested.has(ws)) {
-					continue;
-				}
-
 				// If the workspace has packages (outside of a module),
 				// include it as a root.
 				if (ws.packages.size > 0) {

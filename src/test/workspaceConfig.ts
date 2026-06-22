@@ -2,8 +2,7 @@ import { VSCodeWorkspace } from '@/utils/common';
 import { Flags } from '@/utils/spawn';
 import { resolvePath, substituteEnv } from '@/utils/util';
 import { Minimatch } from 'minimatch';
-import { ConfigurationChangeEvent, ConfigurationScope, Uri } from 'vscode';
-import { Workspace } from './model';
+import { ConfigurationChangeEvent, ConfigurationScope, Uri, WorkspaceFolder } from 'vscode';
 import { Presentable } from './view/presenter';
 
 const dispose = new FinalizationRegistry<() => void>((fn) => fn());
@@ -145,45 +144,46 @@ class ConfigSet {
 }
 
 export class WorkspaceConfig extends ConfigSet {
-	readonly #workspaces = new WeakMap<Workspace, ConfigSet>();
+	readonly #workspaces = new WeakMap<WorkspaceFolder, ConfigSet>();
 
 	constructor(workspace: VSCodeWorkspace) {
 		super(workspace);
 	}
 
 	/** Returns a {@link TestConfig} for the workspace of the given item. */
-	for(item: Presentable): ConfigSet {
-		for (;;) {
-			switch (item.kind) {
+	for(scope: Presentable | WorkspaceFolder): ConfigSet {
+		while ('kind' in scope) {
+			switch (scope.kind) {
 				case 'workspace':
+					scope = scope.ws;
 					break;
-
 				case 'module':
-					item = item.workspace;
-					continue;
+					scope = scope.workspace;
+					break;
 				case 'package':
-					item = item.root;
-					continue;
+					scope = scope.root;
+					break;
 				case 'file':
-					item = item.package;
-					continue;
+					scope = scope.package;
+					break;
 				case 'profile-container':
 				case 'profile-set':
 				case 'profile':
-					return this.for(item.parent);
+					scope = scope.parent;
+					break;
 				default:
-					item = item.file;
-					continue;
+					scope = scope.file;
+					break;
 			}
-
-			// Cache config objects.
-			const existing = this.#workspaces.get(item);
-			if (existing) return existing;
-
-			const config = new ConfigSet(this.vsc, item.ws);
-			this.#workspaces.set(item, config);
-			return config;
 		}
+
+		// Cache config objects.
+		const existing = this.#workspaces.get(scope);
+		if (existing) return existing;
+
+		const config = new ConfigSet(this.vsc, scope);
+		this.#workspaces.set(scope, config);
+		return config;
 	}
 }
 

@@ -49,8 +49,8 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	// Initialize the controller
 	const events = new EventEmitter<EditorEvent>();
 	const manager = new TestManager(testCtx, events.event);
-	const setup = async () => {
-		await manager.setup({
+	const setup = () => {
+		manager.setup({
 			createTestController: tests.createTestController,
 			registerCodeLensProvider: languages.registerCodeLensProvider,
 			showQuickPick: window.showQuickPick,
@@ -68,7 +68,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			return;
 		}
 		if (enabled) {
-			await setup();
+			setup();
 		} else {
 			manager.dispose();
 		}
@@ -159,7 +159,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// Setup the controller (if enabled)
 	if (await isEnabled(ctx.globalState)) {
-		await setup();
+		setup();
 	}
 }
 

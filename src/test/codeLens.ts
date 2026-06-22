@@ -1,7 +1,6 @@
 import { Command } from '@/commands';
 import vscode, { CodeLens, Range, TextDocument } from 'vscode';
-import { GoTestItem, StaticTestCase, TestCase, TestFile } from './model';
-import { ViewController } from './view/controller';
+import { GoTestItem, ModelController, StaticTestCase, TestCase, TestFile } from './model';
 import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
 
 /**
@@ -10,22 +9,22 @@ import { ConfigValue, WorkspaceConfig } from './workspaceConfig';
  */
 export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 	readonly #config: WorkspaceConfig;
-	readonly #resolver: ViewController;
+	readonly #model: ModelController;
 
-	constructor(config: WorkspaceConfig, resolver: ViewController) {
+	constructor(config: WorkspaceConfig, model: ModelController) {
 		this.#config = config;
-		this.#resolver = resolver;
+		this.#model = model;
 	}
 
 	/**
 	 * Provide code lenses for a document.
 	 */
 	async provideCodeLenses(document: TextDocument): Promise<GoCodeLens[]> {
-		const ws = this.#resolver.workspaceFor(document.uri);
+		const ws = this.#model.workspaceFor(document.uri);
 		const mode = ws && this.#config.for(ws).codeLens.get();
 		if (!mode) return [];
 
-		const resolved = await this.#resolver.updateFile(document.uri);
+		const resolved = await this.#model.updateFile(document.uri);
 		return resolved.flatMap((x) => [...this.#fileCodeLenses(mode, x)]);
 	}
 
