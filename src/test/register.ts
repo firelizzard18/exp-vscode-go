@@ -7,6 +7,7 @@ import { helpers } from '@/utils/testing';
 import { GoExtensionAPI } from '@/vscode-go';
 import {
 	commands,
+	EventEmitter,
 	ExtensionContext,
 	ExtensionMode,
 	extensions,
@@ -19,7 +20,7 @@ import {
 	window,
 	workspace,
 } from 'vscode';
-import { TestManager } from './manager';
+import { EditorEvent, TestManager } from './manager';
 import { isTestItem } from './model';
 import { WorkspaceConfig } from './workspaceConfig';
 
@@ -46,7 +47,8 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	const { event, command } = helpers(ctx, testCtx, commands);
 
 	// Initialize the controller
-	const manager = new TestManager(testCtx);
+	const events = new EventEmitter<EditorEvent>();
+	const manager = new TestManager(testCtx, events.event);
 	const setup = async () => {
 		await manager.setup({
 			createTestController: tests.createTestController,
@@ -55,7 +57,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			showWarningMessage: window.showWarningMessage,
 		});
 		for (const editor of window.visibleTextEditors) {
-			await manager.updateFile(editor.document.uri);
+			events.fire({ type: 'file-opened', uri: editor.document.uri });
 		}
 	};
 	ctx.subscriptions.push(manager);
@@ -73,7 +75,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	};
 
 	// [Command] Refresh
-	command(Command.Refresh, (item: TestItem) => manager.enabled && manager.refresh(item));
+	command(Command.Refresh, (item: TestItem) => events.fire({ type: 'force-refresh', item }));
 
 	// [Command] Run Test, Debug Test
 	command(Command.Test.Run, testItemCommand(manager, 'runTests'));
@@ -94,9 +96,6 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 		if (config.enable.isAffected(e)) {
 			await maybeChangedEnabled();
 		}
-		if (!manager.enabled) {
-			return;
-		}
 		if (
 			config.exclude.isAffected(e) ||
 			config.exclude.isAffected(e) ||
@@ -105,7 +104,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			config.nestPackages.isAffected(e) ||
 			config.nestSubtests.isAffected(e)
 		) {
-			await manager.refresh();
+			events.fire({ type: 'config-change' });
 		}
 	});
 
@@ -116,10 +115,10 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// [Event] The user opened a file in an editor
 	let seenDocuments = new Set<string>();
-	event(window.onDidChangeVisibleTextEditors, 'opened document', async (editors) => {
+	event(window.onDidChangeVisibleTextEditors, 'opened document', (editors) => {
 		for (const editor of editors) {
 			if (seenDocuments.has(`${editor.document.uri}`)) continue;
-			await manager.updateFile(editor.document.uri);
+			events.fire({ type: 'file-opened', uri: editor.document.uri });
 		}
 
 		seenDocuments = new Set(editors.map((x) => `${x.document.uri}`));
@@ -128,7 +127,11 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	// [Event] File change
 	event(workspace.onDidChangeTextDocument, 'updated document', async (e) => {
 		const start = performance.now();
-		await manager.didChangeTextDocument(e);
+		events.fire({ type: 'file-edited', uri: e.document.uri, ranges: e.contentChanges.map((x) => x.range) });
+
+		// How do we check performance now that we're using events, given that
+		// the event handler is async?
+		return;
 
 		// If the update took too long, warn the user they might want to disable
 		// on-edit updates.
@@ -141,29 +144,18 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	});
 
 	// [Event] File save
-	event(workspace.onDidSaveTextDocument, 'saved document', (e) => manager.didSaveTextDocument(e));
+	event(workspace.onDidSaveTextDocument, 'saved document', (e) =>
+		events.fire({ type: 'file-saved', uri: e.uri, version: e.version }),
+	);
 
 	// [Event] Workspace change
-	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', async () => {
-		if (manager.enabled) {
-			// Update roots without recursing.
-			manager.refresh(undefined, { recurse: false });
-		}
-	});
+	event(workspace.onDidChangeWorkspaceFolders, 'changed workspace', () => events.fire({ type: 'workspace-changed' }));
 
 	// [Event] File created/deleted
 	const watcher = workspace.createFileSystemWatcher('**/*_test.go', false, true, false);
 	ctx.subscriptions.push(watcher);
-	event(
-		watcher.onDidCreate,
-		'created file',
-		async (e) => manager.enabled && manager.updateFile(e, { type: 'created' }),
-	);
-	event(
-		watcher.onDidDelete,
-		'deleted file',
-		async (e) => manager.enabled && manager.updateFile(e, { type: 'deleted' }),
-	);
+	event(watcher.onDidCreate, 'created file', async (e) => events.fire({ type: 'file-created', uri: e }));
+	event(watcher.onDidDelete, 'deleted file', async (e) => events.fire({ type: 'file-deleted', uri: e }));
 
 	// Setup the controller (if enabled)
 	if (await isEnabled(ctx.globalState)) {

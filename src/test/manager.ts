@@ -1,9 +1,10 @@
 import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { doSafe, TestController } from '@/utils/testing';
-import type { CancellationToken, Range, TestItem, TextDocument, TextDocumentChangeEvent } from 'vscode';
+import type { CancellationToken, Range, TestItem } from 'vscode';
 import vscode, {
 	CancellationTokenSource,
+	Event,
 	EventEmitter,
 	TestRunProfileKind,
 	TestRunRequest,
@@ -18,6 +19,16 @@ import { RunEvent } from './run/runEvent';
 import { ContinuousRunTracker, ViewController } from './view/controller';
 import { ModelViewPresenter } from './view/presenter';
 import { WorkspaceConfig } from './workspaceConfig';
+
+export type EditorEvent =
+	| { type: 'force-refresh'; item?: TestItem }
+	| { type: 'config-change' }
+	| { type: 'workspace-changed' }
+	| { type: 'file-opened'; uri: Uri }
+	| { type: 'file-created'; uri: Uri }
+	| { type: 'file-deleted'; uri: Uri }
+	| { type: 'file-edited'; uri: Uri; ranges: Range[] }
+	| { type: 'file-saved'; uri: Uri; version: number };
 
 /**
  * Entry point for the test explorer implementation.
@@ -44,7 +55,7 @@ export class TestManager extends Disposer {
 	#resolver?: ViewController;
 	#presenter?: ModelViewPresenter;
 
-	constructor(context: Context) {
+	constructor(context: Context, editorEvents: Event<EditorEvent>) {
 		super();
 		this.#context = context;
 		this.#config = new WorkspaceConfig(context.workspace);
@@ -55,6 +66,8 @@ export class TestManager extends Disposer {
 		this.#coverage = new RunConfig(context, 'Coverage', TestRunProfileKind.Coverage, true, { id: 'canRun' });
 		this.#rrDebug = new RunConfig(context, 'Debug with RR', TestRunProfileKind.Debug, false, { id: 'canDebug' });
 		this.#rrDebug.options.backend = 'rr';
+
+		this.disposeOf = editorEvents((x) => doSafe(context, x.type, () => this.#onEditorEvent(x)));
 	}
 
 	/**
@@ -90,7 +103,7 @@ export class TestManager extends Disposer {
 		this.disposeOf = [ctrl, model, presenter, resolver];
 
 		// Listen to update events.
-		this.disposeOf = model.onDidUpdate((x) => this.#didUpdate(x));
+		this.disposeOf = model.onDidUpdate((x) => this.#onItemEvent(x));
 
 		// Register the legacy code lens provider.
 		this.disposeOf = args.registerCodeLensProvider(
@@ -102,7 +115,7 @@ export class TestManager extends Disposer {
 		ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
 		ctrl.refreshHandler = () =>
 			doSafe(this.#context, 'refresh tests', async () => {
-				await this.refresh();
+				await this.#refresh();
 			});
 
 		// Set up run profiles.
@@ -172,7 +185,7 @@ export class TestManager extends Disposer {
 	 * without an item. Unless `options.recurse` is disabled, in which case only
 	 * the item itself and it's direct children are updated.
 	 */
-	async refresh(item?: TestItem, options: { recurse?: boolean } = { recurse: true }) {
+	async #refresh(item?: TestItem, options: { recurse?: boolean } = { recurse: true }) {
 		if (!this.#resolver) return;
 		await this.#resolver.updateViewModel(item, options);
 	}
@@ -235,34 +248,65 @@ export class TestManager extends Disposer {
 		});
 	}
 
-	/**
-	 * Notify listeners that a file was saved.
-	 */
-	async didSaveTextDocument(doc: TextDocument) {
-		// Only fire when the document changed. This logic is based on
-		// vscode-go's GoPackageOutlineProvider. vscode-go also filters out
-		// changes to documents that are not the active document, but I prefer
-		// not to because that could have false negatives.
-		const uri = `${doc.uri}`;
-		if (doc.version === this.#docVersion.get(uri)) return;
-		this.#docVersion.set(uri, doc.version);
-		await this.updateFile(doc.uri, { type: 'saved' });
-	}
+	async #onEditorEvent(event: EditorEvent) {
+		if (!this.#model || !this.#resolver) return;
 
-	async didChangeTextDocument(event: TextDocumentChangeEvent) {
-		// Ignore events that don't include changes. I don't know what
-		// conditions trigger this, but we only care about actual changes.
-		if (event.contentChanges.length === 0) {
-			return;
+		switch (event.type) {
+			case 'force-refresh':
+				// The user explicitly requested a refresh, so we need to
+				// force-refresh the view model, recursively.
+				await this.#refresh(event.item);
+				break;
+
+			case 'config-change':
+				// There was a configuration change, so we need to force-refresh
+				// the entire view model.
+				await this.#refresh();
+				break;
+
+			case 'workspace-changed':
+				// The user changed workspace. All we need to do is refresh the
+				// roots.
+				await this.#model.populate();
+				break;
+
+			case 'file-opened':
+				await this.#onFileEvent(event.uri);
+				break;
+
+			case 'file-created':
+				await this.#onFileEvent(event.uri, { type: 'created' });
+				break;
+			case 'file-deleted':
+				await this.#onFileEvent(event.uri, { type: 'deleted' });
+				break;
+
+			case 'file-edited': {
+				// Ignore events that don't include changes. I don't know what
+				// conditions trigger this, but we only care about actual changes.
+				if (event.ranges.length === 0) {
+					return;
+				}
+
+				await this.#onFileEvent(event.uri, { type: 'changed', ranges: event.ranges });
+				break;
+			}
+
+			case 'file-saved': {
+				// Only fire when the document changed. This logic is based on
+				// vscode-go's GoPackageOutlineProvider. vscode-go also filters out
+				// changes to documents that are not the active document, but I prefer
+				// not to because that could have false negatives.
+				const uri = `${event.uri}`;
+				if (event.version === this.#docVersion.get(uri)) return;
+				this.#docVersion.set(uri, event.version);
+				await this.#onFileEvent(event.uri, { type: 'saved' });
+				break;
+			}
 		}
-
-		await this.updateFile(event.document.uri, {
-			type: 'changed',
-			ranges: event.contentChanges.map((x) => x.range),
-		});
 	}
 
-	async updateFile(
+	async #onFileEvent(
 		uri: Uri,
 		event?: { type: 'changed'; ranges: Range[] } | { type: 'saved' | 'created' | 'deleted' },
 	) {
@@ -311,7 +355,7 @@ export class TestManager extends Disposer {
 		}
 	}
 
-	#didUpdate(updates: ItemEvent[]) {
+	#onItemEvent(updates: ItemEvent[]) {
 		// Queue uncommitted updates (unsaved changes) for execution.
 		const tests = updates.filter(
 			(x): x is ItemEvent<TestCase> => x.item instanceof TestCase && x.type === 'modified',
