@@ -99,10 +99,7 @@ export class TestManager extends Disposer {
 		);
 
 		// Set up resolve/refresh handlers.
-		ctrl.resolveHandler = (item) =>
-			doSafe(this.#context, 'resolve test', async () => {
-				await resolver.updateViewModel(item, { resolve: true });
-			});
+		ctrl.resolveHandler = (item) => doSafe(this.#context, 'resolve test', () => resolver.resolve(item));
 		ctrl.refreshHandler = () =>
 			doSafe(this.#context, 'refresh tests', async () => {
 				await this.refresh();

@@ -415,7 +415,7 @@ export class ModelViewPresenter extends Disposer {
 			scope = this.getParent(scope)!;
 		}
 
-		return scope;
+		return this.asPresented(scope) as GoTestItem;
 	}
 }
 

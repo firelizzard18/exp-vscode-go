@@ -55,6 +55,18 @@ The migration is ongoing and incremental. A few constraints that apply to every 
 - **Explicit dependencies.** Boundaries between components are enforced by injected dependencies and public APIs, not by accessing private internals through a reference.
 - **Minimize async in the critical path.** Large test suites make async/await overhead measurable. Keep the hot path (model updates, view sync) synchronous where possible.
 
+## Async performance in Node
+
+In Go, async I/O and synchronous code look the same at the call site. A function that internally uses goroutines and channels to coordinate concurrent work is still just a function call to its caller. The Go runtime handles scheduling transparently; the programmer opts into concurrency explicitly and the rest of the code stays synchronous.
+
+In Node, async I/O is **viral**. A function that does any async work must be marked `async`, which forces every caller that wants to wait for the result to also be `async`, which forces their callers, and so on up the stack. The `async` keyword is not just an annotation — it changes how the function executes: every `async` function call allocates a `Promise` object, and every `await` suspends the function and enqueues its continuation on the microtask queue. This happens even when the awaited value is already resolved — there is no fast path at the language level that collapses an `await` into a direct function call.
+
+A few `async` calls are fine. The problem arises when `async` contaminates the critical path — the code that runs once per test item. If processing each item spawns even a small number of microtasks, and there are 10,000 items, that's tens of thousands of heap allocations and microtask queue entries. Each `await` also yields to the event loop, which in Node is shared across all extensions; CPU time spent processing microtasks is CPU time stolen from every other extension in the host.
+
+The predecessor to this codebase hit this limit hard. Processing the gopls response for a repository with ~12,000 tests ([`google/go-github`](https://github.com/google/go-github)) pegged the extension host CPU at 100% indefinitely, blocking all other extensions entirely. The root cause was `async` entwined throughout the entire processing pipeline — multiple microtask suspensions per test item, multiplied across the full test suite. Removing `async` from one iterator in the hot path produced a three-orders-of-magnitude improvement in that loop alone, which made it clear that the entire resolver needed to be rewritten from the ground up to push `async` out of the critical path. See [golang/vscode-go#3785](https://github.com/golang/vscode-go/issues/3785) for more history.
+
+The rule here: **the critical path must be synchronous.** `async`/`await` is appropriate at the boundary — querying gopls, populating the data model — where a small number of microtasks are spawned and awaited once. The processing that follows, including all view model sync, must run to completion without yielding. Any `await` appearing in `#syncViewItem`, `#syncChildren`, or their callees should be treated as a bug.
+
 ## TODO
 
 - **TestManager (`manager.ts`)**: Analyze and clean up. It's doing too much but the scope of the problem hasn't been fully assessed.
@@ -93,8 +105,6 @@ It lazy-loads the model if needed, translates VSCode `TestItem`s back to Go item
 **`updateViewModel` has a dual input type.** It accepts `TestItem | GoTestItem` and has to figure out which it got. The `TestItem` path exists only for VSCode's `resolveHandler`; the `GoTestItem` path is used internally. These should be separate entry points.
 
 **`#buildViewItem` uses a `function create(this: ViewController, ...)` inner function** called with `.call(this, ...)` because it needs private field access. Should just be a private method.
-
-**`#getPresentable` handles both Go item lookup and profile synthesis** in the same method. These are very different code paths that should be separated.
 
 ## Data flow
 
