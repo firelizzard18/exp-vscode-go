@@ -20,7 +20,8 @@ import {
 	window,
 	workspace,
 } from 'vscode';
-import { EditorEvent, isRunnableTest, TestManager } from './manager';
+import { EditorEvent, TestManager } from './manager';
+import { isTestItem } from './model';
 import { WorkspaceConfig } from './workspaceConfig';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
@@ -173,7 +174,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 function testItemCommand(fn: TestManager[keyof TestManager & `${string}Tests`]) {
 	return (...args: any[]) => {
-		if (args.every((x) => isRunnableTest(x))) {
+		if (args.every((x) => isTestItem(x))) {
 			return fn(args);
 		}
 

@@ -31,8 +31,6 @@ export type EditorEvent =
 	| { type: 'file-edited'; uri: Uri; ranges: Range[] }
 	| { type: 'file-saved'; uri: Uri; version: number };
 
-type RunnableTest = Package | TestFile | TestCase;
-
 /**
  * Entry point for the test explorer implementation.
  */
@@ -172,21 +170,21 @@ export class TestManager extends Disposer {
 	/**
 	 * Run a test.
 	 */
-	runTests(items: RunnableTest[] | TestRunRequest) {
+	runTests(items: GoTestItem[] | TestRunRequest) {
 		this.#executeTestRun(this.#run, items);
 	}
 
 	/**
 	 * Debug a test.
 	 */
-	debugTests(items: RunnableTest[] | TestRunRequest) {
+	debugTests(items: GoTestItem[] | TestRunRequest) {
 		this.#executeTestRun(this.#debug, items);
 	}
 
 	/**
 	 * Profile a test.
 	 */
-	async profileTests(items: RunnableTest[] | TestRunRequest) {
+	async profileTests(items: GoTestItem[] | TestRunRequest) {
 		if (!(await this.#configureProfiles?.())) return;
 		this.#executeTestRun(this.#profile, items);
 	}
@@ -197,7 +195,7 @@ export class TestManager extends Disposer {
 	 * @param rq - The test run request.
 	 * @param token - A token for canceling the run.
 	 */
-	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | RunnableTest[], token?: CancellationToken) {
+	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | GoTestItem[], token?: CancellationToken) {
 		if (!this.#resolver || !this.#presenter || !this.#ctrl || !this.#model) {
 			return;
 		}
@@ -275,29 +273,41 @@ export class TestManager extends Disposer {
 			);
 		} else {
 			// Include is empty, so the domain is implicitly "everything".
-			include = new Set();
-			for (const ws of this.#model.workspaces) {
-				// If discovery is enabled, eagerly load everything.
-				if (this.#config.for(ws).discovery.get() === 'on') {
-					if (!ws.packages.loaded || !ws.modules.loaded) {
-						await this.#model.populate(ws);
-					}
-					for (const mod of ws.modules) {
-						if (!mod.packages.loaded) {
-							await this.#model.populate(mod);
-						}
-					}
-				}
+			include = new Set([...this.#model.workspaces]);
+		}
 
-				// Add all loaded packages to `include`.
-				for (const pkg of ws.packages) {
-					include.add(pkg);
+		// For each included workspace, eagerly load everything if discovery is
+		// enabled, and include loaded modules and packages either way.
+		for (const ws of include) {
+			if (ws.kind !== 'workspace') continue;
+
+			if (this.#config.for(ws).discovery.get() === 'on') {
+				if (!ws.packages.loaded || !ws.modules.loaded) {
+					await this.#model.populate(ws);
 				}
-				for (const mod of ws.modules) {
-					for (const pkg of mod.packages) {
-						include.add(pkg);
-					}
+			}
+
+			for (const pkg of ws.packages) {
+				include.add(pkg);
+			}
+			for (const mod of ws.modules) {
+				include.add(mod);
+			}
+		}
+
+		// For each included module, eagerly load everything if discovery is
+		// enabled, and include loaded packages either way.
+		for (const mod of include) {
+			if (mod.kind !== 'module') continue;
+
+			if (this.#config.for(mod).discovery.get() === 'on') {
+				if (!mod.packages.loaded) {
+					await this.#model.populate(mod);
 				}
+			}
+
+			for (const pkg of mod.packages) {
+				include.add(pkg);
 			}
 		}
 
@@ -577,8 +587,4 @@ export class TestManager extends Disposer {
 				break;
 		}
 	}
-}
-
-export function isRunnableTest(x: unknown): x is RunnableTest {
-	return isTestItem(x) && (x.kind === 'package' || x.kind === 'file' || x instanceof TestCase);
 }
