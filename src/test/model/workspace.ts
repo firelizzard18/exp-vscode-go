@@ -24,4 +24,11 @@ export class Workspace {
 	get key() {
 		return `${this.uri}`;
 	}
+
+	*allPackages() {
+		yield* this.packages;
+		for (const mod of this.modules) {
+			yield* mod.packages;
+		}
+	}
 }

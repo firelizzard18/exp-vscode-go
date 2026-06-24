@@ -31,6 +31,11 @@ export class ModelController extends Disposer {
 		this.disposeOf = runEvents((e) => this.#onRunEvent(e));
 	}
 
+	/**
+	 * Returns the {@link Workspace} for the given URI or workspace folder,
+	 * creating one if it doesn't exist yet. Returns `undefined` if called with
+	 * a URI that is not within any workspace, or if the workspace is excluded.
+	 */
 	workspaceFor(uri: Uri): Workspace | undefined;
 	workspaceFor(wsf: WorkspaceFolder): Workspace;
 	workspaceFor(uri: Uri | WorkspaceFolder) {
@@ -86,17 +91,8 @@ export class ModelController extends Disposer {
 	 * {@link onDidUpdate} fires synchronously during this call for each item
 	 * that was added, removed, or modified. Subscribers should expect to be
 	 * called inline, not in a subsequent microtask.
-	 *
-	 * @param scope - The item to populate. If omitted, populates all workspace
-	 *   roots. Otherwise, populates the given item and, if
-	 *   {@link scope.recurse} is true (the default), its descendants.
 	 */
-	async populate(scope?: Workspace | Module | Package): Promise<void> {
-		if (!scope) {
-			await this.#loadRoots();
-			return;
-		}
-
+	async populate(scope: Workspace | Module | Package): Promise<void> {
 		switch (scope.kind) {
 			case 'workspace':
 				await this.#loadModules(scope);
@@ -201,14 +197,6 @@ export class ModelController extends Disposer {
 			yield* this.#updateFiles(pkg, src.TestFiles, { [`${uri}`]: opts.modified });
 			resolved.push(...[...pkg.files].filter((x) => `${x.uri}` === `${uri}`));
 		}
-	}
-
-	/**
-	 * Updates the list of workspaces, and loads the modules of each workspace.
-	 */
-	async #loadRoots() {
-		// Update the workspace item set.
-		this.workspaces.update(this.#context.workspace.workspaceFolders ?? [], (ws) => new Workspace(ws));
 	}
 
 	/**

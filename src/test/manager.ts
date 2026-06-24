@@ -264,7 +264,7 @@ export class TestManager extends Disposer {
 		if (rq instanceof Array) {
 			// The request specifies Go items, so we just need to execute those.
 			include = new Set(rq);
-		} else if (rq.include) {
+		} else if (rq.include instanceof Array && rq.include.length > 0) {
 			// The request specifies view items so convert those to Go items.
 			// Silently ignore requests to execute test items that don't have a
 			// Go item.

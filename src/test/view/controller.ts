@@ -1,7 +1,6 @@
 import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { TestController } from '@/utils/testing';
-import { pathContains } from '@/utils/util';
 import { Event, TestItem, Uri } from 'vscode';
 import { GoTestItem, ItemEvent, ModelController, StaticTestCase, TestCase } from '../model';
 import { RunEvent } from '../run/runEvent';
@@ -117,37 +116,33 @@ export class ViewController extends Disposer {
 		const ws = this.#model.workspaces.get(wsf);
 		if (!ws || id.kind === 'workspace') return ws;
 
-		// Scan all the modules.
-		for (const mod of ws.modules) {
-			// If we're looking for a module, return or skip. Otherwise, check
-			// if the module contains the path.
-			if (id.kind === 'module') {
+		// Scan the modules.
+		if (id.kind === 'module') {
+			for (const mod of ws.modules) {
 				if (`${mod.uri}` === `${uri}`) {
 					return mod;
 				}
-				continue;
-			} else if (!pathContains(mod.dir, uri)) {
-				continue;
 			}
+			return;
+		}
 
-			// Look for a package who's URI matches the target directory.
-			const dir = id.kind === 'package' ? uri : Uri.joinPath(uri, '..');
-			for (const pkg of mod.packages) {
-				// If it matches and we want a package, return it.
-				if (`${pkg.uri}` !== `${dir}`) continue;
-				if (id.kind === 'package') return pkg;
+		// Scan packages. Look for a package who's URI matches the target directory.
+		const dir = id.kind === 'package' ? uri : Uri.joinPath(uri, '..');
+		for (const pkg of ws.allPackages()) {
+			// If it matches and we want a package, return it.
+			if (`${pkg.uri}` !== `${dir}`) continue;
+			if (id.kind === 'package') return pkg;
 
-				// Does the package have the file?
-				const file = pkg.files.get(`${uri}`);
-				if (!file) continue;
+			// Does the package have the file?
+			const file = pkg.files.get(`${uri}`);
+			if (!file) continue;
 
-				// If we're looking for a file and it matches, return it.
-				if (id.kind === 'file') return file;
+			// If we're looking for a file and it matches, return it.
+			if (id.kind === 'file') return file;
 
-				// If we found the file and it doesn't have the test, the
-				// test doesn't exist.
-				return file.tests.get(id.name!);
-			}
+			// If we found the file and it doesn't have the test, the
+			// test doesn't exist.
+			return file.tests.get(id.name!);
 		}
 	}
 
