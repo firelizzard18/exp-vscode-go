@@ -20,9 +20,9 @@ import {
 	window,
 	workspace,
 } from 'vscode';
+import { WorkspaceConfig } from './config';
 import { EditorEvent, TestManager } from './manager';
 import { isTestItem } from './model';
-import { WorkspaceConfig } from './workspaceConfig';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
 	const testCtx: Context = {

@@ -1,4 +1,4 @@
-import { WorkspaceConfig } from '@/test/workspaceConfig';
+import { WorkspaceConfig } from '@/test/config';
 import { Context } from '@/utils/common';
 import { debugProcess, Flags, spawnProcess } from '@/utils/spawn';
 import { doSafe, helpers } from '@/utils/testing';

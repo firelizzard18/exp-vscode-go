@@ -2,9 +2,9 @@ import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { TestController } from '@/utils/testing';
 import { Event, TestItem, Uri } from 'vscode';
+import { WorkspaceConfig } from '../config';
 import { GoTestItem, ItemEvent, ModelController, StaticTestCase, TestCase } from '../model';
 import { RunEvent } from '../run/controller';
-import { WorkspaceConfig } from '../workspaceConfig';
 import {
 	idFor,
 	ModelViewPresenter,

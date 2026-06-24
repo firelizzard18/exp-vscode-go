@@ -6,12 +6,12 @@ import { Flags, Spawner } from '@/utils/spawn';
 import { TestController } from '@/utils/testing';
 import path from 'node:path';
 import { CancellationToken, EventEmitter, FileCoverage, TestItem, TestRun, TestRunProfileKind, Uri } from 'vscode';
+import { WorkspaceConfig } from '../config';
 import { parseCoverage } from '../coverage';
 import type { GoTestRequest } from '../manager';
 import { GoTestItem, ModelController, Package, TestCase } from '../model';
 import { CapturedProfile } from '../profiles';
 import { ViewController } from '../view/controller';
-import { WorkspaceConfig } from '../workspaceConfig';
 import { RunConfig } from './config';
 import { TestRunLog } from './log';
 

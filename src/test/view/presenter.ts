@@ -3,6 +3,7 @@ import { RelationMap, WeakMapWithDefault } from '@/utils/map';
 import moment from 'moment';
 import path from 'node:path';
 import { Event, Uri } from 'vscode';
+import { WorkspaceConfig } from '../config';
 import {
 	DynamicTestCase,
 	GoTestItem,
@@ -16,7 +17,6 @@ import {
 } from '../model';
 import { CapturedProfile } from '../profiles';
 import { RunEvent } from '../run/controller';
-import { WorkspaceConfig } from '../workspaceConfig';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
 

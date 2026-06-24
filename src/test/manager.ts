@@ -13,12 +13,12 @@ import vscode, {
 	TestRunRequest as VSCTestRunRequest,
 } from 'vscode';
 import { CodeLensProvider } from './codeLens';
+import { WorkspaceConfig } from './config';
 import { GoTestItem, isTestItem, ItemEvent, ModelController, Package, TestCase, TestFile } from './model';
 import { RunConfig } from './run/config';
 import { RunController, RunEvent, shouldRunBenchmarks } from './run/controller';
 import { ViewController } from './view/controller';
 import { idFor, ModelViewPresenter, Presentable } from './view/presenter';
-import { WorkspaceConfig } from './workspaceConfig';
 
 export type EditorEvent =
 	| { type: 'force-refresh'; item?: TestItem }
