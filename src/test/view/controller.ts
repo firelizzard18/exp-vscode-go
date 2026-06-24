@@ -328,8 +328,3 @@ export class ViewController extends Disposer {
 		}
 	}
 }
-
-export type ContinuousRunTracker = {
-	didUpdate(tests: Iterable<TestCase>): boolean;
-	run(): void;
-};

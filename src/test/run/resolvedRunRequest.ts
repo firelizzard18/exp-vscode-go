@@ -1,10 +1,15 @@
 import { MapWithDefault } from '@/utils/map';
 import { EventEmitter, TestRun, TestRunRequest } from 'vscode';
-import { GoTestItem, ModelController, Package, TestCase } from './model';
-import { PackageTestRun } from './run/pkgTestRun';
-import { RunEvent } from './run/runEvent';
-import { ContinuousRunTracker, ViewController } from './view/controller';
-import { ModelViewPresenter } from './view/presenter';
+import { GoTestItem, ModelController, Package, TestCase } from '../model';
+import { ViewController } from '../view/controller';
+import { ModelViewPresenter } from '../view/presenter';
+import { PackageTestRun } from './pkgTestRun';
+import { RunEvent } from './runEvent';
+
+export type ContinuousRunTracker = {
+	didUpdate(tests: Iterable<TestCase>): boolean;
+	run(): void;
+};
 
 export class ResolvedTestRunRequest {
 	readonly #model;

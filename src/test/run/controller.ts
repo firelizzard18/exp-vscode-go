@@ -9,12 +9,12 @@ import { CancellationToken, EventEmitter, FileCoverage, TestRunProfileKind, Uri 
 import { parseCoverage } from '../coverage';
 import { GoTestItem, ModelController, Package, TestCase } from '../model';
 import { CapturedProfile } from '../profiles';
-import { ResolvedTestRunRequest } from '../resolvedRunRequest';
 import { ViewController } from '../view/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
 import { RunConfig } from './config';
 import { TestRunLog } from './log';
 import { PackageTestRun } from './pkgTestRun';
+import { ResolvedTestRunRequest } from './resolvedRunRequest';
 import { RunEvent } from './runEvent';
 
 export class RunController {

@@ -13,11 +13,11 @@ import vscode, {
 } from 'vscode';
 import { CodeLensProvider } from './codeLens';
 import { GoTestItem, isTestItem, ItemEvent, ModelController, Package, TestCase, TestFile } from './model';
-import { ResolvedTestRunRequest } from './resolvedRunRequest';
 import { RunConfig } from './run/config';
 import { RunController, shouldRunBenchmarks } from './run/controller';
+import { ContinuousRunTracker, ResolvedTestRunRequest } from './run/resolvedRunRequest';
 import { RunEvent } from './run/runEvent';
-import { ContinuousRunTracker, ViewController } from './view/controller';
+import { ViewController } from './view/controller';
 import { idFor, ModelViewPresenter, Presentable } from './view/presenter';
 import { WorkspaceConfig } from './workspaceConfig';
 
