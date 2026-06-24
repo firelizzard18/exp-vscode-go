@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import path from 'node:path';
 import {
 	type CancellationToken,
@@ -8,22 +6,23 @@ import {
 	type TestItem,
 	type TestRun,
 	TestRunProfileKind,
+	type TestRunRequest,
 	Uri,
 } from 'vscode';
 
 import { makeCaptureDir } from '@/utils/capture';
 import { type Context } from '@/utils/common';
+import { MapWithDefault } from '@/utils/map';
 import { type Flags, type Spawner } from '@/utils/spawn';
 import { type TestController } from '@/utils/testing';
 
 import { type WorkspaceConfig } from '../config';
-import { parseCoverage } from '../coverage';
-import type { GoTestRequest } from '../manager';
-import { type GoTestItem, type ModelController, type Package, type TestCase } from '../model';
-import { CapturedProfile } from '../profiles';
+import { type GoTestItem, type ModelController, type Package, TestCase } from '../model';
 import { type ViewController } from '../view/controller';
 import { type RunConfig } from './config';
+import { parseCoverage } from './coverage';
 import { TestRunLog } from './log';
+import { CapturedProfile } from './profiles';
 
 export type RunEvent =
 	| {
@@ -334,6 +333,44 @@ export class RunController {
 				return this.#context.spawn(...args);
 		}
 	}
+}
+
+export interface GoTestRequest {
+	readonly request: TestRunRequest;
+	readonly packages: Set<Package>;
+	readonly include: Set<GoTestItem>;
+	readonly exclude: Set<GoTestItem>;
+	readonly pkgInclude: MapWithDefault<Package, TestCase[]>;
+	readonly pkgExclude: MapWithDefault<Package, TestCase[]>;
+}
+
+export function newGoTestRequest(
+	request: TestRunRequest,
+	packages: Set<Package>,
+	include: Set<GoTestItem>,
+	exclude: Set<GoTestItem>,
+): GoTestRequest {
+	return {
+		request,
+		packages,
+		include,
+		exclude,
+		pkgInclude: mapTestsByPackage(include),
+		pkgExclude: mapTestsByPackage(exclude),
+	};
+}
+
+function mapTestsByPackage(items: Iterable<GoTestItem>) {
+	const map = new MapWithDefault<Package, TestCase[]>(() => []);
+	for (const item of items) {
+		if (item.kind === 'file') {
+			map.get(item.package).push(...item.tests);
+		}
+		if (item instanceof TestCase) {
+			map.get(item.file.package).push(item);
+		}
+	}
+	return map;
 }
 
 interface GoTestRun {

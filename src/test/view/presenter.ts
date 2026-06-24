@@ -17,8 +17,8 @@ import {
 	TestCase,
 	type Workspace,
 } from '../model';
-import { type CapturedProfile } from '../profiles';
 import { type RunEvent } from '../run/controller';
+import { type CapturedProfile } from '../run/profiles';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
 

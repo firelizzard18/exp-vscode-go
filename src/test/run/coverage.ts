@@ -5,7 +5,7 @@ import { type Context } from '@/utils/common';
 import { getModulePaths } from '@/utils/modules';
 import { execGoStr } from '@/utils/util';
 
-import { Module, type Workspace } from './model';
+import { Module, type Workspace } from '../model';
 
 /**
  * Parses a coverage file from `go test` into a map of

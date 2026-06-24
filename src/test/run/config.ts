@@ -14,7 +14,7 @@ import { type Context } from '@/utils/common';
 import { doSafe, type TestController } from '@/utils/testing';
 import { type GoLaunchRequest } from '@/vscode-go';
 
-import { ProfileType } from '../profiles';
+import { ProfileType } from './profiles';
 
 type ConfigureArgs = Pick<typeof window, 'showQuickPick'>;
 

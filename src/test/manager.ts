@@ -4,22 +4,20 @@ import { CancellationTokenSource, EventEmitter, TestRunProfileKind, TestRunReque
 
 import { type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
-import { MapWithDefault } from '@/utils/map';
 import { doSafe, type TestController } from '@/utils/testing';
 
 import { CodeLensProvider } from './codeLens';
 import { WorkspaceConfig } from './config';
-import {
-	type GoTestItem,
-	isTestItem,
-	type ItemEvent,
-	ModelController,
-	type Package,
-	TestCase,
-	TestFile,
-} from './model';
+import { type GoTestItem, isTestItem, ModelController, type Package, TestCase, TestFile } from './model';
 import { RunConfig } from './run/config';
-import { RunController, type RunEvent, shouldRunBenchmarks } from './run/controller';
+import { ContinuousRunTracker } from './run/continuous';
+import {
+	type GoTestRequest,
+	newGoTestRequest,
+	RunController,
+	type RunEvent,
+	shouldRunBenchmarks,
+} from './run/controller';
 import { ViewController } from './view/controller';
 import { idFor, ModelViewPresenter, type Presentable } from './view/presenter';
 
@@ -48,8 +46,8 @@ export class TestManager extends Disposer {
 	readonly #coverage: RunConfig;
 
 	readonly #docVersion = new Map<string, number>();
-	readonly #continuousRuns = new Set<ContinuousRunTracker>();
 	readonly #runEvents = new EventEmitter<RunEvent>();
+	readonly #editorEvents;
 
 	// Transients.
 	#configureProfiles?: () => Promise<boolean>;
@@ -62,6 +60,7 @@ export class TestManager extends Disposer {
 		super();
 		this.#context = context;
 		this.#config = new WorkspaceConfig(context.workspace);
+		this.#editorEvents = editorEvents;
 
 		this.#run = new RunConfig(context, 'Run', TestRunProfileKind.Run, true, { id: 'canRun' }, true);
 		this.#debug = new RunConfig(context, 'Debug', TestRunProfileKind.Debug, true, { id: 'canDebug' });
@@ -104,9 +103,6 @@ export class TestManager extends Disposer {
 		this.#presenter = presenter;
 
 		this.disposeOf = [ctrl, model, presenter, resolver];
-
-		// Listen to update events.
-		this.disposeOf = model.onDidUpdate((x) => this.#onItemEvent(x));
 
 		// Register the legacy code lens provider.
 		this.disposeOf = args.registerCodeLensProvider(
@@ -240,17 +236,26 @@ export class TestManager extends Disposer {
 		}
 
 		// Trigger a run when updates are committed (edits are saved).
-		const tracker = new ContinuousRunTracker(request, (rq) =>
+		const tracker = new ContinuousRunTracker(request, this.#editorEvents, this.#model.onDidUpdate, (rq) =>
 			doSafe(this.#context, 'run continuous', () => runner.run(rq)),
 		);
-		this.#continuousRuns.add(tracker);
 
 		// Cleanup when the run is canceled
-		token.onCancellationRequested(() => {
-			this.#continuousRuns.delete(tracker);
-		});
+		token.onCancellationRequested(() => tracker.dispose());
 	}
 
+	/**
+	 * Resolves a VSCode run request or a list of Go items into a {@link GoTestRequest}:
+	 *
+	 * 1. Populates discovery-on workspaces so the model reflects the current state.
+	 * 2. Translates view items (or passes through Go items) into the initial include set.
+	 * 3. Expands any workspace/module in the include set to its packages, loading them
+	 *    first if discovery is on and they haven't been loaded yet.
+	 * 4. For each package in the include set, loads its tests if they haven't been loaded.
+	 * 5. Removes redundant file/test includes where the package is already included.
+	 * 6. Adds the implied package for any explicitly included file or test.
+	 * 7. Constructs the {@link GoTestRequest}.
+	 */
 	async #resolveRunRequest(rq: TestRunRequest | GoTestItem[]): Promise<GoTestRequest | undefined> {
 		if (!this.#model || !this.#resolver || !this.#presenter) return;
 
@@ -477,23 +482,6 @@ export class TestManager extends Disposer {
 				await this.#model.updateFile(uri, {});
 				break;
 		}
-
-		// Fire an event when unsaved changes are committed.
-		if (event?.type === 'saved') {
-			for (const tracker of this.#continuousRuns) {
-				tracker.run();
-			}
-		}
-	}
-
-	#onItemEvent(updates: ItemEvent[]) {
-		// Queue uncommitted updates (unsaved changes) for execution.
-		const tests = updates.filter(
-			(x): x is ItemEvent<TestCase> => x.item instanceof TestCase && x.type === 'modified',
-		);
-		for (const tracker of this.#continuousRuns) {
-			tracker.didUpdate(tests.map((x) => x.item));
-		}
 	}
 
 	async #resolveRoots() {
@@ -582,88 +570,4 @@ export class TestManager extends Disposer {
 				break;
 		}
 	}
-}
-
-export interface GoTestRequest {
-	readonly request: TestRunRequest;
-	readonly packages: Set<Package>;
-	readonly include: Set<GoTestItem>;
-	readonly exclude: Set<GoTestItem>;
-	readonly pkgInclude: MapWithDefault<Package, TestCase[]>;
-	readonly pkgExclude: MapWithDefault<Package, TestCase[]>;
-}
-
-function newGoTestRequest(
-	request: TestRunRequest,
-	packages: Set<Package>,
-	include: Set<GoTestItem>,
-	exclude: Set<GoTestItem>,
-): GoTestRequest {
-	return {
-		request,
-		packages,
-		include,
-		exclude,
-		pkgInclude: mapTestsByPackage(include),
-		pkgExclude: mapTestsByPackage(exclude),
-	};
-}
-
-function mapTestsByPackage(items: Iterable<GoTestItem>) {
-	const map = new MapWithDefault<Package, TestCase[]>(() => []);
-	for (const item of items) {
-		if (item.kind === 'file') {
-			map.get(item.package).push(...item.tests);
-		}
-		if (item instanceof TestCase) {
-			map.get(item.file.package).push(item);
-		}
-	}
-	return map;
-}
-
-class ContinuousRunTracker {
-	readonly #rq;
-	readonly #onExecute;
-	readonly #packages = new Set<Package>();
-	readonly #include = new Set<TestCase>();
-
-	constructor(rq: GoTestRequest, onExecute: (rq: GoTestRequest) => void) {
-		this.#rq = rq;
-		this.#onExecute = onExecute;
-	}
-
-	didUpdate(tests: Iterable<TestCase>): boolean {
-		let didAdd = false;
-		for (const test of tests) {
-			if (belongsTo(test, this.#rq.exclude)) {
-				continue;
-			}
-			if (belongsTo(test, this.#rq.include)) {
-				this.#include.add(test);
-				this.#packages.add(test.file.package);
-				didAdd = true;
-			}
-		}
-		return didAdd;
-	}
-
-	run() {
-		if (this.#include.size === 0) {
-			return;
-		}
-		const rq2 = newGoTestRequest(
-			this.#rq.request,
-			new Set(this.#packages),
-			new Set(this.#include),
-			this.#rq.exclude,
-		);
-		this.#packages.clear();
-		this.#include.clear();
-		this.#onExecute(rq2);
-	}
-}
-
-function belongsTo(item: TestCase, set: Set<GoTestItem>) {
-	return set.has(item) || set.has(item.file) || set.has(item.file.package) || set.has(item.file.package.root);
 }
