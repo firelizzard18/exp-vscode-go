@@ -1,3 +1,4 @@
+import { WorkspaceConfig } from '@/test/workspaceConfig';
 import { Context } from '@/utils/common';
 import { debugProcess, Flags, spawnProcess } from '@/utils/spawn';
 import { doSafe, helpers } from '@/utils/testing';
@@ -21,7 +22,6 @@ import {
 	Uri,
 	workspace,
 } from 'vscode';
-import { TestConfig } from '../test/config';
 import { GoExtensionAPI } from '../vscode-go';
 
 export class GoGenerateManager {
@@ -133,9 +133,12 @@ export class GoGenerateManager {
 			for (const item of request.include ?? []) {
 				if (!item.sortText) continue;
 
+				const wsf = this.#context.workspace.getWorkspaceFolder(item.uri!);
+				if (!wsf) continue;
+
 				run.started(item);
-				const cfg = new TestConfig(this.#context.workspace, item.uri!);
-				const env = cfg.toolsEnvVars();
+				const cfg = new WorkspaceConfig(this.#context.workspace);
+				const env = cfg.for(wsf).toolsEnvVars.get();
 				const { flags, args } = parse(item.sortText, env);
 				const { code } = await (kind === TestRunProfileKind.Debug ? this.#context.debug : this.#context.spawn)(
 					this.#context,
