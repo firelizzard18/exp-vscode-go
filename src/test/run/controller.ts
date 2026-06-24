@@ -5,8 +5,9 @@ import { Context } from '@/utils/common';
 import { Flags, Spawner } from '@/utils/spawn';
 import { TestController } from '@/utils/testing';
 import path from 'node:path';
-import { CancellationToken, EventEmitter, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
+import { CancellationToken, EventEmitter, FileCoverage, TestRun, TestRunProfileKind, Uri } from 'vscode';
 import { parseCoverage } from '../coverage';
+import type { GoTestRequest } from '../manager';
 import { GoTestItem, ModelController, Package, TestCase } from '../model';
 import { CapturedProfile } from '../profiles';
 import { ViewController } from '../view/controller';
@@ -14,7 +15,6 @@ import { WorkspaceConfig } from '../workspaceConfig';
 import { RunConfig } from './config';
 import { TestRunLog } from './log';
 import { PackageTestRun } from './pkgTestRun';
-import { ResolvedTestRunRequest } from './resolvedRunRequest';
 import { RunEvent } from './runEvent';
 
 export class RunController {
@@ -47,7 +47,7 @@ export class RunController {
 		this.#runEvents = runEvents;
 	}
 
-	async run(rq: ResolvedTestRunRequest) {
+	async run(rq: GoTestRequest) {
 		const run = this.#ctrl.createTestRun(rq.request);
 		const sub = this.#token.onCancellationRequested(() => {
 			run.appendOutput('\r\n*** Cancelled ***\r\n');
@@ -56,9 +56,9 @@ export class RunController {
 
 		// Execute the tests.
 		try {
-			const invalid = rq.size > 1 && this.#config.kind === TestRunProfileKind.Debug;
+			const invalid = rq.packages.size > 1 && this.#config.kind === TestRunProfileKind.Debug;
 			let first = true;
-			for (const pkg of rq.packages(run)) {
+			for (const pkg of this.#packages(rq, run)) {
 				if (invalid) {
 					pkg.forEach((item) =>
 						run.errored(item, {
@@ -82,7 +82,51 @@ export class RunController {
 		}
 	}
 
-	async #runPkg(rq: ResolvedTestRunRequest, pkg: PackageTestRun) {
+	*#packages(rq: GoTestRequest, run: TestRun) {
+		// When the run is disposed, remove all dynamic test cases
+		// associated with it.
+		run.onDidDispose?.(() => {
+			for (const pkg of rq.packages) {
+				this.#runEvents.fire({ type: 'disposed', run, pkg });
+			}
+		});
+
+		// Enqueue all of the packages.
+		for (const pkg of rq.packages) {
+			run.enqueued(this.#resolver.resolveViewItem(pkg));
+		}
+
+		const map = <T extends GoTestItem>(items: T[]) =>
+			new Map(items.map((x) => [x, this.#resolver.resolveViewItem(x)]));
+		for (const pkg of rq.packages) {
+			const mode = rq.include.has(pkg) ? 'all' : 'specific';
+			const include = mode === 'all' ? map([...pkg.allTests()]) : map(rq.pkgInclude.get(pkg) ?? []);
+			const exclude = map(rq.pkgExclude.get(pkg) ?? []);
+
+			if (mode === 'all') {
+				this.#runEvents.fire({ type: 'start', run, pkg });
+			} else {
+				this.#runEvents.fire({
+					type: 'start',
+					run,
+					pkg,
+					include: new Set([...include.keys()]),
+					exclude: new Set([...exclude.keys()]),
+				});
+			}
+
+			yield new PackageTestRun({
+				run,
+				mode,
+				goItem: pkg,
+				testItem: this.#resolver.resolveViewItem(pkg),
+				tests: include,
+				exclude,
+			});
+		}
+	}
+
+	async #runPkg(rq: GoTestRequest, pkg: PackageTestRun) {
 		const time = new Date();
 
 		// Enqueue tests.

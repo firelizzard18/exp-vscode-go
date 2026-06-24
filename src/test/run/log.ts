@@ -22,9 +22,9 @@ export class TestRunLog {
 	readonly #defaultTestItem;
 	readonly #testFor;
 
-	readonly stderr: string[] = [];
-	readonly events = new Map<string, { item: TestItem; events: RichTestEvent[] }>();
-	readonly currentLocation = new Map<string, Location>();
+	readonly #stderr: string[] = [];
+	readonly #events = new Map<string, { item: TestItem; events: RichTestEvent[] }>();
+	readonly #currentLocation = new Map<string, Location>();
 
 	#buildFailed = false;
 
@@ -58,10 +58,10 @@ export class TestRunLog {
 		// The output location is only shown on the first line so remember what
 		// the 'current' location is; continuations are prefixed with 8 spaces.
 		if (rich.Location) {
-			this.currentLocation.set(rich.TestItem.id, rich.Location);
+			this.#currentLocation.set(rich.TestItem.id, rich.Location);
 		} else if (item && rich.Action === 'output' && rich.Output?.startsWith('        ')) {
 			rich.Output = rich.Output.substring(8);
-			rich.Location = this.currentLocation.get(rich.TestItem.id);
+			rich.Location = this.#currentLocation.get(rich.TestItem.id);
 		}
 
 		// Determine the test from the location.
@@ -76,10 +76,10 @@ export class TestRunLog {
 		const item = event.TestItem;
 
 		// Track events (for reporting build failures).
-		if (!this.events.has(item.id)) {
-			this.events.set(item.id, { events: [], item });
+		if (!this.#events.has(item.id)) {
+			this.#events.set(item.id, { events: [], item });
 		}
-		this.events.get(item.id)!.events.push(event);
+		this.#events.get(item.id)!.events.push(event);
 
 		if (event.Output) {
 			this.append(event.Output, event.Location, event.TestItem);
@@ -94,7 +94,7 @@ export class TestRunLog {
 
 			case 'build-fail': {
 				let didReport = false;
-				this.events.forEach(({ events, item }) => {
+				this.#events.forEach(({ events, item }) => {
 					// Exclude the comment lines
 					const message = events
 						.map((x) => x.Output)
@@ -128,7 +128,7 @@ export class TestRunLog {
 				break;
 
 			case 'fail': {
-				const messages = groupOutputEvents(this.events.get(item.id)?.events ?? []).flatMap((x) =>
+				const messages = groupOutputEvents(this.#events.get(item.id)?.events ?? []).flatMap((x) =>
 					parseTestFailure(x),
 				);
 				this.#run.failed(item, messages, elapsed);
@@ -143,7 +143,7 @@ export class TestRunLog {
 
 	onStderr(s: string) {
 		this.append(s, undefined, this.#defaultTestItem);
-		this.stderr.push(s);
+		this.#stderr.push(s);
 	}
 
 	append(output: string, location?: Location, test?: TestItem) {

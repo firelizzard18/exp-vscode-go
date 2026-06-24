@@ -1,5 +1,6 @@
 import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
+import { MapWithDefault } from '@/utils/map';
 import { doSafe, TestController } from '@/utils/testing';
 import type { CancellationToken, Range, TestItem } from 'vscode';
 import vscode, {
@@ -15,7 +16,6 @@ import { CodeLensProvider } from './codeLens';
 import { GoTestItem, isTestItem, ItemEvent, ModelController, Package, TestCase, TestFile } from './model';
 import { RunConfig } from './run/config';
 import { RunController, shouldRunBenchmarks } from './run/controller';
-import { ContinuousRunTracker, ResolvedTestRunRequest } from './run/resolvedRunRequest';
 import { RunEvent } from './run/runEvent';
 import { ViewController } from './view/controller';
 import { idFor, ModelViewPresenter, Presentable } from './view/presenter';
@@ -238,7 +238,9 @@ export class TestManager extends Disposer {
 		}
 
 		// Trigger a run when updates are committed (edits are saved).
-		const tracker = request.forContinuous((rq) => doSafe(this.#context, 'run continuous', () => runner.run(rq)));
+		const tracker = new ContinuousRunTracker(request, (rq) =>
+			doSafe(this.#context, 'run continuous', () => runner.run(rq)),
+		);
 		this.#continuousRuns.add(tracker);
 
 		// Cleanup when the run is canceled
@@ -247,7 +249,7 @@ export class TestManager extends Disposer {
 		});
 	}
 
-	async #resolveRunRequest(rq: TestRunRequest | GoTestItem[]) {
+	async #resolveRunRequest(rq: TestRunRequest | GoTestItem[]): Promise<GoTestRequest | undefined> {
 		if (!this.#model || !this.#resolver || !this.#presenter) return;
 
 		// IDs of items to exclude. Don't try to resolve to test items because
@@ -366,16 +368,7 @@ export class TestManager extends Disposer {
 		const excludeItems = new Set(
 			[...exclude].map((x) => this.#resolver!.resolveGoItem(Uri.parse(x))).filter((x) => !!x && isTestItem(x)),
 		);
-		return new ResolvedTestRunRequest(
-			this.#model,
-			this.#presenter,
-			this.#resolver,
-			rq,
-			packages,
-			include,
-			excludeItems,
-			this.#runEvents,
-		);
+		return newGoTestRequest(rq, packages, include, excludeItems);
 	}
 
 	async #onEditorEvent(event: EditorEvent) {
@@ -587,4 +580,88 @@ export class TestManager extends Disposer {
 				break;
 		}
 	}
+}
+
+export interface GoTestRequest {
+	readonly request: TestRunRequest;
+	readonly packages: Set<Package>;
+	readonly include: Set<GoTestItem>;
+	readonly exclude: Set<GoTestItem>;
+	readonly pkgInclude: MapWithDefault<Package, TestCase[]>;
+	readonly pkgExclude: MapWithDefault<Package, TestCase[]>;
+}
+
+function newGoTestRequest(
+	request: TestRunRequest,
+	packages: Set<Package>,
+	include: Set<GoTestItem>,
+	exclude: Set<GoTestItem>,
+): GoTestRequest {
+	return {
+		request,
+		packages,
+		include,
+		exclude,
+		pkgInclude: mapTestsByPackage(include),
+		pkgExclude: mapTestsByPackage(exclude),
+	};
+}
+
+function mapTestsByPackage(items: Iterable<GoTestItem>) {
+	const map = new MapWithDefault<Package, TestCase[]>(() => []);
+	for (const item of items) {
+		if (item.kind === 'file') {
+			map.get(item.package).push(...item.tests);
+		}
+		if (item instanceof TestCase) {
+			map.get(item.file.package).push(item);
+		}
+	}
+	return map;
+}
+
+class ContinuousRunTracker {
+	readonly #rq;
+	readonly #onExecute;
+	readonly #packages = new Set<Package>();
+	readonly #include = new Set<TestCase>();
+
+	constructor(rq: GoTestRequest, onExecute: (rq: GoTestRequest) => void) {
+		this.#rq = rq;
+		this.#onExecute = onExecute;
+	}
+
+	didUpdate(tests: Iterable<TestCase>): boolean {
+		let didAdd = false;
+		for (const test of tests) {
+			if (belongsTo(test, this.#rq.exclude)) {
+				continue;
+			}
+			if (belongsTo(test, this.#rq.include)) {
+				this.#include.add(test);
+				this.#packages.add(test.file.package);
+				didAdd = true;
+			}
+		}
+		return didAdd;
+	}
+
+	run() {
+		if (this.#include.size == 0) {
+			return;
+		}
+		const rq2 = newGoTestRequest(
+			this.#rq.request,
+			new Set(this.#packages),
+			new Set(this.#include),
+			this.#rq.exclude,
+		);
+		this.#packages.clear();
+		this.#include.clear();
+		this.#onExecute(rq2);
+	}
+}
+
+function belongsTo(item: TestCase, set: Set<GoTestItem>) {
+	return set.has(item) || set.has(item.file) || set.has(item.file.package) || set.has(item.file.package.root);
 }

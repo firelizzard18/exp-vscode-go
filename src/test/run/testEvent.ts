@@ -93,36 +93,3 @@ export function parseLocation(test: TestItem, parsed: RegExpMatchArray) {
 	const col = parsed.groups.column ? Number(parsed.groups.column) - 1 : 0;
 	return new Location(file, new Position(ln, col));
 }
-
-/**
- * Extract the location info from output message.
- * This is not trivial since both the test output and any output/print
- * from the tested program are reported as `output` type test events
- * and not distinguishable. stdout/stderr output from the tested program
- * makes this more trickier.
- *
- * Here we assume that test output messages are line-oriented, precede
- * with a file name and line number, and end with new lines.
- */
-function parseOutputLocation(line: string, dir: string): { message: string; location?: Location } {
-	const m = line.match(reLineLocation);
-	if (!m?.groups?.file) {
-		return { message: line };
-	}
-
-	// Paths will always be absolute for versions of Go (1.21+) due to
-	// -fullpath, but the user may be using an old version
-	const file =
-		m.groups.file && path.isAbsolute(m.groups.file)
-			? Uri.file(m.groups.file)
-			: Uri.file(path.join(dir, m.groups.file));
-
-	// VSCode uses 0-based line numbering (internally)
-	const ln = Number(m.groups.line) - 1;
-	const col = m.groups.column ? Number(m.groups.column) - 1 : 0;
-
-	return {
-		message: m.groups.message,
-		location: new Location(file, new Position(ln, col)),
-	};
-}
