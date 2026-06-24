@@ -5,7 +5,7 @@ import { pathContains } from '@/utils/util';
 import path from 'node:path';
 import { Event, EventEmitter, Location, Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
 import { GoTestItem, ItemEvent } from '.';
-import { RunEvent } from '../run/runEvent';
+import { RunEvent } from '../run/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
 import { DynamicTestCase, StaticTestCase, TestCase } from './case';
 import { TestFile } from './file';

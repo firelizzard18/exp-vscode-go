@@ -5,7 +5,7 @@ import { Context } from '@/utils/common';
 import { Flags, Spawner } from '@/utils/spawn';
 import { TestController } from '@/utils/testing';
 import path from 'node:path';
-import { CancellationToken, EventEmitter, FileCoverage, TestRun, TestRunProfileKind, Uri } from 'vscode';
+import { CancellationToken, EventEmitter, FileCoverage, TestItem, TestRun, TestRunProfileKind, Uri } from 'vscode';
 import { parseCoverage } from '../coverage';
 import type { GoTestRequest } from '../manager';
 import { GoTestItem, ModelController, Package, TestCase } from '../model';
@@ -14,8 +14,33 @@ import { ViewController } from '../view/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
 import { RunConfig } from './config';
 import { TestRunLog } from './log';
-import { PackageTestRun } from './pkgTestRun';
-import { RunEvent } from './runEvent';
+
+export type RunEvent =
+	| {
+			type: 'start';
+			run: TestRun;
+			pkg: Package;
+			include?: Set<TestCase>;
+			exclude?: Set<TestCase>;
+	  }
+	| {
+			type: 'subtest';
+			run: TestRun;
+			pkg: Package;
+			name: string;
+	  }
+	| {
+			type: 'captured';
+			run: TestRun;
+			pkg: Package;
+			scope: GoTestItem;
+			profile: CapturedProfile;
+	  }
+	| {
+			type: 'disposed';
+			run: TestRun;
+			pkg: Package;
+	  };
 
 export class RunController {
 	readonly #context;
@@ -60,7 +85,7 @@ export class RunController {
 			let first = true;
 			for (const pkg of this.#packages(rq, run)) {
 				if (invalid) {
-					pkg.forEach((item) =>
+					forEach(pkg, (item) =>
 						run.errored(item, {
 							message: 'Debugging multiple test packages is not supported',
 						}),
@@ -74,7 +99,7 @@ export class RunController {
 					run.appendOutput('\r\n\r\n');
 				}
 
-				await this.#runPkg(rq, pkg);
+				await this.#run(pkg);
 			}
 		} finally {
 			run.end();
@@ -82,7 +107,7 @@ export class RunController {
 		}
 	}
 
-	*#packages(rq: GoTestRequest, run: TestRun) {
+	*#packages(rq: GoTestRequest, run: TestRun): Generator<GoTestRun, void, unknown> {
 		// When the run is disposed, remove all dynamic test cases
 		// associated with it.
 		run.onDidDispose?.(() => {
@@ -115,23 +140,24 @@ export class RunController {
 				});
 			}
 
-			yield new PackageTestRun({
+			yield {
 				run,
 				mode,
+				continuous: rq.request.continuous ?? false,
 				goItem: pkg,
 				testItem: this.#resolver.resolveViewItem(pkg),
 				tests: include,
 				exclude,
-			});
+			};
 		}
 	}
 
-	async #runPkg(rq: GoTestRequest, pkg: PackageTestRun) {
+	async #run(run: GoTestRun) {
 		const time = new Date();
 
 		// Enqueue tests.
-		pkg.forEach((item) => {
-			pkg.run.enqueued(item);
+		forEach(run, (item) => {
+			run.run.enqueued(item);
 			item.error = undefined;
 		});
 
@@ -140,20 +166,20 @@ export class RunController {
 		flags.fullpath = true; // Include the full path for output events
 		flags.benchmem = true;
 
-		if (pkg.mode === 'all') {
+		if (run.mode === 'all') {
 			// Include all test cases.
 			flags.run = '.';
-			if (shouldRunBenchmarks(this.#wsConfig, pkg.goItem)) {
+			if (shouldRunBenchmarks(this.#wsConfig, run.goItem)) {
 				flags.bench = '.';
 			}
 		} else {
 			// Include specific test cases.
-			flags.run = makeRegex(pkg.tests.keys(), (x) => x.kind !== 'benchmark') || '-';
-			flags.bench = makeRegex(pkg.tests.keys(), (x) => x.kind === 'benchmark') || '-';
+			flags.run = makeRegex(run.tests.keys(), (x) => x.kind !== 'benchmark') || '-';
+			flags.bench = makeRegex(run.tests.keys(), (x) => x.kind === 'benchmark') || '-';
 		}
-		if (pkg.exclude.size) {
+		if (run.exclude.size) {
 			// Exclude specific test cases
-			flags.skip = makeRegex(pkg.exclude.keys());
+			flags.skip = makeRegex(run.exclude.keys());
 		}
 
 		// Capture coverage
@@ -163,12 +189,12 @@ export class RunController {
 			// coverage. The original version (https://github.com/junhwi/gobco)
 			// could be used with `go test -toolexec`, so maybe we could make
 			// the new version do that to.
-			const dir = await makeCaptureDir(this.#context, pkg.run, pkg.goItem.uri, time);
+			const dir = await makeCaptureDir(this.#context, run.run, run.goItem.uri, time);
 			coveragePath = Uri.joinPath(dir, 'coverage.log');
 			flags.coverprofile = coveragePath.fsPath;
 			flags.covermode = 'count';
 
-			let expr = path.join(path.relative(pkg.goItem.uri.fsPath, pkg.goItem.root.dir.fsPath));
+			let expr = path.join(path.relative(run.goItem.uri.fsPath, run.goItem.root.dir.fsPath));
 			if (!expr.startsWith('.')) {
 				expr = path.join('.', expr);
 			}
@@ -184,17 +210,17 @@ export class RunController {
 		// Capture profiles
 		if (
 			// Profiling is disabled for continuous runs
-			!rq.request.continuous &&
+			!run.continuous &&
 			// Is profiling enabled?
 			this.#config.settings.profile.some((x) => x.enabled)
 		) {
-			const dir = await makeCaptureDir(this.#context, pkg.run, pkg.goItem.uri, time);
+			const dir = await makeCaptureDir(this.#context, run.run, run.goItem.uri, time);
 			flags.outputdir = dir.fsPath;
 			flags.o = Uri.joinPath(dir, 'test.exe').fsPath;
 
 			// Where should we attach the profiles? If there is a single
 			// item included, attach to it, otherwise attach to the package.
-			const scope: GoTestItem = pkg.tests.size === 1 ? [...pkg.tests][0][0] : pkg.goItem;
+			const scope: GoTestItem = run.tests.size === 1 ? [...run.tests][0][0] : run.goItem;
 
 			for (const type of this.#config.settings.profile) {
 				if (!type.enabled) {
@@ -203,7 +229,7 @@ export class RunController {
 
 				// Create the object and fire a notification.
 				const profile = new CapturedProfile(type, time, dir);
-				this.#runEvents.fire({ type: 'captured', pkg: pkg.goItem, run: pkg.run, scope, profile });
+				this.#runEvents.fire({ type: 'captured', pkg: run.goItem, run: run.run, scope, profile });
 
 				// Use rel to make the cmdline nicer.
 				const rel = path.relative(dir.fsPath, profile.file.fsPath);
@@ -211,9 +237,9 @@ export class RunController {
 			}
 		}
 
-		const cfg = this.#wsConfig.for(pkg.goItem);
+		const cfg = this.#wsConfig.for(run.goItem);
 		const seen = new Set<string>();
-		const log = new TestRunLog(pkg.run, pkg.testItem, (query) => {
+		const log = new TestRunLog(run.run, run.testItem, (query) => {
 			// Have we see this test before? If it's a new dynamic subtest, the
 			// model will create a new item for it in response to the event,
 			// which will trigger an update event, which will trigger a
@@ -222,21 +248,21 @@ export class RunController {
 				seen.add(query);
 				this.#runEvents.fire({
 					type: 'subtest',
-					run: pkg.run,
-					pkg: pkg.goItem,
+					run: run.run,
+					pkg: run.goItem,
 					name: query,
 				});
 			}
 
 			// Locate the test, and if it exists then resolve and return the
 			// view item.
-			const test = this.#model.findTest(pkg.goItem, query);
+			const test = this.#model.findTest(run.goItem, query);
 			return test && this.#resolver.resolveViewItem(test);
 		});
 
-		const r = await this.#spawn(this.#context, pkg.run, pkg.testItem.uri!, log, flags, cfg.testFlags.get(), [], {
+		const r = await this.#spawn(this.#context, run.run, run.testItem.uri!, log, flags, cfg.testFlags.get(), [], {
 			mode: 'test',
-			cwd: pkg.goItem.uri.fsPath,
+			cwd: run.goItem.uri.fsPath,
 			env: cfg.testEnvVars.get(),
 			cancel: this.#token,
 			debug: this.#config.options,
@@ -258,7 +284,7 @@ export class RunController {
 		}
 
 		if ('error' in r) {
-			pkg.run.errored(pkg.testItem, {
+			run.run.errored(run.testItem, {
 				message: `${r.error}`,
 			});
 			return;
@@ -270,7 +296,7 @@ export class RunController {
 		}
 
 		if ('code' in r && r.code !== 0 && r.code !== 1) {
-			pkg.run.errored(pkg.testItem, {
+			run.run.errored(run.testItem, {
 				message: `\`go test\` exited with ${[
 					...(r.code ? [`code ${r.code}`] : []),
 					...(r.signal ? [`signal ${r.signal}`] : []),
@@ -279,12 +305,12 @@ export class RunController {
 			return;
 		}
 
-		if (coveragePath && pkg.run.addCoverage && 'code' in r && r.code === 0) {
-			const coverage = await parseCoverage(this.#context, pkg.goItem.root, coveragePath);
+		if (coveragePath && run.run.addCoverage && 'code' in r && r.code === 0) {
+			const coverage = await parseCoverage(this.#context, run.goItem.root, coveragePath);
 			for (const [file, statements] of coverage) {
 				const summary = FileCoverage.fromDetails(Uri.parse(file), statements);
 				this.#config.coverage.set(summary, statements);
-				pkg.run.addCoverage(summary);
+				run.run.addCoverage(summary);
 			}
 		}
 	}
@@ -296,6 +322,32 @@ export class RunController {
 				return this.#context.debug(...args);
 			default:
 				return this.#context.spawn(...args);
+		}
+	}
+}
+
+interface GoTestRun {
+	readonly run: TestRun;
+	readonly mode: 'all' | 'specific';
+	readonly continuous: boolean;
+	readonly goItem: Package;
+	readonly testItem: TestItem;
+	readonly tests: Map<TestCase, TestItem>;
+	readonly exclude: Map<TestCase, TestItem>;
+}
+
+function forEach(pkg: GoTestRun, fn: (item: TestItem) => void) {
+	const recurse = (item: TestItem) => {
+		fn(item);
+		for (const [, child] of item.children) {
+			recurse(child);
+		}
+	};
+
+	fn(pkg.testItem);
+	for (const [goItem, item] of pkg.tests) {
+		if (!pkg.exclude.has(goItem)) {
+			recurse(item);
 		}
 	}
 }

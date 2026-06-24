@@ -15,8 +15,7 @@ import vscode, {
 import { CodeLensProvider } from './codeLens';
 import { GoTestItem, isTestItem, ItemEvent, ModelController, Package, TestCase, TestFile } from './model';
 import { RunConfig } from './run/config';
-import { RunController, shouldRunBenchmarks } from './run/controller';
-import { RunEvent } from './run/runEvent';
+import { RunController, RunEvent, shouldRunBenchmarks } from './run/controller';
 import { ViewController } from './view/controller';
 import { idFor, ModelViewPresenter, Presentable } from './view/presenter';
 import { WorkspaceConfig } from './workspaceConfig';

@@ -15,7 +15,7 @@ import {
 	Workspace,
 } from '../model';
 import { CapturedProfile } from '../profiles';
-import { RunEvent } from '../run/runEvent';
+import { RunEvent } from '../run/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;

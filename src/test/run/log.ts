@@ -7,7 +7,7 @@ import {
 	RichOutputEvent,
 	RichTestEvent,
 	TestEvent,
-} from './testEvent';
+} from './goTestEvent';
 
 interface TestResolver {
 	(event: Location | string): TestItem | undefined;
