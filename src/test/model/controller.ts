@@ -89,7 +89,7 @@ export class ModelController extends Disposer {
 	 *
 	 * @param scope - The item to populate. If omitted, populates all workspace
 	 *   roots. Otherwise, populates the given item and, if
-	 *   {@link options.recurse} is true (the default), its descendants.
+	 *   {@link scope.recurse} is true (the default), its descendants.
 	 */
 	async populate(scope?: Workspace | Module | Package): Promise<void> {
 		if (!scope) {

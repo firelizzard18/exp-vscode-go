@@ -7,10 +7,10 @@ import { TestController } from '@/utils/testing';
 import path from 'node:path';
 import { CancellationToken, EventEmitter, FileCoverage, TestRunProfileKind, Uri } from 'vscode';
 import { parseCoverage } from '../coverage';
-import { GoTestItem, ModelController, TestCase } from '../model';
+import { GoTestItem, ModelController, Package, TestCase } from '../model';
 import { CapturedProfile } from '../profiles';
 import { ResolvedTestRunRequest } from '../resolvedRunRequest';
-import { shouldRunBenchmarks, ViewController } from '../view/controller';
+import { ViewController } from '../view/controller';
 import { WorkspaceConfig } from '../workspaceConfig';
 import { RunConfig } from './config';
 import { TestRunLog } from './log';
@@ -254,6 +254,30 @@ export class RunController {
 				return this.#context.spawn(...args);
 		}
 	}
+}
+
+export function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
+	// When the user clicks the run button on a package, they expect all of the
+	// tests within that package to run - they probably don't want to run the
+	// benchmarks. So if a benchmark is not explicitly selected, don't run
+	// benchmarks. But the user may disagree, so behavior can be changed with
+	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
+	// button on a file or package that contains benchmarks and nothing else,
+	// they likely expect those benchmarks to run.
+	if (config.for(pkg).runPackageBenchmarks.get()) {
+		return true;
+	}
+	if (pkg.files.size === 0) {
+		// If the files haven't been resolved yet, assume there are
+		// non-benchmarks.
+		return false;
+	}
+	for (const test of pkg.allTests()) {
+		if (test.kind !== 'benchmark') {
+			return false;
+		}
+	}
+	return true;
 }
 
 function makeRegex(tests: Iterable<TestCase>, where: (_: TestCase) => boolean = () => true) {

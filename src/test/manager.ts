@@ -12,12 +12,13 @@ import vscode, {
 	TestRunRequest as VSCTestRunRequest,
 } from 'vscode';
 import { CodeLensProvider } from './codeLens';
-import { GoTestItem, ItemEvent, ModelController, TestCase } from './model';
+import { GoTestItem, isTestItem, ItemEvent, ModelController, Package, TestCase, TestFile } from './model';
+import { ResolvedTestRunRequest } from './resolvedRunRequest';
 import { RunConfig } from './run/config';
-import { RunController } from './run/controller';
+import { RunController, shouldRunBenchmarks } from './run/controller';
 import { RunEvent } from './run/runEvent';
 import { ContinuousRunTracker, ViewController } from './view/controller';
-import { ModelViewPresenter, Presentable } from './view/presenter';
+import { idFor, ModelViewPresenter, Presentable } from './view/presenter';
 import { WorkspaceConfig } from './workspaceConfig';
 
 export type EditorEvent =
@@ -29,6 +30,8 @@ export type EditorEvent =
 	| { type: 'file-deleted'; uri: Uri }
 	| { type: 'file-edited'; uri: Uri; ranges: Range[] }
 	| { type: 'file-saved'; uri: Uri; version: number };
+
+type RunnableTest = Package | TestFile | TestCase;
 
 /**
  * Entry point for the test explorer implementation.
@@ -169,21 +172,21 @@ export class TestManager extends Disposer {
 	/**
 	 * Run a test.
 	 */
-	runTests(items: GoTestItem[] | TestRunRequest) {
+	runTests(items: RunnableTest[] | TestRunRequest) {
 		this.#executeTestRun(this.#run, items);
 	}
 
 	/**
 	 * Debug a test.
 	 */
-	debugTests(items: GoTestItem[] | TestRunRequest) {
+	debugTests(items: RunnableTest[] | TestRunRequest) {
 		this.#executeTestRun(this.#debug, items);
 	}
 
 	/**
 	 * Profile a test.
 	 */
-	async profileTests(items: GoTestItem[] | TestRunRequest) {
+	async profileTests(items: RunnableTest[] | TestRunRequest) {
 		if (!(await this.#configureProfiles?.())) return;
 		this.#executeTestRun(this.#profile, items);
 	}
@@ -194,9 +197,9 @@ export class TestManager extends Disposer {
 	 * @param rq - The test run request.
 	 * @param token - A token for canceling the run.
 	 */
-	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | GoTestItem[], token?: CancellationToken) {
+	async #executeTestRun(config: RunConfig, rq: VSCTestRunRequest | RunnableTest[], token?: CancellationToken) {
 		if (!this.#resolver || !this.#presenter || !this.#ctrl || !this.#model) {
-			throw new Error('Cannot execute test run: test explorer is disabled');
+			return;
 		}
 
 		if (!token && !(rq instanceof Array) && rq.continuous) {
@@ -210,7 +213,7 @@ export class TestManager extends Disposer {
 			token = cancel.token;
 		}
 
-		const request = await this.#resolver.resolveRunRequest(rq, this.#runEvents);
+		const request = (await this.#resolveRunRequest(rq))!;
 
 		// Set up the runner.
 		const runner = new RunController(
@@ -244,6 +247,125 @@ export class TestManager extends Disposer {
 		token.onCancellationRequested(() => {
 			this.#continuousRuns.delete(tracker);
 		});
+	}
+
+	async #resolveRunRequest(rq: TestRunRequest | GoTestItem[]) {
+		if (!this.#model || !this.#resolver || !this.#presenter) return;
+
+		// IDs of items to exclude. Don't try to resolve to test items because
+		// those might not have been loaded yet.
+		const exclude = new Set(rq instanceof Array ? [] : rq.exclude?.map((x) => x.id) ?? []);
+		const isExcluded = (item: GoTestItem) => exclude.has(`${idFor(item)}`);
+
+		// Resolve the roots (respecting the discovery setting).
+		await this.#resolveRoots();
+
+		// Resolve the included Go items. If `rq.include` is empty, all roots
+		// are implicitly included.
+		let include: Set<GoTestItem>;
+		if (rq instanceof Array) {
+			// The request specifies Go items, so we just need to execute those.
+			include = new Set(rq);
+		} else if (rq.include) {
+			// The request specifies view items so convert those to Go items.
+			// Silently ignore requests to execute test items that don't have a
+			// Go item.
+			include = new Set(
+				rq.include.map((x) => this.#resolver!.resolveGoItem(x)).filter((x) => !!x && isTestItem(x)),
+			);
+		} else {
+			// Include is empty, so the domain is implicitly "everything".
+			include = new Set();
+			for (const ws of this.#model.workspaces) {
+				// If discovery is enabled, eagerly load everything.
+				if (this.#config.for(ws).discovery.get() === 'on') {
+					if (!ws.packages.loaded || !ws.modules.loaded) {
+						await this.#model.populate(ws);
+					}
+					for (const mod of ws.modules) {
+						if (!mod.packages.loaded) {
+							await this.#model.populate(mod);
+						}
+					}
+				}
+
+				// Add all loaded packages to `include`.
+				for (const pkg of ws.packages) {
+					include.add(pkg);
+				}
+				for (const mod of ws.modules) {
+					for (const pkg of mod.packages) {
+						include.add(pkg);
+					}
+				}
+			}
+		}
+
+		// Get packages that aren't excluded.
+		const packages = new Set([...include].filter((x): x is Package => x.kind === 'package' && !isExcluded(x)));
+
+		// The user is requesting that we run <pkg>. To do that, we need to
+		// ensure the packages' files and tests have been loaded, regardless of
+		// the discovery setting.
+		for (const pkg of packages) {
+			if (!pkg.files.loaded) {
+				await this.#model.populate(pkg);
+			}
+		}
+
+		// Remove redundant requests for specific tests.
+		//
+		// If a package is selected, all tests within it will be run so ignore
+		// explicit requests for a file or test if its package is selected.
+		// Unless the test is a benchmark and benchmarks will not otherwise be
+		// run.
+		for (const item of include) {
+			if (item instanceof TestFile) {
+				if (include.has(item.package)) {
+					include.delete(item);
+				}
+			}
+
+			if (item instanceof TestCase) {
+				if (item.kind === 'benchmark' && shouldRunBenchmarks(this.#config, item.file.package)) {
+					continue;
+				}
+				if (include.has(item.file.package)) {
+					include.delete(item);
+				}
+			}
+		}
+
+		// If a test is included explicitly without it's package being included,
+		// add the package to the list.
+		for (const item of include) {
+			if (item instanceof TestFile) {
+				packages.add(item.package);
+			}
+
+			if (item instanceof TestCase) {
+				packages.add(item.file.package);
+			}
+		}
+
+		// We need a TestRunRequest, so construct one if necessary.
+		if (rq instanceof Array) {
+			rq = new TestRunRequest(rq.map((x) => this.#resolver!.resolveViewItem(x)));
+		}
+
+		const excludeItems = new Set(
+			[...exclude].map((x) => this.#resolver!.resolveGoItem(Uri.parse(x))).filter((x) => !!x && isTestItem(x)),
+		);
+		return new ResolvedTestRunRequest(
+			this.#model,
+			this.#presenter,
+			this.#resolver,
+			rq,
+			packages,
+			include,
+			excludeItems,
+			this.#runEvents,
+		);
 	}
 
 	async #onEditorEvent(event: EditorEvent) {
@@ -455,4 +577,8 @@ export class TestManager extends Disposer {
 				break;
 		}
 	}
+}
+
+export function isRunnableTest(x: unknown): x is RunnableTest {
+	return isTestItem(x) && (x.kind === 'package' || x.kind === 'file' || x instanceof TestCase);
 }

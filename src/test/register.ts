@@ -20,8 +20,7 @@ import {
 	window,
 	workspace,
 } from 'vscode';
-import { EditorEvent, TestManager } from './manager';
-import { isTestItem } from './model';
+import { EditorEvent, isRunnableTest, TestManager } from './manager';
 import { WorkspaceConfig } from './workspaceConfig';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
@@ -78,9 +77,18 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	command(Command.Refresh, (item: TestItem) => events.fire({ type: 'force-refresh', item }));
 
 	// [Command] Run Test, Debug Test
-	command(Command.Test.Run, testItemCommand(manager, 'runTests'));
-	command(Command.Test.Debug, testItemCommand(manager, 'debugTests'));
-	command(Command.Test.Profile, testItemCommand(manager, 'profileTests'));
+	command(
+		Command.Test.Run,
+		testItemCommand((x) => manager.runTests(x)),
+	);
+	command(
+		Command.Test.Debug,
+		testItemCommand((x) => manager.debugTests(x)),
+	);
+	command(
+		Command.Test.Profile,
+		testItemCommand((x) => manager.profileTests(x)),
+	);
 
 	// [Command] Browser navigation
 	command(Command.Browser.Back, () => Browser.active?.back());
@@ -163,21 +171,17 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	}
 }
 
-function testItemCommand(manager: TestManager, fn: keyof TestManager & `${string}Tests`) {
+function testItemCommand(fn: TestManager[keyof TestManager & `${string}Tests`]) {
 	return (...args: any[]) => {
-		if (!manager.enabled) {
-			return;
-		}
-
-		if (args.every((x) => isTestItem(x))) {
-			return manager[fn](args);
+		if (args.every((x) => isRunnableTest(x))) {
+			return fn(args);
 		}
 
 		const tests = args.filter(
 			(x): x is TestItem =>
 				x && typeof x === 'object' && !Array.isArray(x) && 'id' in x && 'uri' in x && 'canResolveChildren' in x,
 		);
-		return manager[fn](new TestRunRequest(tests));
+		return fn(new TestRunRequest(tests));
 	};
 }
 

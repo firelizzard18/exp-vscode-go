@@ -2,20 +2,8 @@ import { Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { TestController } from '@/utils/testing';
 import { pathContains } from '@/utils/util';
-import { Event, EventEmitter, TestItem, TestRunRequest, Uri } from 'vscode';
-import {
-	GoTestItem,
-	isTestItem,
-	ItemEvent,
-	ModelController,
-	Module,
-	Package,
-	StaticTestCase,
-	TestCase,
-	TestFile,
-	Workspace,
-} from '../model';
-import { ResolvedTestRunRequest } from '../resolvedRunRequest';
+import { Event, TestItem, Uri } from 'vscode';
+import { GoTestItem, ItemEvent, ModelController, StaticTestCase, TestCase } from '../model';
 import { RunEvent } from '../run/runEvent';
 import { WorkspaceConfig } from '../workspaceConfig';
 import {
@@ -59,133 +47,10 @@ export class ViewController extends Disposer {
 		return this.#syncViewItem(go);
 	}
 
-	resolveGoItem(view: TestItem) {
+	resolveGoItem(view: TestItem | Uri) {
 		const go = this.#getPresentable(view);
 		if (go) return go;
-		this.#delete(view);
-	}
-
-	async resolveRunRequest(rq: TestRunRequest | GoTestItem[], runEvents: EventEmitter<RunEvent>) {
-		// IDs of items to exclude. Don't try to resolve to test items because
-		// those might not have been loaded yet.
-		const exclude = new Set(rq instanceof Array ? [] : rq.exclude?.map((x) => x.id) ?? []);
-		const isExcluded = (item: GoTestItem) => exclude.has(`${idFor(item)}`);
-
-		// Ensure roots have been loaded.
-		if (!this.#didLoad()) {
-			await this.#model.populate();
-		}
-
-		// Resolve VSCode test items to Go test items.
-		let include: Set<GoTestItem>;
-		if (rq instanceof Array) {
-			// The request specifies Go items, so we just need to execute those.
-			include = new Set(rq);
-		} else if (rq.include) {
-			// The request specifies view items so convert those to Go items.
-			// Silently ignore requests to execute test items that don't have a
-			// Go item.
-			include = new Set(rq.include.map((x) => this.#getGoItem(x.id)).filter((x) => !!x && isTestItem(x)));
-		} else {
-			// If include is not specified, include all roots.
-			const workspaces = [...this.#model.workspaces];
-			include = new Set([...workspaces, ...workspaces.flatMap((x) => [...x.modules])]);
-		}
-
-		// Get roots that aren't excluded.
-		const roots = new Set(
-			[...include].filter(
-				(x): x is Workspace | Module => (x.kind === 'workspace' || x.kind === 'module') && !isExcluded(x),
-			),
-		);
-
-		// Ensure packages have been loaded. We don't execute roots directly, so
-		// add their packages to the include set.
-		for (const root of roots) {
-			if (!this.#didLoad(root)) {
-				await this.#model.populate(root);
-			}
-			for (const pkg of root.packages) {
-				include.add(pkg);
-			}
-		}
-
-		// Get packages that aren't excluded.
-		const packages = new Set([...include].filter((x): x is Package => x.kind === 'package' && !isExcluded(x)));
-
-		// Ensure files and tests have been loaded.
-		for (const pkg of packages) {
-			if (!this.#didLoad(pkg)) {
-				await this.#model.populate(pkg);
-			}
-		}
-
-		// Remove redundant requests for specific tests.
-		//
-		// If a package is selected, all tests within it will be run so ignore
-		// explicit requests for a file or test if its package is selected.
-		// Unless the test is a benchmark and benchmarks will not otherwise be
-		// run.
-		for (const item of include) {
-			if (item instanceof TestFile) {
-				if (include.has(item.package)) {
-					include.delete(item);
-				}
-			}
-
-			if (item instanceof TestCase) {
-				if (item.kind === 'benchmark' && shouldRunBenchmarks(this.#config, item.file.package)) {
-					continue;
-				}
-				if (include.has(item.file.package)) {
-					include.delete(item);
-				}
-			}
-		}
-
-		// Ensure the package list is complete.
-		for (const item of include) {
-			if (item instanceof TestFile) {
-				packages.add(item.package);
-			}
-
-			if (item instanceof TestCase) {
-				packages.add(item.file.package);
-			}
-		}
-
-		// We need a TestRunRequest, so construct one if necessary.
-		if (rq instanceof Array) {
-			rq = new TestRunRequest(rq.map((x) => this.resolveViewItem(x)));
-		}
-
-		const excludeItems = new Set([...exclude].map((x) => this.#getGoItem(x)).filter((x) => !!x && isTestItem(x)));
-		return new ResolvedTestRunRequest(
-			this.#model,
-			this.#presenter,
-			this,
-			rq,
-			packages,
-			include,
-			excludeItems,
-			runEvents,
-		);
-	}
-
-	#didLoad(scope?: Presentable) {
-		if (!scope) {
-			return this.#model.workspaces.loaded;
-		}
-		switch (scope.kind) {
-			case 'workspace':
-			case 'module':
-				return scope.packages.loaded;
-			case 'package':
-				return scope.files.loaded;
-			case 'file':
-				return scope.tests.loaded;
-		}
-		return false;
+		if (!(view instanceof Uri)) this.#delete(view);
 	}
 
 	#getPresentable(view: TestItem | Uri): Presentable | undefined {
@@ -473,27 +338,3 @@ export type ContinuousRunTracker = {
 	didUpdate(tests: Iterable<TestCase>): boolean;
 	run(): void;
 };
-
-export function shouldRunBenchmarks(config: WorkspaceConfig, pkg: Package) {
-	// When the user clicks the run button on a package, they expect all of the
-	// tests within that package to run - they probably don't want to run the
-	// benchmarks. So if a benchmark is not explicitly selected, don't run
-	// benchmarks. But the user may disagree, so behavior can be changed with
-	// `testExplorer.runPackageBenchmarks`. However, if the user clicks the run
-	// button on a file or package that contains benchmarks and nothing else,
-	// they likely expect those benchmarks to run.
-	if (config.for(pkg).runPackageBenchmarks.get()) {
-		return true;
-	}
-	if (pkg.files.size === 0) {
-		// If the files haven't been resolved yet, assume there are
-		// non-benchmarks.
-		return false;
-	}
-	for (const test of pkg.allTests()) {
-		if (test.kind !== 'benchmark') {
-			return false;
-		}
-	}
-	return true;
-}
