@@ -1,22 +1,24 @@
-import { Disposer } from '@/utils/disposable';
-import { RelationMap, WeakMapWithDefault } from '@/utils/map';
 import moment from 'moment';
 import path from 'node:path';
-import { Event, Uri } from 'vscode';
-import { WorkspaceConfig } from '../config';
+import { type Event, Uri } from 'vscode';
+
+import { Disposer } from '@/utils/disposable';
+import { RelationMap, WeakMapWithDefault } from '@/utils/map';
+
+import { type WorkspaceConfig } from '../config';
 import {
 	DynamicTestCase,
-	GoTestItem,
+	type GoTestItem,
 	isTestItem,
-	ItemEvent,
-	ModelController,
+	type ItemEvent,
+	type ModelController,
 	Module,
 	Package,
 	TestCase,
-	Workspace,
+	type Workspace,
 } from '../model';
-import { CapturedProfile } from '../profiles';
-import { RunEvent } from '../run/controller';
+import { type CapturedProfile } from '../profiles';
+import { type RunEvent } from '../run/controller';
 
 export type Presentable = GoTestItem | ProfileContainer | ProfileSet | ProfileItem;
 
@@ -241,7 +243,7 @@ export class ModelViewPresenter extends Disposer {
 
 		switch (item.kind) {
 			case 'workspace':
-			case 'module':
+			case 'module': {
 				const config = this.#config.for(item);
 				const rel = this.#pkgRel.get(item);
 				for (const pkg of item.packages) {
@@ -258,6 +260,7 @@ export class ModelViewPresenter extends Disposer {
 					}
 				}
 				return;
+			}
 
 			case 'package': {
 				// If packages are nested, return child packages.

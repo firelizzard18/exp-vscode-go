@@ -1,17 +1,19 @@
-import { Context } from '@/utils/common';
-import { doSafe, TestController } from '@/utils/testing';
-import { GoLaunchRequest } from '@/vscode-go';
 import {
-	CancellationToken,
-	FileCoverage,
-	FileCoverageDetail,
-	QuickPickItem,
-	QuickPickOptions,
+	type CancellationToken,
+	type FileCoverage,
+	type FileCoverageDetail,
+	type QuickPickItem,
+	type QuickPickOptions,
 	TestRunProfileKind,
-	TestRunRequest,
-	TestTag,
+	type TestRunRequest,
+	type TestTag,
 	type window,
 } from 'vscode';
+
+import { type Context } from '@/utils/common';
+import { doSafe, type TestController } from '@/utils/testing';
+import { type GoLaunchRequest } from '@/vscode-go';
+
 import { ProfileType } from '../profiles';
 
 type ConfigureArgs = Pick<typeof window, 'showQuickPick'>;

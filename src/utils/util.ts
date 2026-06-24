@@ -1,15 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ParsedElementInfo, Tokenizer, TokenParser } from '@streamparser/json';
+import { type ParsedElementInfo, Tokenizer, TokenParser } from '@streamparser/json';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { execFile, ExecFileOptions } from 'node:child_process';
+import { execFile, type ExecFileOptions } from 'node:child_process';
 import fs from 'node:fs';
 import { stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { Uri } from 'vscode';
-import { Context } from './common';
+import { type Uri } from 'vscode';
+
+import { type Context } from './common';
 
 export function pathContains(a: string | Uri, b: string | Uri) {
 	if (typeof a !== 'string') a = a.fsPath;

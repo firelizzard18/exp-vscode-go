@@ -1,18 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { makeCaptureDir } from '@/utils/capture';
-import { Context } from '@/utils/common';
-import { Flags, Spawner } from '@/utils/spawn';
-import { TestController } from '@/utils/testing';
 import path from 'node:path';
-import { CancellationToken, EventEmitter, FileCoverage, TestItem, TestRun, TestRunProfileKind, Uri } from 'vscode';
-import { WorkspaceConfig } from '../config';
+import {
+	type CancellationToken,
+	type EventEmitter,
+	FileCoverage,
+	type TestItem,
+	type TestRun,
+	TestRunProfileKind,
+	Uri,
+} from 'vscode';
+
+import { makeCaptureDir } from '@/utils/capture';
+import { type Context } from '@/utils/common';
+import { type Flags, type Spawner } from '@/utils/spawn';
+import { type TestController } from '@/utils/testing';
+
+import { type WorkspaceConfig } from '../config';
 import { parseCoverage } from '../coverage';
 import type { GoTestRequest } from '../manager';
-import { GoTestItem, ModelController, Package, TestCase } from '../model';
+import { type GoTestItem, type ModelController, type Package, type TestCase } from '../model';
 import { CapturedProfile } from '../profiles';
-import { ViewController } from '../view/controller';
-import { RunConfig } from './config';
+import { type ViewController } from '../view/controller';
+import { type RunConfig } from './config';
 import { TestRunLog } from './log';
 
 export type RunEvent =

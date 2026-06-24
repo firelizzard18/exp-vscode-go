@@ -1,15 +1,17 @@
-import { Context } from '@/utils/common';
+import { type Event, type TestItem, Uri } from 'vscode';
+
+import { type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
-import { TestController } from '@/utils/testing';
-import { Event, TestItem, Uri } from 'vscode';
-import { WorkspaceConfig } from '../config';
-import { GoTestItem, ItemEvent, ModelController, StaticTestCase, TestCase } from '../model';
-import { RunEvent } from '../run/controller';
+import { type TestController } from '@/utils/testing';
+
+import { type WorkspaceConfig } from '../config';
+import { type GoTestItem, type ItemEvent, type ModelController, StaticTestCase, TestCase } from '../model';
+import { type RunEvent } from '../run/controller';
 import {
 	idFor,
-	ModelViewPresenter,
+	type ModelViewPresenter,
 	parseID,
-	Presentable,
+	type Presentable,
 	ProfileContainer,
 	ProfileItem,
 	ProfileSet,

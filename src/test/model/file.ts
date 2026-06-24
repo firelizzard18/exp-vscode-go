@@ -1,5 +1,7 @@
-import { Commands } from '@/utils/common';
 import { Uri } from 'vscode';
+
+import { type Commands } from '@/utils/common';
+
 import type { Package, TestCase } from '.';
 import { ItemSet } from './set';
 

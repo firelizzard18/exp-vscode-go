@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { commands, env, ExtensionContext, Uri, ViewColumn, WebviewPanel, window } from 'vscode';
+import { commands, env, type ExtensionContext, Uri, ViewColumn, type WebviewPanel, window } from 'vscode';
 import axios from 'axios';
 import { HTMLElement, parse } from 'node-html-parser';
-import { Tail } from './utils/testing';
+
+import { type Tail } from './utils/testing';
 
 // TODO(firelizzard18): Disable back/forward when not applicable
 

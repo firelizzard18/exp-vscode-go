@@ -1,19 +1,21 @@
-import { GoLaunchRequest } from '@/vscode-go';
 import cp from 'child_process';
 import {
-	CancellationToken,
+	type CancellationToken,
 	debug,
-	DebugConfiguration,
-	DebugSession,
-	Disposable,
-	Event,
-	Location,
-	TestItem,
-	TestRun,
-	Uri,
-	WorkspaceFolder,
+	type DebugConfiguration,
+	type DebugSession,
+	type Disposable,
+	type Event,
+	type Location,
+	type TestItem,
+	type TestRun,
+	type Uri,
+	type WorkspaceFolder,
 } from 'vscode';
-import { Context } from './common';
+
+import { type GoLaunchRequest } from '@/vscode-go';
+
+import { type Context } from './common';
 import { LineBuffer } from './lineBuffer';
 import { killProcessTree } from './processUtils';
 import { reportError } from './testing';

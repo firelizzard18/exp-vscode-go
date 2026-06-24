@@ -2,11 +2,10 @@
  * Interfaces to support testing.
  */
 
-/* eslint-disable n/no-unpublished-import */
-/* eslint-disable @typescript-eslint/no-namespace */
-import { Context } from '@/utils/common';
 import type vscode from 'vscode';
-import { ExtensionContext, TestItem, TestItemCollection } from 'vscode';
+import { type ExtensionContext, type TestItem, type TestItemCollection } from 'vscode';
+
+import { type Context } from '@/utils/common';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Tail<T extends any[]> = T extends [any, ...infer Tail] ? Tail : never;

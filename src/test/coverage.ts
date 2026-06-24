@@ -1,9 +1,11 @@
-import { Context } from '@/utils/common';
-import { getModulePaths } from '@/utils/modules';
-import { execGoStr } from '@/utils/util';
 import path, { isAbsolute, relative } from 'node:path';
 import { Location, Range, StatementCoverage, Uri } from 'vscode';
-import { Module, Workspace } from './model';
+
+import { type Context } from '@/utils/common';
+import { getModulePaths } from '@/utils/modules';
+import { execGoStr } from '@/utils/util';
+
+import { Module, type Workspace } from './model';
 
 /**
  * Parses a coverage file from `go test` into a map of

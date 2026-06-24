@@ -1,7 +1,9 @@
-import { Commands } from '@/utils/common';
-import { isRelativePath } from '@/utils/util';
 import path, { posix } from 'node:path';
 import { Uri } from 'vscode';
+
+import { type Commands } from '@/utils/common';
+import { isRelativePath } from '@/utils/util';
+
 import type { Module, TestFile, Workspace } from '.';
 import { ItemSet } from './set';
 
@@ -32,7 +34,7 @@ export class Package {
 			}
 			const rel = path.relative(parent.dir.fsPath, p);
 			if (!isRelativePath(rel)) {
-				throw new Error(`Package is not contained within Workspace`);
+				throw new Error('Package is not contained within Workspace');
 			}
 			this.uri = Uri.joinPath(parent.dir, rel);
 		} else {

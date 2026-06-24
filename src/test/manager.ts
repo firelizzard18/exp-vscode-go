@@ -1,24 +1,27 @@
-import { Context } from '@/utils/common';
+import type vscode from 'vscode';
+import type { CancellationToken, Event, Range, TestItem, TestRunRequest as VSCTestRunRequest } from 'vscode';
+import { CancellationTokenSource, EventEmitter, TestRunProfileKind, TestRunRequest, Uri } from 'vscode';
+
+import { type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { MapWithDefault } from '@/utils/map';
-import { doSafe, TestController } from '@/utils/testing';
-import type { CancellationToken, Range, TestItem } from 'vscode';
-import vscode, {
-	CancellationTokenSource,
-	Event,
-	EventEmitter,
-	TestRunProfileKind,
-	TestRunRequest,
-	Uri,
-	TestRunRequest as VSCTestRunRequest,
-} from 'vscode';
+import { doSafe, type TestController } from '@/utils/testing';
+
 import { CodeLensProvider } from './codeLens';
 import { WorkspaceConfig } from './config';
-import { GoTestItem, isTestItem, ItemEvent, ModelController, Package, TestCase, TestFile } from './model';
+import {
+	type GoTestItem,
+	isTestItem,
+	type ItemEvent,
+	ModelController,
+	type Package,
+	TestCase,
+	TestFile,
+} from './model';
 import { RunConfig } from './run/config';
-import { RunController, RunEvent, shouldRunBenchmarks } from './run/controller';
+import { RunController, type RunEvent, shouldRunBenchmarks } from './run/controller';
 import { ViewController } from './view/controller';
-import { idFor, ModelViewPresenter, Presentable } from './view/presenter';
+import { idFor, ModelViewPresenter, type Presentable } from './view/presenter';
 
 export type EditorEvent =
 	| { type: 'force-refresh'; item?: TestItem }
@@ -646,7 +649,7 @@ class ContinuousRunTracker {
 	}
 
 	run() {
-		if (this.#include.size == 0) {
+		if (this.#include.size === 0) {
 			return;
 		}
 		const rq2 = newGoTestRequest(

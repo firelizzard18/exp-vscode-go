@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-namespace */
 import { FlameGraphSettings, Message } from './messages';
 
 const vscode = acquireVsCodeApi<StateData>();

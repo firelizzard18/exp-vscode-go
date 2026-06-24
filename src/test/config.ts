@@ -1,9 +1,11 @@
-import { VSCodeWorkspace } from '@/utils/common';
-import { Flags } from '@/utils/spawn';
-import { resolvePath, substituteEnv } from '@/utils/util';
 import { Minimatch } from 'minimatch';
-import { ConfigurationChangeEvent, ConfigurationScope, Uri, WorkspaceFolder } from 'vscode';
-import { Presentable } from './view/presenter';
+import { type ConfigurationChangeEvent, type ConfigurationScope, Uri, type WorkspaceFolder } from 'vscode';
+
+import { type VSCodeWorkspace } from '@/utils/common';
+import { type Flags } from '@/utils/spawn';
+import { resolvePath, substituteEnv } from '@/utils/util';
+
+import { type Presentable } from './view/presenter';
 
 const dispose = new FinalizationRegistry<() => void>((fn) => fn());
 

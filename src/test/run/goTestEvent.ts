@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { Location, Position, TestItem, Uri } from 'vscode';
+import { Location, Position, type TestItem, Uri } from 'vscode';
 
 /**
  * go test -json output format.

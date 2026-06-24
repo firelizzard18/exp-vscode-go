@@ -5,10 +5,11 @@
  * Licensed under the MIT License. See LICENSE in the project root for license information.
  *--------------------------------------------------------*/
 
-import { Context } from '@/utils/common';
-import { getTempDirPath } from '@/utils/util';
 import { createHash } from 'crypto';
-import { TestRun, Uri } from 'vscode';
+import { type TestRun, Uri } from 'vscode';
+
+import { type Context } from '@/utils/common';
+import { getTempDirPath } from '@/utils/util';
 
 const captureDirs = new WeakMap<TestRun, Map<Uri, Uri>>();
 

@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { Uri } from 'vscode';
-import { Context } from './common';
-import { execGoStr, exists, JsonValue, parseJSONStream } from './util';
+
+import { type Context } from './common';
+import { execGoStr, exists, type JsonValue, parseJSONStream } from './util';
 
 export async function getModulePaths(context: Context, scope: Uri) {
 	const modules: Record<string, string> = {};

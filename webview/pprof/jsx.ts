@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-namespace */
-
 export function createElement<T extends HTMLElement>(
 	tag: keyof HTMLTypes,
 	props: JSX.Attributes<T>,

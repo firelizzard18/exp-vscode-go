@@ -1,11 +1,10 @@
 /* eslint-disable n/no-unpublished-import */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-namespace */
+import { expect } from '@jest/globals';
+import type { MatcherFunction, SyncExpectationResult } from 'expect';
 import { TestItemCollection } from 'vscode';
 import { TestHost } from './host';
-import type { MatcherFunction, SyncExpectationResult } from 'expect';
-import { expect } from '@jest/globals';
 
 export type ExpectedTestItem =
 	| {

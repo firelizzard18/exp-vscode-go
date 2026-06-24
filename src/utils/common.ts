@@ -1,8 +1,10 @@
-import { GoExtensionAPI } from '@/vscode-go';
 import type vscode from 'vscode';
-import { Memento } from 'vscode';
+import { type Memento } from 'vscode';
 import type * as lsp from 'vscode-languageserver-types';
-import { Spawner } from './spawn';
+
+import { type GoExtensionAPI } from '@/vscode-go';
+
+import { type Spawner } from './spawn';
 
 export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
 	readonly testing: boolean;

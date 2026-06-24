@@ -1,5 +1,7 @@
-import { Commands } from '@/utils/common';
-import { Uri, WorkspaceFolder } from 'vscode';
+import { type Uri, type WorkspaceFolder } from 'vscode';
+
+import { type Commands } from '@/utils/common';
+
 import type { Module, Package } from '.';
 import { ItemSet } from './set';
 

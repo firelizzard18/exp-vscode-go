@@ -1,21 +1,21 @@
 import axios from 'axios';
-import { ChildProcess, execFile, spawn } from 'node:child_process';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import {
 	commands,
-	CustomDocumentBackup,
-	CustomDocumentBackupContext,
-	CustomDocumentEditEvent,
-	CustomEditorProvider,
+	type CustomDocumentBackup,
+	type CustomDocumentBackupContext,
+	type CustomDocumentEditEvent,
+	type CustomEditorProvider,
 	env,
 	EventEmitter,
-	Memento,
+	type Memento,
 	ProgressLocation,
-	QuickPickItem,
+	type QuickPickItem,
 	Range,
-	TextEditorDecorationType,
+	type TextEditorDecorationType,
 	ThemeIcon,
 	Uri,
 	window,
@@ -25,14 +25,15 @@ import {
 	type ExtensionContext,
 	type WebviewPanel,
 } from 'vscode';
-import { HoverEvent, Message } from '../webview/pprof/messages';
+
+import { type HoverEvent, type Message } from '../webview/pprof/messages';
 import { Command } from './commands';
 import type { CommandExecutor } from './extension';
 import { Disposer } from './utils/disposable';
 import { killProcessTree } from './utils/processUtils';
 import { SemVer } from './utils/semver';
 import { getTempFilePath } from './utils/util';
-import { GoExtensionAPI } from './vscode-go';
+import { type GoExtensionAPI } from './vscode-go';
 
 const nbsp = '\u00A0';
 

@@ -1,4 +1,4 @@
-import { Disposable } from 'vscode';
+import { type Disposable } from 'vscode';
 
 export class Disposer implements Disposable {
 	readonly #subscriptions: Disposable[] = [];

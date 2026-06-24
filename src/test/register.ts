@@ -1,27 +1,29 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Browser } from '@/browser';
-import { Command } from '@/commands';
-import { Context } from '@/utils/common';
-import { debugProcess, spawnProcess } from '@/utils/spawn';
-import { helpers } from '@/utils/testing';
-import { GoExtensionAPI } from '@/vscode-go';
 import {
 	commands,
 	EventEmitter,
-	ExtensionContext,
+	type ExtensionContext,
 	ExtensionMode,
 	extensions,
 	languages,
-	LogOutputChannel,
-	Memento,
-	TestItem,
+	type LogOutputChannel,
+	type Memento,
+	type TestItem,
 	TestRunRequest,
 	tests,
 	window,
 	workspace,
 } from 'vscode';
+
+import { Browser } from '@/browser';
+import { Command } from '@/commands';
+import { type Context } from '@/utils/common';
+import { debugProcess, spawnProcess } from '@/utils/spawn';
+import { helpers } from '@/utils/testing';
+import { type GoExtensionAPI } from '@/vscode-go';
+
 import { WorkspaceConfig } from './config';
-import { EditorEvent, TestManager } from './manager';
+import { type EditorEvent, TestManager } from './manager';
 import { isTestItem } from './model';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {

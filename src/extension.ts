@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import vscode from 'vscode';
+import { CanceledError } from 'axios';
+
 import { cleanupTempDir } from './utils/util';
-import { GoExtensionAPI } from './vscode-go';
+import { type GoExtensionAPI } from './vscode-go';
 import { registerTestingFeatures } from './test/register';
 import { Browser } from './browser';
 import { GoGenerateManager } from './go-generate/manager';
-import { CanceledError } from 'axios';
 import { registerProfileEditor } from './profile-viewer';
 import { Command } from './commands';
 

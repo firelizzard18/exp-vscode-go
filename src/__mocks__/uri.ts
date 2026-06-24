@@ -1,4 +1,3 @@
-/* eslint-disable n/no-unsupported-features/node-builtins */
 // Copyright (c) 2020-present GitLab B.V.
 // From https://gitlab.com/gitlab-org/gitlab-vscode-extension/-/blob/5cd7994d6925218a754a48c83f0eceabf7a27822/src/desktop/test_utils/uri.ts
 

@@ -4,15 +4,43 @@
 	"rules": {
 		"n/no-unpublished-import": "off",
 		"@typescript-eslint/no-explicit-any": "off",
+		"@typescript-eslint/no-namespace": "off",
 		"@typescript-eslint/no-unused-vars": [
 			"error",
 			{
-				"args": "off",
+				"args": "none",
 				"caughtErrors": "all",
 				"caughtErrorsIgnorePattern": "^_",
 				"destructuredArrayIgnorePattern": "^_",
 				"varsIgnorePattern": "^_",
 				"ignoreRestSiblings": true
+			}
+		],
+		"@typescript-eslint/consistent-type-imports": [
+			"error",
+			{
+				"prefer": "type-imports",
+				"fixStyle": "inline-type-imports"
+			}
+		],
+		"import/order": [
+			"error",
+			{
+				"groups": [
+					[
+						"builtin",
+						"external"
+					],
+					"internal"
+				],
+				"newlines-between": "always",
+				"pathGroups": [
+					{
+						"pattern": "@/**",
+						"group": "internal"
+					}
+				],
+				"pathGroupsExcludedImportTypes": []
 			}
 		]
 	},
@@ -20,7 +48,10 @@
 		"dist/",
 		"node_modules/"
 	],
+	"parser": "@typescript-eslint/parser",
+	"plugins": ["@typescript-eslint", "import"],
 	"parserOptions": {
-		"sourceType": "module"
+		"sourceType": "module",
+		"ecmaVersion": 2020
 	}
 }

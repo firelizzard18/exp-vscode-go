@@ -20,13 +20,13 @@ export class SemVer {
 
 	cmp(other: SemVer) {
 		let c = this.major - other.major;
-		if (c != 0) return c;
+		if (c !== 0) return c;
 
 		c = this.minor - other.minor;
-		if (c != 0) return c;
+		if (c !== 0) return c;
 
 		c = this.patch - other.patch;
-		if (c != 0) return c;
+		if (c !== 0) return c;
 
 		// Don't parse the extra string.
 		if (!this.extra && other.extra) return -1;

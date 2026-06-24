@@ -1,12 +1,13 @@
 import path from 'node:path';
-import { Location, TestItem, TestMessage, TestRun } from 'vscode';
+import { Location, type TestItem, TestMessage, type TestRun } from 'vscode';
+
 import {
 	isOutputEvent,
 	normalizeTestEvent,
 	parseLocation,
-	RichOutputEvent,
-	RichTestEvent,
-	TestEvent,
+	type RichOutputEvent,
+	type RichTestEvent,
+	type TestEvent,
 } from './goTestEvent';
 
 interface TestResolver {

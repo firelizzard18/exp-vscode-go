@@ -1,13 +1,15 @@
-import { Commands, Context } from '@/utils/common';
+import path from 'node:path';
+import { type Event, EventEmitter, type Location, type Range, type TestRun, Uri, type WorkspaceFolder } from 'vscode';
+
+import { Commands, type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { WeakMapWithDefault } from '@/utils/map';
 import { pathContains } from '@/utils/util';
-import path from 'node:path';
-import { Event, EventEmitter, Location, Range, TestRun, Uri, WorkspaceFolder } from 'vscode';
-import { GoTestItem, ItemEvent } from '.';
-import { WorkspaceConfig } from '../config';
-import { RunEvent } from '../run/controller';
-import { DynamicTestCase, StaticTestCase, TestCase } from './case';
+
+import { type GoTestItem, type ItemEvent } from '.';
+import { type WorkspaceConfig } from '../config';
+import { type RunEvent } from '../run/controller';
+import { DynamicTestCase, StaticTestCase, type TestCase } from './case';
 import { TestFile } from './file';
 import { Module } from './module';
 import { Package } from './package';
