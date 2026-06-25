@@ -123,7 +123,7 @@ export class EventEmitter<T> implements vscode.EventEmitter<T> {
 		const promises = [];
 		for (const l of this.#listeners) {
 			const r = l.call(null, ...args);
-			if (r && 'then' in r) {
+			if (r && typeof r === 'object' && 'then' in r) {
 				promises.push(r);
 			}
 		}
@@ -141,5 +141,83 @@ export class CodeLens {
 	constructor(range: Range, command?: vscode.Command) {
 		this.range = range;
 		this.command = command;
+	}
+}
+
+export class Location {
+	uri: vscode.Uri;
+	range: Range;
+
+	constructor(uri: vscode.Uri, rangeOrPosition: Range | Position) {
+		this.uri = uri;
+		this.range =
+			rangeOrPosition instanceof Range
+				? rangeOrPosition
+				: new Range(rangeOrPosition, rangeOrPosition);
+	}
+}
+
+export class TestMessage {
+	message: string;
+	location?: Location;
+	expectedOutput?: string;
+	actualOutput?: string;
+
+	constructor(message: string) {
+		this.message = message;
+	}
+
+	static diff(label: string, expected: string, actual: string): TestMessage {
+		const msg = new TestMessage(label);
+		msg.expectedOutput = expected;
+		msg.actualOutput = actual;
+		return msg;
+	}
+}
+
+export class CancellationTokenSource {
+	readonly token = {
+		isCancellationRequested: false,
+		onCancellationRequested: (_listener: () => void) => ({ dispose: () => {} }),
+	};
+
+	cancel() {
+		this.token.isCancellationRequested = true;
+	}
+
+	dispose() {}
+}
+
+export class TestRunRequest {
+	include: vscode.TestItem[] | undefined;
+	exclude: vscode.TestItem[] | undefined;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	profile: any;
+	continuous?: boolean;
+
+	constructor(
+		include?: vscode.TestItem[],
+		exclude?: vscode.TestItem[],
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		profile?: any,
+		continuous?: boolean,
+	) {
+		this.include = include;
+		this.exclude = exclude;
+		this.profile = profile;
+		this.continuous = continuous;
+	}
+}
+
+export class FileCoverage {
+	uri: vscode.Uri;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	constructor(uri: vscode.Uri, public statementCoverage?: any) {
+		this.uri = uri;
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	static fromDetails(uri: vscode.Uri, _details: any[]): FileCoverage {
+		return new FileCoverage(uri);
 	}
 }

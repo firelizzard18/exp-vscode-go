@@ -1,16 +1,16 @@
-/* eslint-disable n/no-unpublished-import */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { expect } from '@jest/globals';
 import type { MatcherFunction, SyncExpectationResult } from 'expect';
-import { TestItemCollection } from 'vscode';
+import type { TestItemCollection } from 'vscode';
+
+import { parseID } from '../../src/test/view/presenter';
 import { TestHost } from './host';
 
 export type ExpectedTestItem =
 	| {
-			kind: 'module' | 'workspace' | 'package' | 'file' | 'profile' | 'profile-container' | 'profile-set';
+			kind: 'module' | 'workspace' | 'package' | 'file' | 'profile-container' | 'profile-set' | 'profile';
 			uri?: string;
-			children: ExpectedTestItem[];
+			children?: ExpectedTestItem[];
 	  }
 	| {
 			kind: 'test' | 'benchmark' | 'fuzz' | 'example';
@@ -19,91 +19,95 @@ export type ExpectedTestItem =
 			children?: ExpectedTestItem[];
 	  };
 
-// export interface ExpectedTestItem {
-// 	kind: GoTestItem.Kind;
-// 	uri: string;
-// 	children?: ExpectedTestItem[];
-// }
-
-const toResolve: MatcherFunction<[ExpectedTestItem[]]> = async function (src, want): Promise<SyncExpectationResult> {
-	populateChildren(want);
-
+const toResolve: MatcherFunction<[ExpectedTestItem[]]> = async function (
+	src,
+	want,
+): Promise<SyncExpectationResult> {
 	if (!(src instanceof TestHost)) {
-		throw new Error('Expected test controller');
+		return { pass: false, message: () => 'Expected a TestHost instance' };
 	}
-	await src.controller.resolveHandler!();
 
-	const convert = async (items: TestItemCollection) => {
-		await Promise.all([...items].map(([, item]) => src.controller.resolveHandler!(item)));
-		return Promise.all(
-			[...items]
-				.map(([id, item]) => {
-					const goItem = src.manager.resolveGoTestItem(id);
-					if (!goItem) throw new Error(`Failed to resolve ${id}`);
-					return { item: goItem, children: item.children };
-				})
-				.sort(({ item: a }, { item: b }) => {
-					let c = `${a.uri}`.localeCompare(`${b.uri}`);
-					if (c !== 0) return c;
-					c = a.kind.localeCompare(b.kind);
-					if (c !== 0) return c;
-					c = `${a.name}`.localeCompare(`${b.name}`);
-					return c;
-				})
-				.map(async ({ item, children }): Promise<ExpectedTestItem> => {
-					switch (item.kind) {
-						case 'test':
-						case 'benchmark':
-						case 'fuzz':
-						case 'example':
-							return {
-								kind: item.kind,
-								name: item.name!,
-								uri: `${item.uri}`,
-								children: await convert(children),
-							};
-						default:
-							return {
-								kind: item.kind,
-								uri: `${item.uri}`,
-								children: await convert(children),
-							};
-					}
-				}),
-		);
+	// Resolve roots.
+	await src.controller.resolveHandler!(undefined);
+
+	const convert = async (items: TestItemCollection): Promise<ExpectedTestItem[]> => {
+		const result: ExpectedTestItem[] = [];
+
+		for (const [id, item] of items) {
+			// Recursively resolve children so lazily-loaded items expand.
+			await src.controller.resolveHandler!(item);
+			const children = await convert(item.children);
+
+			const parsed = parseID(id);
+
+			if (
+				parsed.kind === 'test' ||
+				parsed.kind === 'benchmark' ||
+				parsed.kind === 'fuzz' ||
+				parsed.kind === 'example'
+			) {
+				result.push({
+					kind: parsed.kind,
+					name: parsed.name!,
+					uri: `${item.uri}`,
+					children,
+				});
+			} else {
+				result.push({
+					kind: parsed.kind as any,
+					uri: item.uri ? `${item.uri}` : undefined,
+					children,
+				});
+			}
+		}
+
+		// Sort for determinism: by uri, then kind, then name.
+		result.sort((a, b) => {
+			const au = ('uri' in a ? a.uri : '') ?? '';
+			const bu = ('uri' in b ? b.uri : '') ?? '';
+			let c = au.localeCompare(bu);
+			if (c !== 0) return c;
+			c = a.kind.localeCompare(b.kind);
+			if (c !== 0) return c;
+			const an = 'name' in a ? a.name : '';
+			const bn = 'name' in b ? b.name : '';
+			return an.localeCompare(bn);
+		});
+
+		return result;
 	};
 
 	const got = await convert(src.controller.items);
+	populateChildren(want);
+
 	const gots = this.utils.printReceived(got);
 	const wants = this.utils.printExpected(want);
+
 	if (this.equals(got, want)) {
-		return {
-			message: () => `Want: ${wants}\nGot: ${gots}`,
-			pass: true,
-		};
+		return { pass: true, message: () => `Want: ${wants}\nGot: ${gots}` };
 	}
 
 	const diff = this.utils.diff(want, got, { omitAnnotationLines: true });
 	return {
-		message: () => `Want: ${wants}\nGot: ${gots}\n\n${diff}`,
 		pass: false,
+		message: () => `Want: ${wants}\nGot: ${gots}\n\n${diff}`,
 	};
 };
 
 expect.extend({ toResolve });
 
 function populateChildren(items: ExpectedTestItem[]) {
-	items.forEach((item) => {
-		if (item.children) {
-			populateChildren(item.children);
-		} else {
+	for (const item of items) {
+		if (!item.children) {
 			item.children = [];
+		} else {
+			populateChildren(item.children);
 		}
-	});
+	}
 }
 
 declare module 'expect' {
 	interface Matchers<R> {
-		toResolve(expected: ExpectedTestItem[]): ExpectationResult;
+		toResolve(expected: ExpectedTestItem[]): Promise<R>;
 	}
 }
