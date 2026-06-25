@@ -101,3 +101,113 @@ VSCode TestRunRequest (or programmatic GoTestItem[])
             → ViewController.resolveViewItem → TestItem
           → run.started / passed / failed / skipped / errored
 ```
+
+## Test scenarios
+
+Areas that changed significantly during refactoring and should be verified:
+
+- **Module-free repos**: a workspace with no `go.mod` (packages in `ws.packages` directly, not under any module). Verify that resolving, running, and refreshing works. The `#getGoItem` fix for workspace-direct packages was made during this refactor.
+- **Discovery off + file open**: with `testExplorer.discovery` set to `off`, opening a Go test file should make that file's package appear in the tree. Nothing else should appear.
+- **Run on workspace or module**: clicking "Run" on a workspace or module item in the tree should expand to all their packages and run them, not produce an empty run.
+- **Mixed include set**: a run request that includes both a workspace-level item and a specific test case should correctly expand the workspace and also include the explicit test.
+- **Continuous runs**: editing a test file and saving should trigger a re-run of only the affected tests. Verify end-to-end after the `ContinuousRunTracker` refactor.
+- **Config change view rebuild**: toggling `showFiles`, `nestPackages`, or `nestSubtests` should restructure the tree immediately, with no ghost nodes left over from the previous layout.
+
+## Testing plan
+
+### File layout
+
+Unit tests live alongside the source file they test (`run/log.test.ts` next to `run/log.ts`, etc.). Integration tests live in `test/integration/`. The jest config currently only picks up `test/component/**/*.test.ts` and needs to be extended to include `src/test/**/*.test.ts` and `test/integration/**/*.test.ts`.
+
+### Test harness
+
+The old `test/utils/host.ts` and `test/utils/txtar.ts` are the right pattern and should be refactored rather than replaced. The harness is split into roughly three files:
+
+- **`test/utils/txtar.ts`** — keep as-is. `Workspace` and `TxTar` are still useful.
+- **`test/utils/host.ts`** — rewrite for the new `Context` / `EditorEvent` / `TestManager` API. Keeps the `TestHost` concept, `withWorkspace` / `withConfiguration` / `withCommands` config helpers, and the mock VS Code types (`MockTestController`, `MockTestItem`, `MapTestItemCollection`). Adds a `MockTestRun` that records `started`/`passed`/`failed`/`skipped`/`errored`/`appendOutput` calls for assertion.
+- **`test/utils/model.ts`** — helpers for constructing `Workspace → Module → Package → TestFile → TestCase` trees directly (bypassing gopls), and a `FakeCommands` that returns canned `PackagesResults`/`ModulesResult`. Used by unit and integration tests that do not need real gopls.
+
+### Unit tests
+
+Unit tests use `FakeCommands` and direct model construction; no real gopls, no real filesystem except where noted.
+
+#### `run/log.test.ts`
+
+Tests feed log lines from synthesized log data. The log data will be synthesized inline for now but is designed to be replaced by real `go test -json` output files (e.g., `run/testdata/pass.log`, `run/testdata/panic.log`). Each test constructs a `TestRunLog` with a `MockTestRun` and a resolver stub, feeds lines from the log data, and asserts on what was recorded.
+
+- Event routing: `pass`, `fail`, `skip`, `start`, `build-fail` each call the correct `MockTestRun` method with the right item
+- Non-JSON lines passed to `appendOutput` without crashing
+- Location tracking: location on first output line is remembered; 8-space-prefixed continuation lines inherit it and strip the prefix
+- `parsePanic`: goroutine stack trace message extracted; location is first frame within workspace root; falls back to first frame if none match
+- `parseWantGot`: fires for all verb pairs (`want`/`got`, `expected`/`actual`, `desired`/`received`, etc.); does NOT fire when only one side is present; does NOT fire when both sides are the same kind (two "got" verbs)
+- Build failure: pre-fail output gathered per item; `errored` called with non-comment lines only; `buildFailed` flag set
+
+#### `model/controller.test.ts`
+
+- `workspaceFor(wsf)`: creates `Workspace` on first call, returns same object on second call
+- `workspaceFor(uri)`: returns `undefined` for URI outside any workspace folder; respects exclusion globs
+- `#onRunEvent('start')` / `covers()` — the logic for which dynamic tests to remove is non-obvious:
+  - All dynamic tests removed when `include` is undefined (whole-package run)
+  - Test NOT removed when it is the exact `include` item (not reached via an ancestor)
+  - Test NOT removed when neither it nor any ancestor is in `include`
+  - Test NOT removed when it or an ancestor is in `exclude`
+  - Child tests of a removed test are also removed (prefix match)
+- `#onRunEvent('subtest')`: creates `DynamicTestCase` under the correct parent and fires `added`; finds existing case by name and does not duplicate it
+- `#onRunEvent('disposed')`: removes only the dynamic cases tracked for that run, not others
+- `#consolidatePackages`: `foo` and `foo_test` packages merged into one entry; excluded paths filtered out
+
+#### `view/presenter.test.ts`
+
+Build a model tree directly, drive `#onDidUpdate` with synthesized `ItemEvent[]`.
+
+- **`#pkgRel` rebuild on events**: adding `foo` and `foo/bar` creates the correct parent relation; removing `foo/bar` tears it down without affecting `foo`
+- **`#testRel` rebuild on events**: adding `TestFoo/Bar` creates correct subtest relation under `TestFoo`
+- **`getParent` / `getChildren`** for every config combination that changes structure:
+  - `nestPackages=true/false` — nested packages appear as children vs siblings
+  - `showFiles=true/false` — file nodes present vs collapsed
+  - `nestSubtests=true/false` — subtests nested vs flat
+- **`asPresented`**: root package resolves to its parent module/workspace; file with `showFiles=false` resolves to its package
+- **`labelFor`**: nested package label strips ancestor path prefix; subtest label strips parent test name prefix
+- **Profile hierarchy**: `captured` run event adds `ProfileContainer` → `ProfileSet` (grouped by time) → `ProfileItem` under the correct item; `disposed` run event removes them; multiple profiles at same time appear in one `ProfileSet`
+- **`resolveProfilesParent`**: dynamic test case walks up to its static parent; profile/set/container items also walk up
+
+#### `run/controller.test.ts` (isolated functions only)
+
+- `makeRegex`: escapes regex metacharacters in test names; generates `^part1$/^part2$` for subtests; correctly filters benchmarks vs non-benchmarks; returns empty string (not `-`) when no items match the filter
+- `shouldRunBenchmarks`: returns `true` only when every test in the package is a benchmark (or setting is on); returns `false` when package has no loaded files
+
+### Integration tests
+
+These wire `ModelController` + `ModelViewPresenter` + `ViewController` together with `FakeCommands`. No real gopls. Verify the full event chain from `populate()` / run events to the `TestItem` tree.
+
+#### `test/integration/discovery.test.ts`
+
+1. **Module with packages**: `populate(workspace)` → correct `TestItem` tree structure
+2. **Module-free repo**: packages sit directly under workspace (no module). Items appear under the workspace node. `resolveGoItem` round-trip works. *(Explicitly called out in the README as changed during refactor.)*
+3. **`showFiles` toggle**: flip config, trigger an update, verify file nodes appear without ghost nodes from the old layout
+4. **`nestPackages` toggle**: flip config, verify nested vs flat layout; **known bug** — ghost nodes currently left over; this test documents the bug and should initially fail
+5. **`nestSubtests` toggle**: same as above
+
+#### `test/integration/run.test.ts`
+
+6. **Subtest discovery**: fire `RunEvent.subtest` → `DynamicTestCase` created → `ViewController` gets `ItemEvent.added` → view item appears under correct parent
+7. **Pre-run cleanup** (`start` event): dynamic cases under the target package cleared before run; cases for excluded tests not cleared; child tests of a cleared parent are also cleared
+8. **Run disposal** (`disposed` event): dynamic cases associated with the run are removed; others are not
+
+#### `test/integration/manager.test.ts`
+
+9. **Workspace-level run**: `#resolveRunRequest` with a workspace item → all packages included
+10. **Module-level run**: module item → module's packages included
+11. **Mixed include**: workspace item + explicit test → workspace expands AND test is preserved
+12. **Redundancy pruning**: package + test inside it → test dropped (package covers it); benchmark exception applies correctly when `runPackageBenchmarks` is off
+13. **Discovery off + file opened**: only that file's package appears; running it loads tests before executing
+14. **`update` mode `on-save`**: `file-edited` EditorEvent does NOT trigger `updateFile`; `file-saved` does, but only when version changes
+15. **`update` mode `on-edit`**: `file-edited` EditorEvent triggers `updateFile` with ranges
+
+### What is not tested
+
+- `register.ts` — pure VS Code lifecycle wiring
+- `run/continuous.ts` — narrow surface, covered indirectly by manager integration test #13
+- `config.ts` / `workspaceConfig.ts` — transparent wrapper
+- Individual model node classes (`Workspace`, `Module`, `Package`, `TestFile`, `TestCase`) — logic is trivial
+- `model/set.ts` (`ItemSet`) — generic collection
