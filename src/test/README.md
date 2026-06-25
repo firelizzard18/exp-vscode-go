@@ -65,6 +65,12 @@ The predecessor to this codebase hit this limit hard. Processing the gopls respo
 
 The rule here: **the critical path must be synchronous.** `async`/`await` is appropriate at the boundary — querying gopls, populating the data model — where a small number of microtasks are spawned and awaited once. The processing that follows, including all view model sync, must run to completion without yielding. Any `await` appearing in `#syncViewItem`, `#syncChildren`, or their callees should be treated as a bug.
 
+## Known bugs
+
+- **`register.ts:111`** — `config.exclude.isAffected(e)` is duplicated on two consecutive lines; one should be `config.update.isAffected(e)`. As-is, changing `testExplorer.update` has no effect until the extension reloads.
+
+- **`view/controller.ts:#onItemEvent`** — When a config change causes view restructuring (toggling `showFiles`, `nestPackages`, or `nestSubtests`), `#onItemEvent` only calls `#syncViewItem`, which adds items at their new positions but never removes them from old ones. `#syncChildren` (the only path that deletes stale children) is only reachable from `#onRunEvent`. Toggling those settings leaves ghost nodes in the tree until the extension reloads.
+
 ## Data flow
 
 ### Discovery
