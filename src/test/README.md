@@ -12,7 +12,15 @@ The test explorer surfaces Go tests in VSCode's Test Explorer view. It is built 
 
 **`manager.ts`** (`TestManager`) is the top-level coordinator. It owns the lifecycle of all other components, sets up run profiles, routes VSCode events to the appropriate components, and resolves VSCode `TestRunRequest`s into `GoTestRequest`s for the runner.
 
-**`workspaceConfig.ts`** (`WorkspaceConfig`) is a lazy, cached wrapper around VSCode's configuration API. It is shared across components to provide a consistent view of settings.
+**`config.ts`** (`WorkspaceConfig`) is a lazy, cached wrapper around VSCode's configuration API. It is shared across components to provide a consistent view of settings.
+
+### Out of scope for this merge
+
+This package is being merged into `vscode-go` piece by piece, to avoid a mega PR. The following components are excluded from the current scope and will be proposed in later PRs; they are not documented further here:
+
+- **`codeLens.ts`** — code lens support for running/debugging individual tests from the editor.
+- **`run/coverage.ts`** — coverage collection and gutter decoration.
+- **`run/profiles.ts`** — CPU/memory profile capture during test runs (and the associated presentation-layer profile nodes in `view/presenter.ts`).
 
 ### Data model (`src/test/model/`)
 
@@ -208,6 +216,6 @@ These wire `ModelController` + `ModelViewPresenter` + `ViewController` together 
 
 - `register.ts` — pure VS Code lifecycle wiring
 - `run/continuous.ts` — narrow surface, covered indirectly by manager integration test #13
-- `config.ts` / `workspaceConfig.ts` — transparent wrapper
+- `config.ts` — transparent wrapper
 - Individual model node classes (`Workspace`, `Module`, `Package`, `TestFile`, `TestCase`) — logic is trivial
 - `model/set.ts` (`ItemSet`) — generic collection

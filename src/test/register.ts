@@ -108,7 +108,7 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 			await maybeChangedEnabled();
 		}
 		if (
-			config.exclude.isAffected(e) ||
+			config.update.isAffected(e) ||
 			config.exclude.isAffected(e) ||
 			config.discovery.isAffected(e) ||
 			config.showFiles.isAffected(e) ||
