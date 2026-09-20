@@ -12,7 +12,7 @@ export class Package {
 	readonly root;
 	readonly uri;
 	readonly path;
-	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
+	readonly files = new ItemSet<TestFile>();
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package, mod?: Commands.Module) {
 		this.root = parent;

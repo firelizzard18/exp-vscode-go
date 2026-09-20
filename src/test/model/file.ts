@@ -9,7 +9,7 @@ export class TestFile {
 	readonly kind = 'file';
 	readonly package;
 	readonly uri;
-	readonly tests = new ItemSet<TestCase, Commands.TestCase>((x) => x.Name);
+	readonly tests = new ItemSet<TestCase>();
 
 	constructor(pkg: Package, file: Commands.TestFile) {
 		this.package = pkg;

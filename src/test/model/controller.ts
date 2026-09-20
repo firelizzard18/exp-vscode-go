@@ -21,7 +21,7 @@ export class ModelController extends Disposer {
 	readonly #testRuns = new WeakMapWithDefault((_: TestRun) => new Set<DynamicTestCase>());
 
 	readonly onDidUpdate = this.#didUpdate.event;
-	readonly workspaces = new ItemSet<Workspace, Uri | { uri: Uri }>((x) => `${x instanceof Uri ? x : x.uri}`);
+	readonly workspaces = new ItemSet<Workspace>();
 
 	readonly #context;
 	readonly #config;
@@ -51,7 +51,8 @@ export class ModelController extends Disposer {
 		}
 
 		// Resolve or create a Workspace.
-		let ws = this.workspaces.get(wsf);
+		// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
+		let ws = this.workspaces.get(`${wsf.uri}`);
 		if (!ws) {
 			ws = new Workspace(wsf);
 			this.workspaces.add(ws);
@@ -151,6 +152,7 @@ export class ModelController extends Disposer {
 			if (exclude.some((x) => x.match(relDir))) continue;
 
 			// Get or create the module.
+			// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
 			let mod = ws.modules.get(src.Path);
 			if (!mod) {
 				mod = new Module(ws, src);
@@ -173,7 +175,8 @@ export class ModelController extends Disposer {
 			}
 
 			// Get the existing package.
-			let pkg = root.packages.get(src);
+			// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
+			let pkg = root.packages.get(src.Path);
 
 			// If a package doesn't have tests, that probably means the last
 			// test was removed, so we should remove it.

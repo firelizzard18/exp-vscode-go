@@ -115,7 +115,8 @@ export class ViewController extends Disposer {
 		// Get the workspace.
 		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
 		if (!wsf) return;
-		const ws = this.#model.workspaces.get(wsf);
+		// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
+		const ws = this.#model.workspaces.get(`${wsf.uri}`);
 		if (!ws || id.kind === 'workspace') return ws;
 
 		// Scan the modules.
