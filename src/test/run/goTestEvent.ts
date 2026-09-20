@@ -32,7 +32,7 @@ export function isOutputEvent(event: RichTestEvent): event is RichOutputEvent {
 /**
  * This only supports lines that start with whitespace. A previous iteration
  * allowed arbitrary characters at the start of the expression. However, that
- * was buggy; given "  foo.go:123 bar.go:456:78: message", it would extract
+ * was buggy; given "  foo.go:123: bar.go:456:78: message", it would extract
  * bar.go when it should have been extracting foo.go.
  *
  *  - ^\s*               — beginning of line and whitespace if any
