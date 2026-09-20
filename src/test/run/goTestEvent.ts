@@ -30,11 +30,18 @@ export function isOutputEvent(event: RichTestEvent): event is RichOutputEvent {
 }
 
 /**
- * ^(?:.*\s+|\s*)                  - non-greedy match of any chars followed by a space or, a space.
- * (?<file>\S+\.go):(?<line>\d+):  - gofile:line: followed by a space.
- * (?<message>.\n)$                - all remaining message up to $.
+ * This only supports lines that start with whitespace. A previous iteration
+ * allowed arbitrary characters at the start of the expression. However, that
+ * was buggy; given "  foo.go:123 bar.go:456:78: message", it would extract
+ * bar.go when it should have been extracting foo.go.
+ *
+ *  - ^\s*               — beginning of line and whitespace if any
+ *  - (?<file>\S+\.go)   — file name
+ *  - (?<line>\d+)       — line number
+ *  - (?<column>\d+)     — column number (optional)
+ *  - (?<message>.*\n?)$ — the remainder of the output (up to EOL)
  */
-const reLineLocation = /^(.*\s+)?(?<file>\S+\.go):(?<line>\d+)(?::(?<column>\d+))?: (?<message>.*\n?)$/;
+const reLineLocation = /^\s*(?<file>\S+\.go):(?<line>\d+)(?::(?<column>\d+))?: (?<message>.*\n?)$/;
 
 export function normalizeTestEvent(test: TestItem, event: TestEvent): RichTestEvent {
 	/**
