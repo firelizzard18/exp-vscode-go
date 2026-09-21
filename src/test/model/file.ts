@@ -16,6 +16,10 @@ export class TestFile {
 		this.uri = Uri.parse(file.URI);
 	}
 
+	static keyOf(x: Commands.TestFile) {
+		return `${Uri.parse(x.URI)}`;
+	}
+
 	get key() {
 		return `${this.uri}`;
 	}

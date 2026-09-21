@@ -42,6 +42,10 @@ export class Package {
 		}
 	}
 
+	static keyOf(x: Commands.Package) {
+		return x.Path;
+	}
+
 	get key() {
 		return this.path;
 	}

@@ -5,7 +5,7 @@ import { Disposer } from '@/utils/disposable';
 import { type TestController } from '@/utils/testing';
 
 import { type WorkspaceConfig } from '../config';
-import { type GoTestItem, type ItemEvent, type ModelController, StaticTestCase, TestCase } from '../model';
+import { type GoTestItem, type ItemEvent, type ModelController, StaticTestCase, TestCase, Workspace } from '../model';
 import { type RunEvent } from '../run/controller';
 import {
 	idFor,
@@ -115,8 +115,7 @@ export class ViewController extends Disposer {
 		// Get the workspace.
 		const wsf = this.#context.workspace.getWorkspaceFolder(uri);
 		if (!wsf) return;
-		// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
-		const ws = this.#model.workspaces.get(`${wsf.uri}`);
+		const ws = this.#model.workspaces.get(Workspace.keyOf(wsf));
 		if (!ws || id.kind === 'workspace') return ws;
 
 		// Scan the modules.

@@ -74,6 +74,8 @@ export class ItemSet<T extends GoTestItem> {
 	): ItemEvent<T | R>[] {
 		this.#loaded = true;
 
+		// Use the constructor to derive keys since we don't have a key
+		// derivation function
 		const entries = src.map((value) => ({ value, created: make(value) }));
 		const srcKeys = new Set(entries.map((x) => x.created.key));
 

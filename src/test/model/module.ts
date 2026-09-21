@@ -22,6 +22,10 @@ export class Module {
 		return Uri.joinPath(this.uri, '..');
 	}
 
+	static keyOf(x: Commands.Module) {
+		return x.Path;
+	}
+
 	get key() {
 		return this.path;
 	}

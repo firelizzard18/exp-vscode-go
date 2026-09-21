@@ -51,8 +51,7 @@ export class ModelController extends Disposer {
 		}
 
 		// Resolve or create a Workspace.
-		// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
-		let ws = this.workspaces.get(`${wsf.uri}`);
+		let ws = this.workspaces.get(Workspace.keyOf(wsf));
 		if (!ws) {
 			ws = new Workspace(wsf);
 			this.workspaces.add(ws);
@@ -152,8 +151,7 @@ export class ModelController extends Disposer {
 			if (exclude.some((x) => x.match(relDir))) continue;
 
 			// Get or create the module.
-			// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
-			let mod = ws.modules.get(src.Path);
+			let mod = ws.modules.get(Module.keyOf(src));
 			if (!mod) {
 				mod = new Module(ws, src);
 				ws.modules.add(mod);
@@ -175,8 +173,7 @@ export class ModelController extends Disposer {
 			}
 
 			// Get the existing package.
-			// TODO(hxjiang): consolidate the key extraction for all raw types Commands.* and WorkspaceFolder.
-			let pkg = root.packages.get(src.Path);
+			let pkg = root.packages.get(Package.keyOf(src));
 
 			// If a package doesn't have tests, that probably means the last
 			// test was removed, so we should remove it.

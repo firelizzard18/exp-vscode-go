@@ -21,8 +21,12 @@ export class Workspace {
 		return this.ws.uri;
 	}
 
+	static keyOf(x: WorkspaceFolder) {
+		return `${x.uri}`;
+	}
+
 	get key() {
-		return `${this.uri}`;
+		return Workspace.keyOf(this.ws);
 	}
 
 	*allPackages() {
