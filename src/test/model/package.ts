@@ -12,7 +12,7 @@ export class Package {
 	readonly root;
 	readonly uri;
 	readonly path;
-	readonly files = new ItemSet<TestFile, Commands.TestFile>((x) => x.URI);
+	readonly files = new ItemSet<TestFile>();
 
 	constructor(parent: Module | Workspace, pkg: Commands.Package, mod?: Commands.Module) {
 		this.root = parent;
@@ -40,6 +40,10 @@ export class Package {
 		} else {
 			throw new Error('Package parent is a module but does not have a module path');
 		}
+	}
+
+	static keyOf(x: Commands.Package) {
+		return x.Path;
 	}
 
 	get key() {

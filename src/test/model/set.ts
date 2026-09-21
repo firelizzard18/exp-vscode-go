@@ -1,7 +1,6 @@
-import type { ItemEvent } from '.';
+import type { GoTestItem, ItemEvent } from '.';
 
-export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullable<object>> {
-	readonly #srcKey;
+export class ItemSet<T extends GoTestItem> {
 	readonly #items;
 
 	/**
@@ -12,8 +11,7 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 	 */
 	#loaded = false;
 
-	constructor(srcKey: (s: S) => string, items: T[] = []) {
-		this.#srcKey = srcKey;
+	constructor(items: T[] = []) {
 		this.#items = new Map(items.map((x) => [x.key, x]));
 	}
 
@@ -37,26 +35,20 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 		return this.#items.size;
 	}
 
-	has(item: string | T | S) {
+	has(item: string | T) {
 		return this.#items.has(this.#key(item));
 	}
 
-	get(item: string | T | S) {
+	get(item: string | T) {
 		return this.#items.get(this.#key(item));
 	}
 
-	remove(item: string | T | S) {
+	remove(item: string | T) {
 		this.#items.delete(this.#key(item));
 	}
 
-	#key(item: string | T | S) {
-		if (typeof item !== 'object') {
-			return item;
-		}
-		if ('key' in item) {
-			return item.key;
-		}
-		return this.#srcKey(item);
+	#key(item: string | T): string {
+		return typeof item === 'string' ? item : item.key;
 	}
 
 	add(...items: T[]) {
@@ -71,21 +63,24 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 	 * item with the same key exists in the set, the item is updated. Otherwise,
 	 * a new item is created.
 	 * @param src The sources to create items from.
-	 * @param id A function that returns the item key of a source value.
 	 * @param make A function that creates a new item from a source value.
 	 * @param update A function that updates an existing item with a source value.
 	 */
-	update<SS extends S, R = never>(
-		src: readonly SS[],
-		make: (_: SS) => T,
-		update: (_1: SS, _2: T) => Iterable<ItemEvent<R>> = () => [],
+	update<S, R = never>(
+		src: readonly S[],
+		make: (_: S) => T,
+		update: (_1: S, _2: T) => Iterable<ItemEvent<R>> = () => [],
 		keep: (_: T) => boolean = () => false,
 	): ItemEvent<T | R>[] {
 		this.#loaded = true;
 
+		// Use the constructor to derive keys since we don't have a key
+		// derivation function
+		const entries = src.map((value) => ({ value, created: make(value) }));
+		const srcKeys = new Set(entries.map((x) => x.created.key));
+
 		// Delete items that are no longer present
 		const changed: ItemEvent<T | R>[] = [];
-		const srcKeys = new Set(src.map((x) => this.#srcKey(x)));
 		for (const [key, item] of this.#items.entries()) {
 			if (!srcKeys.has(key) && !keep(item)) {
 				changed.push({ item, type: 'removed' });
@@ -94,11 +89,10 @@ export class ItemSet<T extends NonNullable<{ key: string }>, S extends NonNullab
 		}
 
 		// Update and insert items
-		for (const value of src) {
-			const key = this.#srcKey(value);
-			let item = this.get(key);
+		for (const { value, created } of entries) {
+			let item = this.get(created.key);
 			if (!item) {
-				item = make(value);
+				item = created;
 				this.add(item);
 				changed.push({ item, type: 'added' });
 			}

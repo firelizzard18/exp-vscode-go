@@ -10,7 +10,7 @@ export class Module {
 	readonly uri;
 	readonly path;
 	readonly workspace;
-	readonly packages = new ItemSet<Package, Commands.Package>((x) => x.Path);
+	readonly packages = new ItemSet<Package>();
 
 	constructor(workspace: Workspace, mod: Commands.Module) {
 		this.workspace = workspace;
@@ -20,6 +20,10 @@ export class Module {
 
 	get dir(): Uri {
 		return Uri.joinPath(this.uri, '..');
+	}
+
+	static keyOf(x: Commands.Module) {
+		return x.Path;
 	}
 
 	get key() {

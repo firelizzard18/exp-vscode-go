@@ -1,15 +1,13 @@
 import { type Uri, type WorkspaceFolder } from 'vscode';
 
-import { type Commands } from '@/utils/common';
-
 import type { Module, Package } from '.';
 import { ItemSet } from './set';
 
 export class Workspace {
 	readonly kind = 'workspace';
 	readonly ws;
-	readonly modules = new ItemSet<Module, Commands.Module>((x) => x.Path);
-	readonly packages = new ItemSet<Package, Commands.Package>((x) => x.Path);
+	readonly modules = new ItemSet<Module>();
+	readonly packages = new ItemSet<Package>();
 
 	constructor(ws: WorkspaceFolder) {
 		this.ws = ws;
@@ -23,8 +21,12 @@ export class Workspace {
 		return this.ws.uri;
 	}
 
+	static keyOf(x: WorkspaceFolder) {
+		return `${x.uri}`;
+	}
+
 	get key() {
-		return `${this.uri}`;
+		return Workspace.keyOf(this.ws);
 	}
 
 	*allPackages() {

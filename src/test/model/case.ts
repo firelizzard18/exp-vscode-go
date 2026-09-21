@@ -19,6 +19,10 @@ export abstract class TestCase {
 		this.name = name;
 	}
 
+	static keyOf(x: Commands.TestCase) {
+		return x.Name;
+	}
+
 	get key() {
 		return this.name;
 	}
