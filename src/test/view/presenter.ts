@@ -56,7 +56,6 @@ export class ModelViewPresenter extends Disposer {
 	readonly #pkgRel = new WeakMapWithDefault(
 		(_: Workspace | Module) => new RelationMap<Package, Package | undefined>(),
 	);
-	readonly #testRel = new WeakMapWithDefault((_: Package) => new RelationMap<TestCase, TestCase | undefined>());
 
 	constructor(config: WorkspaceConfig, tests: ModelController, runEvents: Event<RunEvent>) {
 		super();
@@ -159,22 +158,11 @@ export class ModelViewPresenter extends Disposer {
 				return this.asPresented(item.parent);
 
 			default: {
-				// If the name doesn't have a slash or nesting is disabled, the
-				// parent is the file.
-				if (!item.name.includes('/') || !config.nestSubtests.get()) {
-					return this.asPresented(item.file);
+				// If nesting is enabled, subtests are children of their parent
+				// test. Otherwise, every test is a child of the file.
+				if (config.nestSubtests.get() && item.parent.kind !== 'file') {
+					return item.parent;
 				}
-
-				// Check the cached relations for a parent. There *should* be
-				// one.
-				let parent = this.#testRel.get(item.file.package).getParent(item);
-				if (parent) return parent;
-
-				// Fall back to a name-based scan.
-				parent = item.file.package.findParent(item.name);
-				if (parent) return parent;
-
-				// If all else fails, fall back to the file.
 				return this.asPresented(item.file);
 			}
 		}
@@ -283,19 +271,13 @@ export class ModelViewPresenter extends Disposer {
 			}
 
 			case 'file': {
-				// If subtests are not nested, return all tests.
+				// If subtests are nested, return only top-level tests;
+				// otherwise flatten the whole tree.
 				const config = this.#config.for(item);
-				if (!config.nestSubtests.get()) {
+				if (config.nestSubtests.get()) {
 					yield* item.tests;
-					return;
-				}
-
-				// Otherwise, return root tests (those with no parent).
-				const rel = this.#testRel.get(item.package);
-				for (const test of item.tests) {
-					if (!rel.getParent(test)) {
-						yield test;
-					}
+				} else {
+					yield* item.allTests();
 				}
 				return;
 			}
@@ -330,11 +312,10 @@ export class ModelViewPresenter extends Disposer {
 				return;
 
 			default: {
-				// If nested subtest are enabled, return the tests's subtests.
+				// If nested subtests are enabled, return the test's subtests.
 				const config = this.#config.for(item);
-				const rel = this.#testRel.get(item.file.package);
 				if (config.nestSubtests.get()) {
-					yield* rel.getChildren(item) || [];
+					yield* item.tests;
 				}
 				return;
 			}
@@ -358,16 +339,6 @@ export class ModelViewPresenter extends Disposer {
 					return [pkg, ancestors[0]];
 				}),
 			);
-		}
-
-		// If tests were added or removed, rebuild the package's test relations.
-		const testChanges = updates.filter(
-			(x): x is ItemEvent<TestCase> => x.item instanceof TestCase && (x.type === 'added' || x.type === 'removed'),
-		);
-		const testPkgs = new Set(testChanges.map((x) => x.item.file.package));
-		for (const pkg of testPkgs) {
-			const tests = [...pkg.allTests()];
-			this.#testRel.get(pkg).replace(tests.map((test) => [test, pkg.findParent(test.name)]));
 		}
 	}
 
@@ -397,13 +368,14 @@ export class ModelViewPresenter extends Disposer {
 		// Don't attach profiles to profiles (this probably shouldn't ever
 		// happen) or to dynamic test cases (since they are destroyed and
 		// recreated on each run).
-		while (
-			scope instanceof DynamicTestCase ||
-			scope.kind === 'profile' ||
-			scope.kind === 'profile-set' ||
-			scope.kind === 'profile-container'
-		) {
-			scope = this.getParent(scope)!;
+		for (;;) {
+			if (scope instanceof DynamicTestCase) {
+				scope = scope.parent;
+			} else if (scope.kind === 'profile' || scope.kind === 'profile-set' || scope.kind === 'profile-container') {
+				scope = scope.parent;
+			} else {
+				break;
+			}
 		}
 
 		return this.asPresented(scope) as GoTestItem;

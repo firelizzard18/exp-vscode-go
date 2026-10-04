@@ -49,7 +49,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider<GoCodeLens> {
 		// Depending on the mode, create a run and/or debug code lens for each
 		// test case that has a range. We can't do this for dynamic test cases
 		// because `go test` does not provide a range for those.
-		for (const test of file.tests) {
+		for (const test of file.allTests()) {
 			if (test instanceof StaticTestCase && test.range) {
 				const run = new GoCodeLens(test.range, test, 'run');
 				const debug = new GoCodeLens(test.range, test, 'debug');

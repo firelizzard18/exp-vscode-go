@@ -143,6 +143,54 @@ describe('ModelController RunEvent handling', () => {
 		expect(dyn).toBeDefined();
 	});
 
+	it('nests a dynamic subtest under its parent test', async () => {
+		const { pkg, runEvents, updates } = await setup();
+		const parent = pkg.findTest('TestParent')!;
+
+		await runEvents.fire({ type: 'subtest', run: makeFakeRun(), pkg, name: 'TestParent/Sub' });
+
+		const sub = pkg.findTest('TestParent/Sub')!;
+		expect(sub.parent).toBe(parent);
+		expect([...parent.tests]).toEqual([sub]);
+		expect([...parent.file.tests]).not.toContain(sub);
+		expect(updates).toContainEqual({ item: sub, type: 'added', to: parent });
+	});
+
+	it('attaches a deep subtest to its nearest existing ancestor', async () => {
+		const { pkg, runEvents } = await setup();
+		const parent = pkg.findTest('TestParent')!;
+
+		// go test normally reports TestParent/A before TestParent/A/B, but the
+		// model must cope with the intermediate missing.
+		await runEvents.fire({ type: 'subtest', run: makeFakeRun(), pkg, name: 'TestParent/A/B' });
+		expect(pkg.findTest('TestParent/A/B')!.parent).toBe(parent);
+
+		// Once the intermediate exists, later siblings attach to it.
+		await runEvents.fire({ type: 'subtest', run: makeFakeRun(), pkg, name: 'TestParent/A' });
+		await runEvents.fire({ type: 'subtest', run: makeFakeRun(), pkg, name: 'TestParent/A/C' });
+		expect(pkg.findTest('TestParent/A/C')!.parent).toBe(pkg.findTest('TestParent/A'));
+	});
+
+	it('removing a dynamic test removes its subtree and reports every node', async () => {
+		const { pkg, runEvents, updates } = await setup();
+		const run = makeFakeRun();
+
+		await runEvents.fire({ type: 'subtest', run, pkg, name: 'TestParent/A' });
+		await runEvents.fire({ type: 'subtest', run, pkg, name: 'TestParent/A/B' });
+		const a = pkg.findTest('TestParent/A')!;
+		const b = pkg.findTest('TestParent/A/B')!;
+		updates.length = 0;
+
+		await runEvents.fire({ type: 'start', run, pkg });
+
+		expect(pkg.findTest('TestParent/A')).toBeUndefined();
+		expect(pkg.findTest('TestParent/A/B')).toBeUndefined();
+		expect(updates.map((x) => [x.item, x.type])).toEqual([
+			[a, 'removed'],
+			[b, 'removed'],
+		]);
+	});
+
 	it('does not duplicate an existing dynamic test on repeated subtest event', async () => {
 		const { pkg, runEvents } = await setup();
 		const run = makeFakeRun();

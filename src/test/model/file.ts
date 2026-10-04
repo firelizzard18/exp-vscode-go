@@ -16,6 +16,14 @@ export class TestFile {
 		this.uri = Uri.parse(file.URI);
 	}
 
+	/** Yields every test in the file, including nested subtests, depth first. */
+	*allTests(): Iterable<TestCase> {
+		for (const test of this.tests) {
+			yield test;
+			yield* test.allTests();
+		}
+	}
+
 	static keyOf(x: Commands.TestFile) {
 		return `${Uri.parse(x.URI)}`;
 	}

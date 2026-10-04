@@ -26,7 +26,7 @@ This package is being merged into `vscode-go` piece by piece, to avoid a mega PR
 
 The data model lives in its own package and has no dependency on VSCode's test UI types. It only uses VSCode types that represent LSP/editor concepts (`Uri`, workspace folders, document ranges).
 
-**`workspace.ts`, `module.ts`, `package.ts`, `file.ts`, `case.ts`** define the Go test hierarchy: `Workspace → Module → Package → TestFile → TestCase`. These classes are the source of truth for what tests exist and where. `TestCase` has two subclasses: `StaticTestCase` (discovered from source via gopls) and `DynamicTestCase` (discovered at runtime from `go test` output).
+**`workspace.ts`, `module.ts`, `package.ts`, `file.ts`, `case.ts`** define the Go test hierarchy: `Workspace → Module → Package → TestFile → TestCase`. These classes are the source of truth for what tests exist and where. `TestCase` has two subclasses: `StaticTestCase` (discovered from source via gopls) and `DynamicTestCase` (discovered at runtime from `go test` output). Subtests nest in the model: `TestFoo/bar` is a child of `TestFoo` (`TestCase.parent` is a `TestFile` or a `TestCase`), so the model tree mirrors the Go test hierarchy rather than gopls' flat per-file list.
 
 **`set.ts`** (`ItemSet`) is a generic keyed collection used throughout the data model. It supports add/remove/update operations and produces `ItemEvent` records describing what changed.
 
@@ -169,7 +169,7 @@ Tests feed log lines from synthesized log data. The log data will be synthesized
 Build a model tree directly, drive `#onDidUpdate` with synthesized `ItemEvent[]`.
 
 - **`#pkgRel` rebuild on events**: adding `foo` and `foo/bar` creates the correct parent relation; removing `foo/bar` tears it down without affecting `foo`
-- **`#testRel` rebuild on events**: adding `TestFoo/Bar` creates correct subtest relation under `TestFoo`
+- **Subtest nesting**: adding `TestFoo/Bar` (static or dynamic) attaches it under `TestFoo` in the model; `getParent`/`getChildren` follow `TestCase.parent`/`tests` when `nestSubtests` is on and flatten via `file.allTests()` when off
 - **`getParent` / `getChildren`** for every config combination that changes structure:
   - `nestPackages=true/false` — nested packages appear as children vs siblings
   - `showFiles=true/false` — file nodes present vs collapsed
