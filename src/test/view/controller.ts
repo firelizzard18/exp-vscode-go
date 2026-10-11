@@ -4,7 +4,6 @@ import { type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { type TestController } from '@/utils/testing';
 
-import { type WorkspaceConfig } from '../config';
 import { type GoTestItem, type ItemEvent, type ModelController, StaticTestCase, TestCase, Workspace } from '../model';
 import { type RunEvent } from '../run/controller';
 import {
@@ -19,14 +18,12 @@ import {
 
 export class ViewController extends Disposer {
 	readonly #context;
-	readonly #config;
 	readonly #model;
 	readonly #presenter;
 	readonly #ctrl;
 
 	constructor(
 		context: Context,
-		config: WorkspaceConfig,
 		model: ModelController,
 		presenter: ModelViewPresenter,
 		ctrl: TestController,
@@ -34,13 +31,16 @@ export class ViewController extends Disposer {
 	) {
 		super();
 		this.#context = context;
-		this.#config = config;
 		this.#model = model;
 		this.#presenter = presenter;
 		this.#ctrl = ctrl;
 
 		this.disposeOf = model.onDidUpdate((x) => this.#onItemEvent(x));
 		this.disposeOf = runEvent((x) => this.#onRunEvent(x));
+	}
+
+	async refresh(item?: Presentable) {
+		this.#syncChildren(item, { recurse: true });
 	}
 
 	resolveViewItem(go: Presentable) {
@@ -224,22 +224,22 @@ export class ViewController extends Disposer {
 		}
 	}
 
-	#syncChildren(go: Presentable, opts: { recurse?: boolean } = {}) {
+	#syncChildren(go?: Presentable, opts: { recurse?: boolean } = {}) {
 		// Get the item-as-presented.
-		go = this.#presenter.asPresented(go);
-		const queue: Presentable[] = [go];
+		go = go && this.#presenter.asPresented(go);
+		const queue: (Presentable | undefined)[] = [go];
 
 		while (queue.length > 0) {
 			// Get the next item on the queue.
-			const go = queue.shift()!;
+			const go = queue.shift();
 
 			// Get or create the view item.
-			const view = this.#syncViewItem(go);
+			const children = go ? this.#syncViewItem(go).children : this.#ctrl.items;
 
 			// Delete unwanted items.
 			const goChildren = [...this.#presenter.getChildren(go)];
 			const want = new Set(goChildren.map((x) => `${idFor(x)}`));
-			for (const [id, item] of view.children) {
+			for (const [id, item] of children) {
 				if (!want.has(id)) {
 					this.#delete(item);
 				}
@@ -248,7 +248,7 @@ export class ViewController extends Disposer {
 			// Add missing items.
 			for (const go of goChildren) {
 				const id = `${idFor(go)}`;
-				if (!view.children.get(id)) {
+				if (!children.get(id)) {
 					this.#syncViewItem(go);
 				}
 			}

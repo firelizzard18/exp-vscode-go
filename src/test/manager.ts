@@ -94,7 +94,7 @@ export class TestManager extends Disposer {
 		// Set up the components.
 		const model = new ModelController(this.#context, this.#config, this.#runEvents.event);
 		const presenter = new ModelViewPresenter(this.#config, model, this.#runEvents.event);
-		const resolver = new ViewController(this.#context, this.#config, model, presenter, ctrl, this.#runEvents.event);
+		const resolver = new ViewController(this.#context, model, presenter, ctrl, this.#runEvents.event);
 		const codeLens = new CodeLensProvider(this.#config, model);
 
 		this.#ctrl = ctrl;
@@ -391,7 +391,9 @@ export class TestManager extends Disposer {
 				}
 
 				const go = this.#resolver.resolveGoItem(event.item);
-				go && (await this.#refreshChildren(go));
+				if (!go) return;
+				await this.#refreshChildren(go);
+				this.#resolver.refresh(go);
 				break;
 			}
 
@@ -517,16 +519,18 @@ export class TestManager extends Disposer {
 	}
 
 	async #refreshRoots() {
-		if (!this.#model) return;
+		if (!this.#model || !this.#resolver) return;
 
 		// Resolve workspaces according to the normal rules, and refresh
 		// whichever ones have been populated.
-
 		await this.#resolveRoots();
-
 		for (const ws of this.#model.workspaces) {
 			await this.#refreshChildren(ws);
 		}
+
+		// The data model is refreshed, so we need to purge any stale data from
+		// the view model.
+		this.#resolver.refresh();
 	}
 
 	async #refreshChildren(go: Presentable) {
