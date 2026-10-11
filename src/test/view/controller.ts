@@ -233,6 +233,17 @@ export class ViewController extends Disposer {
 	}
 
 	#syncChildren(go?: Presentable) {
+		// Sync the children of `go`, recursively. Uses a work queue instead of
+		// recursion.
+		//
+		// Deleting unwanted children immediately causes unnecessary churn. When
+		// the user changes nesting configuration options (or for updates, in
+		// certain scenarios), some items will need to change parents. So
+		// instead of deleting the unwanted children, we add them to a map. If
+		// those children are subsequently reclaimed by some other parent, we
+		// remove them from the map. Then, once the sync is done, we delete any
+		// children that haven't been claimed.
+
 		// Get the item-as-presented.
 		go = go && this.#presenter.asPresented(go);
 		const queue: (Presentable | undefined)[] = [go];
@@ -282,6 +293,23 @@ export class ViewController extends Disposer {
 	}
 
 	#onItemEvent(events: ItemEvent[]) {
+		// TODO(ethan.reesor): This needs to be smarter, in general. We should
+		// probably do multiple passes. Modification events are trivial to
+		// handle, but added and removed need to be handled with more care.
+		//
+		// When items are added, we need to check for changes to nesting. Let's
+		// say we have a package A and a package A/B/C. With package nesting
+		// enabled, we'll have A → B/C. If a new package A/B appears, we need to
+		// update parenthood with an end result of A → B → C.
+		//
+		// We may run into the same issue with tests, depending on how
+		// consistent test2json is. And given prior experience, I am not going
+		// to assume that it is sufficiently consistent to prevent this kind of
+		// issue.
+		//
+		// Similarly, if we have packages A → B → C, and A/B is removed, we need
+		// to update to A → B/C.
+
 		for (const event of events) {
 			switch (event.type) {
 				case 'added':
