@@ -61,7 +61,9 @@ export class StaticTestCase extends TestCase {
 		}
 
 		// Return the appropriate event. Modified is a larger change than moved.
-		return [{ item: this, type: contains ? 'modified' : 'moved' }];
+		if (contains) return [{ item: this, type: 'modified' }];
+		if (moved) return [{ item: this, type: 'moved' }];
+		return [];
 	}
 
 	/**
