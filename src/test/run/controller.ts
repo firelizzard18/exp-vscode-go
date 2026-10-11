@@ -221,7 +221,9 @@ export class RunController {
 			// Profiling is disabled for continuous runs
 			!run.continuous &&
 			// Is profiling enabled?
-			this.#config.settings.profile.some((x) => x.enabled)
+			this.#config.settings.profile.some((x) => x.enabled) &&
+			// Debugging does not support profiling (dlv test doesn't support -o)
+			this.#config.kind !== TestRunProfileKind.Debug
 		) {
 			const dir = await makeCaptureDir(this.#context, run.run, run.goItem.uri, time);
 			flags.outputdir = dir.fsPath;
