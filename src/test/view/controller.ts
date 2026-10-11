@@ -49,7 +49,7 @@ export class ViewController extends Disposer {
 	}
 
 	async refresh(item?: Presentable) {
-		this.#syncChildren(item, { recurse: true });
+		this.#syncChildren(item);
 	}
 
 	resolveViewItem(go: Presentable) {
@@ -161,14 +161,7 @@ export class ViewController extends Disposer {
 		// Get the item-as-presented.
 		go = this.#presenter.asPresented(go);
 
-		// If the item has no (view) parent, check the root.
-		const parent = this.#presenter.getParent(go);
-		if (!parent) {
-			return this.#ctrl.items.get(`${idFor(go)}`);
-		}
-
-		// Otherwise, check the parent's children.
-		return this.#getViewItem(parent)?.children.get(`${idFor(go)}`);
+		return this.#allItems.get(`${idFor(go)}`);
 	}
 
 	#syncViewItem(go: Presentable): TestItem {
@@ -195,6 +188,9 @@ export class ViewController extends Disposer {
 				// Create a new one.
 				view = this.#ctrl.createTestItem(id, this.#presenter.labelFor(go), 'uri' in go ? go.uri : undefined);
 				this.#allItems.set(id, view);
+
+				// Make tests sort after packages.
+				view.sortText = `${go instanceof TestCase ? 'b;' : 'a;'}${id}`;
 			} else {
 				view.label = this.#presenter.labelFor(go);
 			}
@@ -236,10 +232,11 @@ export class ViewController extends Disposer {
 		}
 	}
 
-	#syncChildren(go?: Presentable, opts: { recurse?: boolean } = {}) {
+	#syncChildren(go?: Presentable) {
 		// Get the item-as-presented.
 		go = go && this.#presenter.asPresented(go);
 		const queue: (Presentable | undefined)[] = [go];
+		const unwanted = new Map<string, TestItem>();
 
 		while (queue.length > 0) {
 			// Get the next item on the queue.
@@ -248,26 +245,30 @@ export class ViewController extends Disposer {
 			// Get or create the view item.
 			const children = go ? this.#syncViewItem(go).children : this.#ctrl.items;
 
-			// Delete unwanted items.
+			// Mark unwanted items.
 			const goChildren = [...this.#presenter.getChildren(go)];
 			const want = new Set(goChildren.map((x) => `${idFor(x)}`));
 			for (const [id, item] of children) {
 				if (!want.has(id)) {
-					this.#delete(item);
+					unwanted.set(item.id, item);
 				}
 			}
 
 			// Add missing items.
 			for (const go of goChildren) {
 				const id = `${idFor(go)}`;
+				unwanted.delete(id);
 				if (!children.get(id)) {
 					this.#syncViewItem(go);
 				}
 			}
 
-			if (opts.recurse === true) {
-				queue.push(...goChildren);
-			}
+			queue.push(...goChildren);
+		}
+
+		// Delete unwanted items.
+		for (const item of unwanted.values()) {
+			this.#delete(item);
 		}
 	}
 
@@ -313,6 +314,22 @@ export class ViewController extends Disposer {
 		for (const root of new Set([...updatedPkgs].map((x) => x.root))) {
 			for (const pkg of root.packages) {
 				if (updatedPkgs.has(pkg)) continue;
+
+				// Find the relevant view items and update this package's parent
+				// (and label). If the view items aren't present, fall back to a
+				// full refresh.
+				const view = this.#allItems.get(`${idFor(pkg)}`);
+				if (view) {
+					const parent = this.#presenter.getParent(pkg);
+					const parentView = parent && this.#allItems.get(`${idFor(parent)}`);
+					if (!parent || parentView) {
+						view.label = this.#presenter.labelFor(pkg);
+						if (parentView) parentView.children.add(view);
+						else this.#ctrl.items.add(view);
+						continue;
+					}
+				}
+
 				this.#syncViewItem(pkg);
 			}
 		}
@@ -348,12 +365,12 @@ export class ViewController extends Disposer {
 		// Update the view model. Because the presentation items for profiles
 		// don't actually exist in the data model, to make them appear we need
 		// to recursively update the scope and it's children.
-		this.#syncChildren(scope, { recurse: true });
+		this.#syncChildren(scope);
 
 		// Remove when the run is disposed.
 		if (event.run.onDidDispose) {
 			this.disposeOf = event.run.onDidDispose(() => {
-				this.#syncChildren(scope, { recurse: true });
+				this.#syncChildren(scope);
 			});
 		}
 	}
