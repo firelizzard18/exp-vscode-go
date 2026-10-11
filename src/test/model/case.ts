@@ -49,6 +49,28 @@ export class StaticTestCase extends TestCase {
 	 * @param src The data from gopls.
 	 * @param ranges Modified file ranges.
 	 * @returns Update events. See {@link ItemEvent}.
+	 *
+	 * TODO(hxjiang): Relying on whether edited file `ranges` fall within this
+	 * test function's `range` (`this.contains(x)`) to decide if a test is
+	 * `'modified'` vs `'moved'` is not a safe assumption. Changes outside a
+	 * test function's body can still alter its behavior and invalidate its
+	 * test result, for example:
+	 *
+	 * ```go
+	 * package math_test
+	 *
+	 * func util() int {
+	 *     return 42 // edited here, outside TestAdd and TestSubtract
+	 * }
+	 *
+	 * func TestAdd(t *testing.T) {
+	 *     if util() != 1 { t.Fail() }
+	 * }
+	 *
+	 * func TestSubtract(t *testing.T) {
+	 *     if util() != 2 { t.Fail() }
+	 * }
+	 * ```
 	 */
 	update(src: Commands.TestCase, ranges?: Range[]): Iterable<ItemEvent<TestCase>> {
 		const moved = !deepEqual(src, this.#src);
