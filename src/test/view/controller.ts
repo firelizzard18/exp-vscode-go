@@ -4,7 +4,15 @@ import { type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
 import { type TestController } from '@/utils/testing';
 
-import { type GoTestItem, type ItemEvent, type ModelController, StaticTestCase, TestCase, Workspace } from '../model';
+import {
+	type GoTestItem,
+	type ItemEvent,
+	type ModelController,
+	Package,
+	StaticTestCase,
+	TestCase,
+	Workspace,
+} from '../model';
 import { type RunEvent } from '../run/controller';
 import {
 	idFor,
@@ -21,6 +29,7 @@ export class ViewController extends Disposer {
 	readonly #model;
 	readonly #presenter;
 	readonly #ctrl;
+	readonly #allItems = new Map<string, TestItem>();
 
 	constructor(
 		context: Context,
@@ -181,14 +190,17 @@ export class ViewController extends Disposer {
 			// Check for an existing item.
 			const go = stack.pop()!;
 			const id = `${idFor(go)}`;
-			view = items.get(id);
+			view = this.#allItems.get(id);
 			if (!view) {
 				// Create a new one.
 				view = this.#ctrl.createTestItem(id, this.#presenter.labelFor(go), 'uri' in go ? go.uri : undefined);
-
-				// Add it to the parent's children.
-				items.add(view);
+				this.#allItems.set(id, view);
+			} else {
+				view.label = this.#presenter.labelFor(go);
 			}
+
+			// Add it to the parent's children.
+			items.add(view);
 
 			// Only set canResolveChildren if the item has children that should
 			// be lazily resolved.
@@ -265,6 +277,7 @@ export class ViewController extends Disposer {
 		} else {
 			this.#ctrl.items.delete(item.id);
 		}
+		this.#allItems.delete(item.id);
 	}
 
 	#onItemEvent(events: ItemEvent[]) {
@@ -286,6 +299,21 @@ export class ViewController extends Disposer {
 					if (view) this.#delete(view);
 					break;
 				}
+			}
+		}
+
+		// If we added or removed any packages, sync any other packages (from
+		// the same roots) to ensure they have the correct parent.
+		const updatedPkgs = new Set(
+			events
+				.filter((x): x is ItemEvent<Package> => x.item instanceof Package)
+				.filter((x) => x.type === 'added' || x.type === 'removed')
+				.map((x) => x.item),
+		);
+		for (const root of new Set([...updatedPkgs].map((x) => x.root))) {
+			for (const pkg of root.packages) {
+				if (updatedPkgs.has(pkg)) continue;
+				this.#syncViewItem(pkg);
 			}
 		}
 
