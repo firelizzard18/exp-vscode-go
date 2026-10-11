@@ -244,7 +244,19 @@ export class ModelController extends Disposer {
 
 		// Consolidate `foo` and `foo_test`.
 		const ws = root instanceof Workspace ? root : root.workspace;
-		const packages = this.#consolidatePackages(ws, r).filter((x) => x.TestFiles.length > 0);
+		let packages = this.#consolidatePackages(ws, r).filter((x) => x.TestFiles.length > 0);
+
+		// Exclude packages that are owned by modules that are within the
+		// workspace.
+		if (root instanceof Workspace) {
+			const owned = new Set(
+				Object.entries(r.Module ?? {})
+					.map(([path, mod]) => [path, Uri.joinPath(Uri.parse(mod.GoMod), '..')])
+					.filter(([, dir]) => `${ws.uri}/`.startsWith(`${dir}/`))
+					.map(([path]) => path),
+			);
+			packages = packages.filter((x) => !x.ModulePath || !owned.has(x.ModulePath));
+		}
 
 		// Update.
 		const updates = root.packages.update(
