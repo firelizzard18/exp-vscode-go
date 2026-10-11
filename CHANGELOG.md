@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.3.1
+
+This release primarily includes various changes for the purpose of creating a
+clear separation between the primary test explorer features and secondary
+features such as profiles and the profile viewer, as well as making the code
+easier to read.
+
+- The profile viewer now prompts the user to install `vscgo` instead of simply
+  failing.
+- Fixed various issues with dynamically discovered subtests.
+- Fixed a bug where a message that includes two paths (e.g. `foo.go:12:
+  bar.go:34: message`) would be attributed incorrectly.
+- Fixed a bug where it was not possible to debug tests when profiling is
+  enabled. Debug runs can no longer be profiled.
+- Fixed an issue where packages could appear under the workspace root instead of
+  under the module they belong to.
+- Fixed various issues where the test item tree was not correctly updated when
+  configuration options were changed.
+- Fixed an issue where relocated test items (e.g. due to a configuration change)
+  would destroy and recreate the test item instead of relocating it.
 
 ## v0.3.0
 
