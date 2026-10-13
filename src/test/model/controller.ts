@@ -3,7 +3,7 @@ import { type Event, EventEmitter, type Location, type Range, type TestRun, Uri,
 
 import { Commands, type Context } from '@/utils/common';
 import { Disposer } from '@/utils/disposable';
-import { WeakMapWithDefault } from '@/utils/map';
+import { MapWithDefault, WeakMapWithDefault } from '@/utils/map';
 import { pathContains } from '@/utils/util';
 
 import { type GoTestItem, type ItemEvent } from '.';
@@ -69,17 +69,13 @@ export class ModelController extends Disposer {
 
 	findTest(pkg: Package, query: Location | string): TestCase | undefined {
 		if (typeof query === 'string') {
-			for (const file of pkg.files) {
-				const test = file.tests.get(query);
-				if (test) return test;
-			}
-			return;
+			return pkg.findTest(query);
 		}
 
 		const file = pkg.files.get(`${query.uri}`);
 		if (!file) return;
 
-		for (const test of file.tests) {
+		for (const test of file.allTests()) {
 			if (test.range && test.range.contains(query.range)) {
 				return test;
 			}
@@ -295,15 +291,34 @@ export class ModelController extends Disposer {
 		return pkg.files.update(
 			files.filter((x) => x.Tests && x.Tests.length > 0),
 			(src) => new TestFile(pkg, src),
-			(src, file) =>
-				file.tests.update(
-					src.Tests ?? [],
-					(src) => new StaticTestCase(file, src),
-					(src, test) => (test instanceof StaticTestCase ? test.update(src, ranges?.[`${file.uri}`]) : []),
-					// Don't erase dynamic test cases.
-					(test) => test instanceof DynamicTestCase,
-				),
+			(src, file) => this.#updateTests(file, src.Tests ?? [], ranges?.[`${file.uri}`]),
 		);
+	}
+
+	/**
+	 * Updates the tests of a file. gopls reports tests as a flat list in which
+	 * static subtests are named `TestFoo/bar`; this nests each test under its
+	 * nearest parent in the list (or the file, if it has none).
+	 */
+	#updateTests(file: TestFile, tests: Commands.TestCase[], ranges?: Range[]) {
+		const names = new Set(tests.map((x) => x.Name));
+		const children = new MapWithDefault<string | undefined, Commands.TestCase[]>(() => []);
+		for (const test of tests) {
+			children.get(parentNameIn(names, test.Name)).push(test);
+		}
+
+		const update = (parent: TestFile | TestCase, name?: string): ItemEvent<TestCase>[] =>
+			parent.tests.update(
+				children.get(name),
+				(src) => new StaticTestCase(parent, src),
+				(src, test) => [
+					...(test instanceof StaticTestCase ? test.update(src, ranges) : []),
+					...update(test, src.Name),
+				],
+				// Don't erase dynamic test cases.
+				(test) => test instanceof DynamicTestCase,
+			);
+		return update(file);
 	}
 
 	/**
@@ -384,9 +399,9 @@ export class ModelController extends Disposer {
 				if (!parent) break;
 
 				const child = new DynamicTestCase(parent, name);
-				parent.file.tests.add(child);
+				parent.tests.add(child);
 				this.#testRuns.get(run).add(child);
-				this.#didUpdate.fire([{ item: child, type: 'added', to: parent.file }]);
+				this.#didUpdate.fire([{ item: child, type: 'added', to: parent }]);
 				break;
 			}
 
@@ -399,30 +414,25 @@ export class ModelController extends Disposer {
 		}
 	}
 
+	/**
+	 * Removes dynamic tests matching the predicate, along with their subtrees.
+	 * Emits a `removed` event for every test removed, parents first.
+	 */
 	#removeDynamicTests(pkg: Package, predicate: (test: DynamicTestCase) => boolean): void {
-		// Find all the directly matching dynamic test cases.
-		const toRemove = new Set(
-			[...pkg.files]
-				.flatMap((file) => [...file.tests])
-				.filter((test) => test instanceof DynamicTestCase && predicate(test)),
-		);
-
-		// Find all their children.
-		const prefixes = [...toRemove].map((x) => `${x.name}/`);
-		for (const file of pkg.files) {
-			for (const test of file.tests) {
-				if (test instanceof DynamicTestCase && prefixes.some((x) => test.name.startsWith(x))) {
-					toRemove.add(test);
+		const updates: ItemEvent<TestCase>[] = [];
+		const visit = (parent: TestFile | TestCase) => {
+			for (const test of [...parent.tests]) {
+				if (test instanceof DynamicTestCase && predicate(test)) {
+					parent.tests.remove(test);
+					for (const removed of [test, ...test.allTests()]) {
+						updates.push({ item: removed, type: 'removed', from: removed.parent });
+					}
+				} else {
+					visit(test);
 				}
 			}
-		}
-
-		// Remove them.
-		const updates: ItemEvent<TestCase>[] = [];
-		for (const test of toRemove) {
-			test.file.tests.remove(test);
-			updates.push({ item: test, type: 'removed', from: test.file });
-		}
+		};
+		for (const file of pkg.files) visit(file);
 
 		// Notify listeners.
 		this.#didUpdate.fire(updates);
@@ -435,13 +445,18 @@ export class ModelController extends Disposer {
 function covers(set: Set<TestCase>, test: TestCase) {
 	for (;;) {
 		if (set.has(test)) return test;
+		if (test.parent.kind === 'file') return;
+		test = test.parent;
+	}
+}
 
-		const i = test.name.lastIndexOf('/');
-		if (i < 0) return;
-		const name = test.name.substring(0, i);
-
-		const parent = [...test.file.tests].find((t) => t.name === name);
-		if (!parent) return;
-		test = parent;
+/**
+ * Returns the longest proper prefix of `name` (split on `/`) that is in
+ * `names`, or undefined if there is none.
+ */
+function parentNameIn(names: Set<string>, name: string): string | undefined {
+	for (let i = name.lastIndexOf('/'); i > 0; i = name.lastIndexOf('/', i - 1)) {
+		const prefix = name.substring(0, i);
+		if (names.has(prefix)) return prefix;
 	}
 }

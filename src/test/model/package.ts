@@ -5,6 +5,7 @@ import { type Commands } from '@/utils/common';
 import { isRelativePath } from '@/utils/util';
 
 import type { Module, TestFile, Workspace } from '.';
+import { findParentTest, findTestByName } from './case';
 import { ItemSet } from './set';
 
 export class Package {
@@ -57,26 +58,26 @@ export class Package {
 		return `${this.uri}` === `${this.root.dir}`;
 	}
 
+	/** Yields every test in the package, including nested subtests. */
 	*allTests() {
 		for (const file of this.files) {
-			yield* file.tests;
+			yield* file.allTests();
 		}
 	}
 
-	/**
-	 * Searches a set of tests for a test case that is the parent of the given
-	 * test name.
-	 */
+	/** Finds a test in the package by its full name. */
+	findTest(name: string) {
+		for (const file of this.files) {
+			const test = findTestByName(file.tests, name);
+			if (test) return test;
+		}
+	}
+
+	/** Finds the nearest existing ancestor of a test name. */
 	findParent(name: string) {
-		for (;;) {
-			const i = name.lastIndexOf('/');
-			if (i < 0) return;
-			name = name.substring(0, i);
-			for (const test of this.allTests()) {
-				if (test.name === name) {
-					return test;
-				}
-			}
+		for (const file of this.files) {
+			const test = findParentTest(file.tests, name);
+			if (test) return test;
 		}
 	}
 }

@@ -4,19 +4,41 @@ import { Range, Uri } from 'vscode';
 import { type Commands } from '@/utils/common';
 
 import type { ItemEvent, TestFile } from '.';
+import { ItemSet } from './set';
 
+/**
+ * A test, benchmark, fuzz test, or example. Subtests are children of their
+ * parent test, mirroring `go test`: `TestFoo/bar` is a child of `TestFoo`.
+ */
 export abstract class TestCase {
 	readonly kind;
-	readonly file;
+	readonly parent: TestFile | TestCase;
 	readonly uri;
 	readonly name;
+	/** Subtests, keyed by their full name (e.g. `TestFoo/bar`). */
+	readonly tests = new ItemSet<TestCase>();
 	abstract readonly range?: Range;
 
-	constructor(file: TestFile, uri: Uri, kind: 'test' | 'benchmark' | 'fuzz' | 'example', name: string) {
-		this.file = file;
+	constructor(parent: TestFile | TestCase, uri: Uri, kind: 'test' | 'benchmark' | 'fuzz' | 'example', name: string) {
+		this.parent = parent;
 		this.uri = uri;
 		this.kind = kind;
 		this.name = name;
+	}
+
+	/** The file the test (or its top-level ancestor) is declared in. */
+	get file(): TestFile {
+		let p = this.parent;
+		while (p.kind !== 'file') p = p.parent;
+		return p;
+	}
+
+	/** Yields every descendant subtest, depth first. */
+	*allTests(): Iterable<TestCase> {
+		for (const test of this.tests) {
+			yield test;
+			yield* test.allTests();
+		}
 	}
 
 	static keyOf(x: Commands.TestCase) {
@@ -32,9 +54,9 @@ export class StaticTestCase extends TestCase {
 	range?: Range;
 	#src;
 
-	constructor(file: TestFile, test: Commands.TestCase) {
+	constructor(parent: TestFile | TestCase, test: Commands.TestCase) {
 		const kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase();
-		super(file, Uri.parse(test.Loc.uri), kind as TestCase['kind'], test.Name);
+		super(parent, Uri.parse(test.Loc.uri), kind as TestCase['kind'], test.Name);
 		this.#src = test;
 		this.range = new Range(
 			test.Loc.range.start.line,
@@ -114,6 +136,32 @@ export class DynamicTestCase extends TestCase {
 	readonly range: undefined;
 
 	constructor(parent: TestCase, name: string) {
-		super(parent.file, parent.uri, parent.kind, name);
+		super(parent, parent.uri, parent.kind, name);
+	}
+}
+
+/**
+ * Finds a test by name within a set of tests and their descendants. Descends
+ * by longest matching name prefix, so `TestFoo/a/b` is found under `TestFoo`
+ * even if `TestFoo/a` does not exist.
+ */
+export function findTestByName(tests: ItemSet<TestCase>, name: string): TestCase | undefined {
+	const exact = tests.get(name);
+	if (exact) return exact;
+
+	for (let i = name.lastIndexOf('/'); i > 0; i = name.lastIndexOf('/', i - 1)) {
+		const ancestor = tests.get(name.substring(0, i));
+		if (ancestor) return findTestByName(ancestor.tests, name);
+	}
+}
+
+/**
+ * Finds the nearest existing ancestor of a test name, e.g. `TestFoo/a/b` →
+ * `TestFoo/a` if it exists, otherwise `TestFoo`.
+ */
+export function findParentTest(tests: ItemSet<TestCase>, name: string): TestCase | undefined {
+	for (let i = name.lastIndexOf('/'); i > 0; i = name.lastIndexOf('/', i - 1)) {
+		const parent = findTestByName(tests, name.substring(0, i));
+		if (parent) return parent;
 	}
 }

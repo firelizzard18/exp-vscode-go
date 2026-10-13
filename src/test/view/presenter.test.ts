@@ -195,7 +195,11 @@ describe('ModelViewPresenter — nestSubtests', () => {
 		const pkg = [...mod.packages][0]!;
 		const file = [...pkg.files][0]!;
 		const parent = [...file.tests].find((t) => t.name === 'TestParent')!;
-		const sub = [...file.tests].find((t) => t.name === 'TestParent/Sub')!;
+		const sub = [...file.allTests()].find((t) => t.name === 'TestParent/Sub')!;
+
+		// Static subtests arrive from gopls as a flat list; the model nests them.
+		expect(sub.parent).toBe(parent);
+		expect([...file.tests]).not.toContain(sub);
 
 		expect(presenter.getParent(sub)).toBe(parent);
 
@@ -222,7 +226,7 @@ describe('ModelViewPresenter — nestSubtests', () => {
 		const pkg = [...mod.packages][0]!;
 		const file = [...pkg.files][0]!;
 		const parent = [...file.tests].find((t) => t.name === 'TestParent')!;
-		const sub = [...file.tests].find((t) => t.name === 'TestParent/Sub')!;
+		const sub = [...file.allTests()].find((t) => t.name === 'TestParent/Sub')!;
 
 		// With showFiles=false and a root package, asPresented(file) collapses to
 		// the module. So the parent of sub (with nestSubtests=false) is the module.
@@ -282,7 +286,7 @@ describe('ModelViewPresenter — labelFor', () => {
 
 		const pkg = [...mod.packages][0]!;
 		const file = [...pkg.files][0]!;
-		const sub = [...file.tests].find((t) => t.name === 'TestParent/Sub')!;
+		const sub = [...file.allTests()].find((t) => t.name === 'TestParent/Sub')!;
 
 		expect(presenter.labelFor(sub)).toBe('Sub');
 	});

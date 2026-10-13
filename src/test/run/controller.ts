@@ -366,7 +366,7 @@ function mapTestsByPackage(items: Iterable<GoTestItem>) {
 	const map = new MapWithDefault<Package, TestCase[]>(() => []);
 	for (const item of items) {
 		if (item.kind === 'file') {
-			map.get(item.package).push(...item.tests);
+			map.get(item.package).push(...item.allTests());
 		}
 		if (item instanceof TestCase) {
 			map.get(item.file.package).push(item);
