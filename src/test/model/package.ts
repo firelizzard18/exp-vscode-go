@@ -4,7 +4,7 @@ import { Uri } from 'vscode';
 import { type Commands } from '@/utils/common';
 import { isRelativePath } from '@/utils/util';
 
-import { DumpedPackage, Module, TestFile, Workspace } from '.';
+import { type DumpedPackage, Module, type TestFile, type Workspace } from '.';
 import { ItemSet } from './set';
 
 export class Package {

@@ -1,18 +1,14 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import path from 'node:path';
-import { CancellationTokenSource, EventEmitter, TestRunProfileKind, TestRunRequest, Uri } from 'vscode';
+import { EventEmitter, TestRunRequest, Uri } from 'vscode';
 
-import lokiDump from '../../../test/testdata/loki.json';
-import { TestHost, TestWorkspace } from '../../../test/utils/host';
+import { MockTestRunRequest, TestHost, TestWorkspace, withConfiguration } from '../../../test/utils/host';
 import { FakeCommands, modulePackagesResult, moduleResult } from '../../../test/utils/model';
 import { type Spawner } from '../../utils/spawn';
 import { WorkspaceConfig } from '../config';
-import { DumpedWorkspace, loadDataModel, ModelController } from '../model';
+import { ModelController } from '../model';
 import { Package } from '../model/package';
-import { ViewController } from '../view/controller';
-import { ModelViewPresenter } from '../view/presenter';
-import { RunConfig } from './config';
-import { newGoTestRequest, RunController, shouldRunBenchmarks, type RunEvent } from './controller';
+import { newGoTestRequest, shouldRunBenchmarks, type RunEvent } from './controller';
 
 const WS_URI = 'file:///workspace';
 const MOD_PATH = 'foo';
@@ -205,63 +201,55 @@ describe('newGoTestRequest', () => {
 });
 
 describe('Run controller (loki)', () => {
-	const workspaces = lokiDump.map((x) =>
-		loadDataModel(
-			{
-				workspace: {
-					getWorkspaceFolder(uri) {
-						return {
-							index: 0,
-							name: `${uri}`,
-							uri,
-						};
-					},
-				},
-			},
-			x as unknown as DumpedWorkspace,
-		),
-	);
+	it('runs all tests (packages: flat)', async () => {
+		const host = await TestHost.loadDump(
+			__dirname + '/../../../test/testdata/loki.json',
+			withConfiguration({ nestPackages: false }),
+		);
+		const spawns = await captureSpawns(host, new MockTestRunRequest());
 
-	const host = TestHost.create();
-	host.workspace.workspaceFolders.push(...workspaces.map((x) => x.ws));
+		const packages = spawns.map((x) =>
+			path.basename(x.location.fsPath) === 'go.mod' ? path.dirname(x.location.fsPath) : x.location.fsPath,
+		);
+		expect(packages.sort()).toEqual(
+			[...host.model.workspaces]
+				.flatMap((x): Package[] => [...x.packages, ...[...x.modules].flatMap((x) => [...x.packages])])
+				.map((x) => x.uri.fsPath)
+				.sort(),
+		);
+	});
 
-	const spawn = jest.fn<Spawner>(() => Promise.resolve({ code: 0, signal: null }));
-	host.spawn = spawn;
+	it('runs all tests (packages: nested)', async () => {
+		const host = await TestHost.loadDump(
+			__dirname + '/../../../test/testdata/loki.json',
+			withConfiguration({ nestPackages: true }),
+		);
+		const spawns = await captureSpawns(host, new MockTestRunRequest());
 
-	const runEvents = new EventEmitter<RunEvent>();
-	const config = new WorkspaceConfig(host.workspace);
-	const model = new ModelController(host, config, runEvents.event);
-	for (const ws of workspaces) {
-		model.workspaces.add(ws);
-	}
-
-	const presenter = new ModelViewPresenter(config, model, runEvents.event);
-	const resolver = new ViewController(host, model, presenter, host.controller, runEvents.event);
-	const runConfig = new RunConfig(host, 'Run', TestRunProfileKind.Run);
-	const token = new CancellationTokenSource().token;
-	const runner = new RunController(host, config, host.controller, runConfig, token, resolver, model, runEvents);
-
-	it('runs all tests', async () => {
-		const packages = new Set(workspaces.flatMap((x) => [...x.allPackages()]));
-		await runner.run(newGoTestRequest(new TestRunRequest(), packages, new Set(workspaces), new Set()));
-
-		const ran = spawn.mock.calls.map((x) => './' + path.relative(workspaces[0].dir.fsPath, x[7].cwd!));
-		expect(ran.sort()).toEqual([
-			'./',
-			'./2d/geometry',
-			'./2d/terrain',
-			'./2d/world',
-			'./examples/bunnymark',
-			'./examples/pong',
-			'./internal',
-			'./internal/bitset',
-			'./multiplayer',
-			'./multiplayer/eventlog',
-			'./query',
-			'./store',
-			'./store/ops',
-			'./store/v0',
-			'./store/v1',
-		]);
+		const packages = spawns.map((x) =>
+			path.basename(x.location.fsPath) === 'go.mod' ? path.dirname(x.location.fsPath) : x.location.fsPath,
+		);
+		expect(packages.sort()).toEqual(
+			[...host.model.workspaces]
+				.flatMap((x): Package[] => [...x.packages, ...[...x.modules].flatMap((x) => [...x.packages])])
+				.map((x) => x.uri.fsPath)
+				.sort(),
+		);
 	});
 });
+
+async function captureSpawns(host: TestHost, rq: MockTestRunRequest) {
+	const spawn = jest.fn<Spawner>(() => Promise.resolve({ code: 0, signal: null }));
+
+	host.spawn = spawn;
+	host.manager.runTests(rq);
+	await rq.done;
+
+	return spawn.mock.calls.map(([, , location, , flags, userFlags, args, options]) => ({
+		location,
+		flags,
+		userFlags,
+		args,
+		options,
+	}));
+}

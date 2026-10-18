@@ -1,11 +1,11 @@
 [
     {
         "kind": "workspace",
-        "ws": "file:///home/firelizzard/src/game/loki",
+        "ws": "file:///",
         "modules": [
             {
                 "kind": "module",
-                "GoMod": "file:///home/firelizzard/src/game/loki/go.mod",
+                "GoMod": "file:///go.mod",
                 "Path": "codeberg.org/firelizzard/loki",
                 "packages": [
                     {
@@ -15,13 +15,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/v1/query_test.go",
+                                "URI": "file:///store/v1/query_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestReadNext",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/query_test.go",
+                                            "uri": "file:///store/v1/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 27,
@@ -38,7 +38,7 @@
                                         "kind": "test",
                                         "Name": "TestReadCachedChunk",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/query_test.go",
+                                            "uri": "file:///store/v1/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 44,
@@ -55,7 +55,7 @@
                                         "kind": "test",
                                         "Name": "TestIterateAllRows",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/query_test.go",
+                                            "uri": "file:///store/v1/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 76,
@@ -72,13 +72,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/v1/store_test.go",
+                                "URI": "file:///store/v1/store_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestStore",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/store_test.go",
+                                            "uri": "file:///store/v1/store_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 9,
@@ -95,13 +95,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                "URI": "file:///store/v1/view_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestNestedCommitKeepsEarlierWrites",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 11,
@@ -118,7 +118,7 @@
                                         "kind": "test",
                                         "Name": "TestNestedBeginDoesNotLeakIntoParent",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 24,
@@ -135,7 +135,7 @@
                                         "kind": "test",
                                         "Name": "TestNestedRollbackAfterBegin",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 34,
@@ -152,7 +152,7 @@
                                         "kind": "test",
                                         "Name": "TestNestedCommitWithSibling",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 45,
@@ -169,7 +169,7 @@
                                         "kind": "test",
                                         "Name": "TestCommitInvalidatesParentMerged",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 59,
@@ -186,7 +186,7 @@
                                         "kind": "test",
                                         "Name": "TestChildBeginDoesNotCorruptParentMerged",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 73,
@@ -203,7 +203,7 @@
                                         "kind": "test",
                                         "Name": "TestChildSnapshotIsolatedFromParentWrites",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 86,
@@ -220,7 +220,7 @@
                                         "kind": "test",
                                         "Name": "TestViewIterate",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 98,
@@ -237,7 +237,7 @@
                                         "kind": "test",
                                         "Name": "TestStaleRecycle",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 131,
@@ -254,7 +254,7 @@
                                         "kind": "test",
                                         "Name": "TestIterOverwrite",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 162,
@@ -271,7 +271,7 @@
                                         "kind": "test",
                                         "Name": "TestBeginReleasesOwnDelta",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 177,
@@ -288,7 +288,7 @@
                                         "kind": "test",
                                         "Name": "TestCloneSharedFree",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v1/view_test.go",
+                                            "uri": "file:///store/v1/view_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 197,
@@ -312,13 +312,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/examples/bunnymark/main_test.go",
+                                "URI": "file:///examples/bunnymark/main_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestOne",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/examples/bunnymark/main_test.go",
+                                            "uri": "file:///examples/bunnymark/main_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 15,
@@ -335,7 +335,7 @@
                                         "kind": "test",
                                         "Name": "TestMany",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/examples/bunnymark/main_test.go",
+                                            "uri": "file:///examples/bunnymark/main_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 30,
@@ -352,7 +352,7 @@
                                         "kind": "test",
                                         "Name": "TestManyNoGraphics",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/examples/bunnymark/main_test.go",
+                                            "uri": "file:///examples/bunnymark/main_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 46,
@@ -376,13 +376,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                "URI": "file:///store/ops/all_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 11,
@@ -399,7 +399,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Last_row_has_multiple_slots",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 20,
@@ -416,7 +416,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Last_row_has_multiple_slots,_previous_row_unmatched",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 39,
@@ -433,7 +433,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/First_row_has_multiple_slots",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 54,
@@ -450,7 +450,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Slot_0_unpopulated",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 73,
@@ -467,7 +467,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Gap_row_between_matches",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 87,
@@ -484,7 +484,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Trailing_S-only_rows",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 107,
@@ -501,7 +501,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Trailing_A-only_rows",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 124,
@@ -518,7 +518,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/No_S",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 140,
@@ -535,7 +535,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/No_A",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 148,
@@ -552,7 +552,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlotted/Sparse_row_ids",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 158,
@@ -569,7 +569,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlottedSlotted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 184,
@@ -586,7 +586,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlottedSlotted/T_has_2,_S_has_3",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 193,
@@ -603,7 +603,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlottedSlotted/T_has_3,_S_has_2",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 210,
@@ -620,7 +620,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlottedSlotted/Carry-over_does_not_leak_across_rows",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 227,
@@ -637,7 +637,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlottedSlotted/Last_row_carries_over",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 255,
@@ -654,7 +654,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfSlottedSlotted/Unmatched_rows",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 277,
@@ -671,7 +671,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOfOptionalSlotted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 300,
@@ -688,7 +688,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf3Slotted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/all_test.go",
+                                            "uri": "file:///store/ops/all_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 330,
@@ -705,13 +705,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/ops/any_test.go",
+                                "URI": "file:///store/ops/any_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestAnyOfSlotPriority",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/any_test.go",
+                                            "uri": "file:///store/ops/any_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 16,
@@ -728,7 +728,7 @@
                                         "kind": "test",
                                         "Name": "TestAnyOfNarrowThenAll",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/any_test.go",
+                                            "uri": "file:///store/ops/any_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 128,
@@ -745,7 +745,7 @@
                                         "kind": "test",
                                         "Name": "TestAnyOfAllFirst",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/any_test.go",
+                                            "uri": "file:///store/ops/any_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 198,
@@ -762,7 +762,7 @@
                                         "kind": "test",
                                         "Name": "TestAnyOfAllFirst/Narrow_operand_behind",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/any_test.go",
+                                            "uri": "file:///store/ops/any_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 201,
@@ -779,7 +779,7 @@
                                         "kind": "test",
                                         "Name": "TestAnyOfAllFirst/Same_operand_twice",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/any_test.go",
+                                            "uri": "file:///store/ops/any_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 219,
@@ -796,13 +796,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                "URI": "file:///store/ops/query_test.go",
                                 "tests": [
                                     {
                                         "kind": "benchmark",
                                         "Name": "BenchmarkOperations",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 90,
@@ -819,7 +819,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 118,
@@ -836,7 +836,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/Read",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 124,
@@ -853,7 +853,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/Without",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 134,
@@ -870,7 +870,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/Empty_slot",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 149,
@@ -887,7 +887,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/Filled_slot",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 155,
@@ -904,7 +904,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/ReadAll",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 163,
@@ -921,7 +921,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/ReadSlots",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 173,
@@ -938,7 +938,7 @@
                                         "kind": "test",
                                         "Name": "TestOperations/Merge-join_slots",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 189,
@@ -955,7 +955,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 203,
@@ -972,7 +972,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Unmatched",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 216,
@@ -989,7 +989,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Unmatched/Next",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 224,
@@ -1006,7 +1006,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Unmatched/NextBatch",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 230,
@@ -1023,7 +1023,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Matched",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 237,
@@ -1040,7 +1040,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Matched/Next",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 246,
@@ -1057,7 +1057,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Matched/NextBatch",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 256,
@@ -1074,7 +1074,7 @@
                                         "kind": "test",
                                         "Name": "TestAllOf/Optional",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/ops/query_test.go",
+                                            "uri": "file:///store/ops/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 265,
@@ -1098,13 +1098,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/2d/terrain/bvh_test.go",
+                                "URI": "file:///2d/terrain/bvh_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestBVH_Query",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/bvh_test.go",
+                                            "uri": "file:///2d/terrain/bvh_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 8,
@@ -1121,7 +1121,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkBVH_New",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/bvh_test.go",
+                                            "uri": "file:///2d/terrain/bvh_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 78,
@@ -1138,7 +1138,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkBVH_Query",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/bvh_test.go",
+                                            "uri": "file:///2d/terrain/bvh_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 91,
@@ -1155,13 +1155,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/2d/terrain/collider_test.go",
+                                "URI": "file:///2d/terrain/collider_test.go",
                                 "tests": [
                                     {
                                         "kind": "benchmark",
                                         "Name": "BenchmarkCollider_NewN",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/collider_test.go",
+                                            "uri": "file:///2d/terrain/collider_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 10,
@@ -1178,7 +1178,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkCollider_Collides",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/collider_test.go",
+                                            "uri": "file:///2d/terrain/collider_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 23,
@@ -1195,7 +1195,7 @@
                                         "kind": "test",
                                         "Name": "TestCollider_Collides",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/collider_test.go",
+                                            "uri": "file:///2d/terrain/collider_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 44,
@@ -1212,13 +1212,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/2d/terrain/dungeon_test.go",
+                                "URI": "file:///2d/terrain/dungeon_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestDungeon_BlockAt",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/dungeon_test.go",
+                                            "uri": "file:///2d/terrain/dungeon_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 11,
@@ -1235,7 +1235,7 @@
                                         "kind": "test",
                                         "Name": "TestDungeon_Collides",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/terrain/dungeon_test.go",
+                                            "uri": "file:///2d/terrain/dungeon_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 62,
@@ -1259,13 +1259,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/multiplayer/eventlog/log_test.go",
+                                "URI": "file:///multiplayer/eventlog/log_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestLog_Since",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/eventlog/log_test.go",
+                                            "uri": "file:///multiplayer/eventlog/log_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 22,
@@ -1282,7 +1282,7 @@
                                         "kind": "test",
                                         "Name": "TestLog_Since/EmptyFrontier",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/eventlog/log_test.go",
+                                            "uri": "file:///multiplayer/eventlog/log_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 24,
@@ -1299,7 +1299,7 @@
                                         "kind": "test",
                                         "Name": "TestLog_Since/RootFrontier",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/eventlog/log_test.go",
+                                            "uri": "file:///multiplayer/eventlog/log_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 31,
@@ -1316,7 +1316,7 @@
                                         "kind": "test",
                                         "Name": "TestLog_Since/OneBranch",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/eventlog/log_test.go",
+                                            "uri": "file:///multiplayer/eventlog/log_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 42,
@@ -1333,7 +1333,7 @@
                                         "kind": "test",
                                         "Name": "TestLog_Since/FullFrontier",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/eventlog/log_test.go",
+                                            "uri": "file:///multiplayer/eventlog/log_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 49,
@@ -1357,13 +1357,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                "URI": "file:///multiplayer/connect_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestMessage",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 25,
@@ -1380,7 +1380,7 @@
                                         "kind": "test",
                                         "Name": "TestHandshake",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 41,
@@ -1397,7 +1397,7 @@
                                         "kind": "test",
                                         "Name": "TestHandshakeDuplicate",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 65,
@@ -1414,7 +1414,7 @@
                                         "kind": "test",
                                         "Name": "TestDialTimeout",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 111,
@@ -1431,7 +1431,7 @@
                                         "kind": "test",
                                         "Name": "TestAcceptTimeout",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 133,
@@ -1448,7 +1448,7 @@
                                         "kind": "test",
                                         "Name": "TestDialTimeoutCleanShutdown",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 155,
@@ -1465,7 +1465,7 @@
                                         "kind": "test",
                                         "Name": "TestAcceptTimeoutCleanShutdown",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 174,
@@ -1482,7 +1482,7 @@
                                         "kind": "test",
                                         "Name": "TestBadConnection",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 192,
@@ -1499,7 +1499,7 @@
                                         "kind": "test",
                                         "Name": "TestDeadConnection",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/connect_test.go",
+                                            "uri": "file:///multiplayer/connect_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 208,
@@ -1516,13 +1516,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                "URI": "file:///multiplayer/datagram_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestDatagram",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 16,
@@ -1539,7 +1539,7 @@
                                         "kind": "test",
                                         "Name": "TestDatagram/Conn",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 19,
@@ -1556,7 +1556,7 @@
                                         "kind": "test",
                                         "Name": "TestDatagram/ShortBuffer",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 39,
@@ -1573,7 +1573,7 @@
                                         "kind": "test",
                                         "Name": "TestDatagram/InvalidAddr",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 55,
@@ -1590,7 +1590,7 @@
                                         "kind": "test",
                                         "Name": "TestDatagram/NoRoute",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 66,
@@ -1607,7 +1607,7 @@
                                         "kind": "test",
                                         "Name": "TestDatagram/ReadDeadline",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 75,
@@ -1624,7 +1624,7 @@
                                         "kind": "test",
                                         "Name": "TestDatagram/Close",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/datagram_test.go",
+                                            "uri": "file:///multiplayer/datagram_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 90,
@@ -1641,13 +1641,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                "URI": "file:///multiplayer/engine_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestSinglePeerTick",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 27,
@@ -1664,7 +1664,7 @@
                                         "kind": "test",
                                         "Name": "TestSinglePeerConsecutiveTicks",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 48,
@@ -1681,7 +1681,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoPeerAccept",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 66,
@@ -1698,7 +1698,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoPeerTick",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 86,
@@ -1715,7 +1715,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoPeerTickBlocking",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 107,
@@ -1732,7 +1732,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoPeerConsecutiveTicks",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 144,
@@ -1749,7 +1749,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoPeerGameIntents",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 168,
@@ -1766,7 +1766,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoAndTwoMerge",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 205,
@@ -1783,7 +1783,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoAndTwoInvalidMerge",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 262,
@@ -1800,7 +1800,7 @@
                                         "kind": "test",
                                         "Name": "TestThreePeerTick",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 315,
@@ -1817,7 +1817,7 @@
                                         "kind": "test",
                                         "Name": "TestJoinAfterTick",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 354,
@@ -1834,7 +1834,7 @@
                                         "kind": "test",
                                         "Name": "TestJoinAfterTick2",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 431,
@@ -1851,7 +1851,7 @@
                                         "kind": "test",
                                         "Name": "TestTwoPeerPause",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 481,
@@ -1868,7 +1868,7 @@
                                         "kind": "test",
                                         "Name": "TestRejectPeerConsensus",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/engine_test.go",
+                                            "uri": "file:///multiplayer/engine_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 538,
@@ -1885,13 +1885,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/multiplayer/http_test.go",
+                                "URI": "file:///multiplayer/http_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestHTTP",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/http_test.go",
+                                            "uri": "file:///multiplayer/http_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 13,
@@ -1908,7 +1908,7 @@
                                         "kind": "test",
                                         "Name": "TestHTTP/Specific",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/http_test.go",
+                                            "uri": "file:///multiplayer/http_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 14,
@@ -1925,7 +1925,7 @@
                                         "kind": "test",
                                         "Name": "TestHTTP/Broadcast",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/multiplayer/http_test.go",
+                                            "uri": "file:///multiplayer/http_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 42,
@@ -1949,13 +1949,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/examples/pong/main_test.go",
+                                "URI": "file:///examples/pong/main_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "Test",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/examples/pong/main_test.go",
+                                            "uri": "file:///examples/pong/main_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 10,
@@ -1979,13 +1979,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/v0/pkg_test.go",
+                                "URI": "file:///store/v0/pkg_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestStore",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/v0/pkg_test.go",
+                                            "uri": "file:///store/v0/pkg_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 8,
@@ -2009,13 +2009,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                "URI": "file:///query/query_test.go",
                                 "tests": [
                                     {
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 88,
@@ -2032,7 +2032,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/Single",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 98,
@@ -2049,7 +2049,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/Multi",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 104,
@@ -2066,7 +2066,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 114,
@@ -2083,7 +2083,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Attribute",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 120,
@@ -2100,7 +2100,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Behavior",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 127,
@@ -2117,7 +2117,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Calculated",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 134,
@@ -2134,7 +2134,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Default",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 144,
@@ -2151,7 +2151,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Optional",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 152,
@@ -2168,7 +2168,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/OptionalValue",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 160,
@@ -2185,7 +2185,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 173,
@@ -2202,7 +2202,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted/Default",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 174,
@@ -2219,7 +2219,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted/Empty",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 181,
@@ -2236,7 +2236,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted/Other",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 188,
@@ -2253,7 +2253,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted/Iterate",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 201,
@@ -2270,7 +2270,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted/Iterate-Join",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 212,
@@ -2287,7 +2287,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Slotted/Optional",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 221,
@@ -2304,7 +2304,7 @@
                                         "kind": "test",
                                         "Name": "TestQuery/Without_behavior",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 230,
@@ -2321,7 +2321,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 238,
@@ -2338,7 +2338,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Attribute",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 244,
@@ -2355,7 +2355,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Attribute2",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 251,
@@ -2372,7 +2372,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Behavior",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 258,
@@ -2389,7 +2389,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Calculated",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 265,
@@ -2406,7 +2406,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Default",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 272,
@@ -2423,7 +2423,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Optional",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 282,
@@ -2440,7 +2440,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Slotted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 303,
@@ -2457,7 +2457,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Slotted/Default",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 304,
@@ -2474,7 +2474,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Slotted/Any_slot",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 311,
@@ -2491,7 +2491,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Without_behavior",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 321,
@@ -2508,7 +2508,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/All",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 330,
@@ -2525,7 +2525,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/All2",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 338,
@@ -2542,7 +2542,7 @@
                                         "kind": "test",
                                         "Name": "TestTypedQuery/Get",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/query/query_test.go",
+                                            "uri": "file:///query/query_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 350,
@@ -2566,13 +2566,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/rows_test.go",
+                                "URI": "file:///store/rows_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestRowCursor",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/rows_test.go",
+                                            "uri": "file:///store/rows_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 8,
@@ -2589,7 +2589,7 @@
                                         "kind": "test",
                                         "Name": "TestRowRank",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/rows_test.go",
+                                            "uri": "file:///store/rows_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 31,
@@ -2606,13 +2606,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/persist_test.go",
+                                "URI": "file:///store/persist_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestPersistence",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/persist_test.go",
+                                            "uri": "file:///store/persist_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 95,
@@ -2629,7 +2629,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkPersistence",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/persist_test.go",
+                                            "uri": "file:///store/persist_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 123,
@@ -2646,13 +2646,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                "URI": "file:///store/row_set_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestRowSet_SetGet",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 10,
@@ -2669,7 +2669,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_GetMissing",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 19,
@@ -2686,7 +2686,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_UpdateInPlace",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 27,
@@ -2703,7 +2703,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_SequentialInserts",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 38,
@@ -2720,7 +2720,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_Clear",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 51,
@@ -2737,7 +2737,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_ClearMissing",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 63,
@@ -2754,7 +2754,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_ClearThenSet",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 71,
@@ -2771,7 +2771,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_SizeAfterClear",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 84,
@@ -2788,7 +2788,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_OutOfOrderMarksUnsorted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 95,
@@ -2805,7 +2805,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_OutOfOrderUpdateDoesNotMarkUnsorted",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 107,
@@ -2822,7 +2822,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_Sort",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 122,
@@ -2839,7 +2839,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_SortIdempotent",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 135,
@@ -2856,7 +2856,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_IterateSkipsCleared",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 148,
@@ -2873,7 +2873,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_IterateEmpty",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 161,
@@ -2890,7 +2890,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_IterateAfterSort",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 169,
@@ -2907,7 +2907,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_FindViaRank",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 183,
@@ -2924,7 +2924,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_FindViaBinarySearch",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 197,
@@ -2941,7 +2941,7 @@
                                         "kind": "test",
                                         "Name": "TestRowSet_RowsIterator",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/store/row_set_test.go",
+                                            "uri": "file:///store/row_set_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 213,
@@ -2965,13 +2965,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                "URI": "file:///bench_test.go",
                                 "tests": [
                                     {
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 45,
@@ -2988,7 +2988,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/Read",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 46,
@@ -3005,7 +3005,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/AllOf2",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 55,
@@ -3022,7 +3022,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/AllOf3Optional",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 66,
@@ -3039,7 +3039,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/SelectChain",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 80,
@@ -3056,7 +3056,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/Layered",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 105,
@@ -3073,7 +3073,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkQuery/SparseIDs",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 116,
@@ -3090,7 +3090,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkTick",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 129,
@@ -3107,7 +3107,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkTick/Write",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 130,
@@ -3124,7 +3124,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkUpdate",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 199,
@@ -3141,7 +3141,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkUpdateTick",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 237,
@@ -3158,7 +3158,7 @@
                                         "kind": "benchmark",
                                         "Name": "BenchmarkUpdateBegin",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/bench_test.go",
+                                            "uri": "file:///bench_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 251,
@@ -3175,13 +3175,13 @@
                             },
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                "URI": "file:///system_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestAttributes",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 32,
@@ -3198,7 +3198,7 @@
                                         "kind": "test",
                                         "Name": "TestAttributes/persist",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 33,
@@ -3215,7 +3215,7 @@
                                         "kind": "test",
                                         "Name": "TestAttributes/persist_across_ticks",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 48,
@@ -3232,7 +3232,7 @@
                                         "kind": "test",
                                         "Name": "TestEphemerals",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 75,
@@ -3249,7 +3249,7 @@
                                         "kind": "test",
                                         "Name": "TestEphemerals/do_not_persist",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 76,
@@ -3266,7 +3266,7 @@
                                         "kind": "test",
                                         "Name": "TestEphemerals/do_not_persist_across_ticks",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 90,
@@ -3283,7 +3283,7 @@
                                         "kind": "test",
                                         "Name": "TestNestedUpdateCommit",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/system_test.go",
+                                            "uri": "file:///system_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 111,
@@ -3307,13 +3307,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/2d/geometry/collision_test.go",
+                                "URI": "file:///2d/geometry/collision_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestRectangleVertex",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/geometry/collision_test.go",
+                                            "uri": "file:///2d/geometry/collision_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 6,
@@ -3337,13 +3337,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/2d/world/persist_test.go",
+                                "URI": "file:///2d/world/persist_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestPersistence",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/2d/world/persist_test.go",
+                                            "uri": "file:///2d/world/persist_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 71,
@@ -3367,13 +3367,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/internal/bitset/bitset_test.go",
+                                "URI": "file:///internal/bitset/bitset_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestRank",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/bitset/bitset_test.go",
+                                            "uri": "file:///internal/bitset/bitset_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 11,
@@ -3390,7 +3390,7 @@
                                         "kind": "test",
                                         "Name": "TestMatrix",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/bitset/bitset_test.go",
+                                            "uri": "file:///internal/bitset/bitset_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 28,
@@ -3407,7 +3407,7 @@
                                         "kind": "test",
                                         "Name": "TestCursor",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/bitset/bitset_test.go",
+                                            "uri": "file:///internal/bitset/bitset_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 47,
@@ -3431,13 +3431,13 @@
                         "files": [
                             {
                                 "kind": "file",
-                                "URI": "file:///home/firelizzard/src/game/loki/internal/priority_queue_test.go",
+                                "URI": "file:///internal/priority_queue_test.go",
                                 "tests": [
                                     {
                                         "kind": "test",
                                         "Name": "TestPushPopOrdering",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/priority_queue_test.go",
+                                            "uri": "file:///internal/priority_queue_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 8,
@@ -3454,7 +3454,7 @@
                                         "kind": "test",
                                         "Name": "TestPushPopSingle",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/priority_queue_test.go",
+                                            "uri": "file:///internal/priority_queue_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 22,
@@ -3471,7 +3471,7 @@
                                         "kind": "test",
                                         "Name": "TestPeek",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/priority_queue_test.go",
+                                            "uri": "file:///internal/priority_queue_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 34,
@@ -3488,7 +3488,7 @@
                                         "kind": "test",
                                         "Name": "TestDuplicates",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/priority_queue_test.go",
+                                            "uri": "file:///internal/priority_queue_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 49,
@@ -3505,7 +3505,7 @@
                                         "kind": "test",
                                         "Name": "TestReverseInsertOrder",
                                         "Loc": {
-                                            "uri": "file:///home/firelizzard/src/game/loki/internal/priority_queue_test.go",
+                                            "uri": "file:///internal/priority_queue_test.go",
                                             "range": {
                                                 "start": {
                                                     "line": 66,

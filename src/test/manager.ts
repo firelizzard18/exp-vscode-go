@@ -147,6 +147,9 @@ export class TestManager extends Disposer {
 		if (this.#context.testing || 'addCoverage' in testRun) {
 			createRunProfile(this.#coverage);
 		}
+
+		// This is for testing only.
+		return { model };
 	}
 
 	/**

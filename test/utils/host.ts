@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type {
 	CancellationToken,
 	ConfigurationChangeEvent,
@@ -12,17 +14,23 @@ import type {
 	TestRun,
 	TestRunProfile,
 	TestRunProfileKind,
-	TestRunRequest,
 	TestTag,
 	WorkspaceFolder,
 } from 'vscode';
-import { EventEmitter, Uri } from 'vscode';
+import { EventEmitter, TestRunRequest, Uri } from 'vscode';
 
-import { type Commands, type ConfigValue, type Context, type VSCodeFileSystem, type VSCodeWorkspace } from '../../src/utils/common';
+import { TestManager, type EditorEvent } from '../../src/test/manager';
+import { loadDataModel, type DumpedWorkspace } from '../../src/test/model';
+import {
+	type Commands,
+	type ConfigValue,
+	type Context,
+	type VSCodeFileSystem,
+	type VSCodeWorkspace,
+} from '../../src/utils/common';
 import { type Spawner } from '../../src/utils/spawn';
 import { type TestController } from '../../src/utils/testing';
-import { type GoExtensionAPI, type CommandInvocation } from '../../src/vscode-go.d';
-import { TestManager, type EditorEvent } from '../../src/test/manager';
+import { type CommandInvocation, type GoExtensionAPI } from '../../src/vscode-go.d';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -68,6 +76,7 @@ export class TestHost implements Context {
 	readonly state = new FakeMemento();
 	readonly storageUri = undefined;
 	readonly workspace: TestWorkspace;
+	readonly model;
 
 	commands: Commands;
 	spawn: Spawner = () => Promise.resolve({ code: 0, signal: null });
@@ -77,29 +86,55 @@ export class TestHost implements Context {
 	readonly #events = new EventEmitter<EditorEvent>();
 	readonly manager: TestManager;
 
-	private constructor(workspace: TestWorkspace, commands: Commands) {
-		this.workspace = workspace;
-		this.commands = commands;
-		this.manager = new TestManager(this, this.#events.event);
-	}
-
-	static create(...configs: HostConfig[]): TestHost {
-		const workspace = new TestWorkspace();
-		const commands: Commands = {
+	private constructor(...configs: HostConfig[]) {
+		this.workspace = new TestWorkspace();
+		this.commands = {
 			modules: () => Promise.resolve({}),
 			packages: () => Promise.resolve({}),
 		};
-		const host = new TestHost(workspace, commands);
+		this.manager = new TestManager(this, this.#events.event);
 
 		const args: SetupArgs = {
-			createTestController: () => host.controller,
+			createTestController: () => this.controller,
 			registerCodeLensProvider: () => ({ dispose: () => {} }),
 			showQuickPick: () => Promise.resolve(undefined),
 			showWarningMessage: (..._args: any[]) => Promise.resolve(undefined),
 		};
 
-		configs.forEach((c) => c(host, args));
-		host.manager.setup(args);
+		configs.forEach((c) => c(this, args));
+
+		const { model } = this.manager.setup(args);
+		this.model = model;
+	}
+
+	static create(...configs: HostConfig[]): TestHost {
+		return new TestHost(...configs);
+	}
+
+	static async loadDump(file: string, ...configs: HostConfig[]) {
+		const host = TestHost.create(
+			...configs,
+
+			// Discovery must be off, otherwise resolving the roots repopulates
+			// the model from (fake) gopls and discards the loaded data.
+			withConfiguration({ discovery: 'off' }),
+		);
+
+		// Create all the workspaces. With discovery off, the model only creates
+		// a workspace when a file within it is opened.
+		const workspaces: DumpedWorkspace[] = JSON.parse(await readFile(file, 'utf-8'));
+		for (const dump of workspaces) {
+			const uri = Uri.parse(dump.ws);
+			host.workspace.workspaceFolders.push({
+				name: path.basename(uri.path),
+				uri,
+				index: host.workspace.workspaceFolders.length,
+			});
+
+			await host.fire({ type: 'file-opened', uri: Uri.joinPath(uri, 'loki_test.go') });
+		}
+
+		host.model.workspaces.add(...workspaces.map((x) => loadDataModel(host, x)));
 		return host;
 	}
 
@@ -210,16 +245,36 @@ export class MockTestController implements TestController {
 		return new MockTestRunProfile(label, kind, runHandler, isDefault, tag);
 	}
 
-	createTestRun(_request: TestRunRequest, _name?: string, _persist?: boolean): TestRun {
-		return new MockTestRun();
+	createTestRun(request: TestRunRequest, _name?: string, _persist?: boolean): TestRun {
+		return new MockTestRun(request);
 	}
 
 	dispose() {}
 }
 
+// ─── MockTestRunRequest ───────────────────────────────────────────────────────
+
+/**
+ * A TestRunRequest that resolves {@link done} when a run created from it ends.
+ */
+export class MockTestRunRequest extends TestRunRequest {
+	readonly done: Promise<void>;
+	#resolve!: () => void;
+
+	constructor(...args: ConstructorParameters<typeof TestRunRequest>) {
+		super(...args);
+		this.done = new Promise((resolve) => (this.#resolve = resolve));
+	}
+
+	ended() {
+		this.#resolve();
+	}
+}
+
 // ─── MockTestRun ──────────────────────────────────────────────────────────────
 
 export class MockTestRun implements TestRun {
+	readonly #request: TestRunRequest | undefined;
 	readonly name = 'mock';
 	readonly token: CancellationToken = {
 		isCancellationRequested: false,
@@ -238,6 +293,10 @@ export class MockTestRun implements TestRun {
 
 	private readonly _onDidDispose = new EventEmitter<void>();
 	readonly onDidDispose = this._onDidDispose.event;
+
+	constructor(request?: TestRunRequest) {
+		this.#request = request;
+	}
 
 	started(item: TestItem) {
 		this.startedItems.push(item);
@@ -272,6 +331,9 @@ export class MockTestRun implements TestRun {
 	end() {
 		this.ended = true;
 		this._onDidDispose.fire();
+		if (this.#request instanceof MockTestRunRequest) {
+			this.#request.ended();
+		}
 	}
 }
 
