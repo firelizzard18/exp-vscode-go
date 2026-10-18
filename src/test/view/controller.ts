@@ -11,6 +11,7 @@ import {
 	Package,
 	StaticTestCase,
 	TestCase,
+	TestFile,
 	Workspace,
 } from '../model';
 import { type RunEvent } from '../run/controller';
@@ -189,8 +190,16 @@ export class ViewController extends Disposer {
 				view = this.#ctrl.createTestItem(id, this.#presenter.labelFor(go), 'uri' in go ? go.uri : undefined);
 				this.#allItems.set(id, view);
 
-				// Make tests sort after packages.
-				view.sortText = `${go instanceof TestCase ? 'b;' : 'a;'}${id}`;
+				// Sort profiles → packages → files → tests
+				if (go instanceof TestCase) {
+					view.sortText = `d;${id}`;
+				} else if (go instanceof TestFile) {
+					view.sortText = `c;${id}`;
+				} else if (go instanceof Package) {
+					view.sortText = `b;${id}`;
+				} else {
+					view.sortText = `a;${id}`;
+				}
 			} else {
 				view.label = this.#presenter.labelFor(go);
 			}
