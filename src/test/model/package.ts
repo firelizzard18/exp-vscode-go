@@ -4,7 +4,7 @@ import { Uri } from 'vscode';
 import { type Commands } from '@/utils/common';
 import { isRelativePath } from '@/utils/util';
 
-import type { Module, TestFile, Workspace } from '.';
+import { DumpedPackage, Module, TestFile, Workspace } from '.';
 import { ItemSet } from './set';
 
 export class Package {
@@ -14,19 +14,19 @@ export class Package {
 	readonly path;
 	readonly files = new ItemSet<TestFile>();
 
-	constructor(parent: Module | Workspace, pkg: Commands.Package, mod?: Commands.Module) {
+	constructor(parent: Module | Workspace, pkg: Commands.Package | DumpedPackage) {
 		this.root = parent;
 		this.path = pkg.Path;
 
 		if (pkg.ModulePath) {
-			if (!mod) {
+			if (!(parent instanceof Module)) {
 				throw new Error('Package specifies a module path but Module is missing');
 			}
-			const rel = posix.relative('/' + mod.Path, '/' + pkg.Path);
+			const rel = posix.relative('/' + parent.path, '/' + pkg.Path);
 			if (rel.startsWith('../')) {
 				throw new Error('Package is not within Module');
 			}
-			this.uri = Uri.joinPath(Uri.parse(mod.GoMod), '..', rel);
+			this.uri = Uri.joinPath(parent.uri, '..', rel);
 		} else if (parent.kind === 'workspace') {
 			let p = pkg.Path;
 			if (p.startsWith('_')) {

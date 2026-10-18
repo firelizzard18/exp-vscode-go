@@ -2,7 +2,7 @@ import { Uri } from 'vscode';
 
 import { type Commands } from '@/utils/common';
 
-import type { Package, Workspace } from '.';
+import type { DumpedModule, Package, Workspace } from '.';
 import { ItemSet } from './set';
 
 export class Module {
@@ -12,7 +12,7 @@ export class Module {
 	readonly workspace;
 	readonly packages = new ItemSet<Package>();
 
-	constructor(workspace: Workspace, mod: Commands.Module) {
+	constructor(workspace: Workspace, mod: Commands.Module | DumpedModule) {
 		this.workspace = workspace;
 		this.uri = Uri.parse(mod.GoMod);
 		this.path = mod.Path;

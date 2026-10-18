@@ -17,4 +17,7 @@ export const Command = {
 		Ignore: 'goExp.pprof.ignore',
 		Capture: 'goExp.pprof.capture',
 	},
+	Developer: {
+		DumpDataModel: 'goExp.debug.dumpDataModel',
+	},
 } as const;

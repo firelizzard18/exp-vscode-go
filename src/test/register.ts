@@ -24,11 +24,12 @@ import { type GoExtensionAPI } from '@/vscode-go';
 
 import { WorkspaceConfig } from './config';
 import { type EditorEvent, TestManager } from './manager';
-import { isTestItem } from './model';
+import { dumpDataModel, isTestItem } from './model';
 
 export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExtensionAPI, output: LogOutputChannel) {
 	const testCtx: Context = {
 		workspace,
+		window,
 		go,
 		spawn: spawnProcess,
 		debug: debugProcess,
@@ -47,7 +48,6 @@ export async function registerTestingFeatures(ctx: ExtensionContext, go: GoExten
 
 async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 	const { event, command } = helpers(ctx, testCtx, commands);
-
 	// Initialize the controller
 	const events = new EventEmitter<EditorEvent>();
 	const manager = new TestManager(testCtx, events.event);
@@ -100,6 +100,13 @@ async function registerTestController(ctx: ExtensionContext, testCtx: Context) {
 
 	// [Command] Workaround for https://github.com/microsoft/vscode/issues/237106
 	command(Command.ConfigureCoverageRunProfile, () => manager.configureCoverageRunProfile(window));
+
+	// [Command] Developer tools
+	command(Command.Developer.DumpDataModel, async () => {
+		const s = dumpDataModel([...manager.workspaces()]);
+		const doc = await workspace.openTextDocument({ content: s, language: 'json' });
+		await window.showTextDocument(doc, { preview: false });
+	});
 
 	// [Event] Configuration change
 	const config = new WorkspaceConfig(workspace);

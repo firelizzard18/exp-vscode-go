@@ -187,6 +187,10 @@ export class TestManager extends Disposer {
 		this.#executeTestRun(this.#profile, items);
 	}
 
+	*workspaces() {
+		if (this.#model) yield* this.#model.workspaces.values();
+	}
+
 	/**
 	 * Execute a test run.
 	 * @param config - The config for the run.

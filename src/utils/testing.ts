@@ -41,21 +41,36 @@ export const helpers = (ctx: ExtensionContext, testCtx: Context, commands: typeo
 	},
 });
 
-export const doSafe = async <T>(ctx: Pick<Context, 'testing' | 'output'>, msg: string, fn: () => T | Promise<T>) => {
+export const doSafe = async <T>(
+	ctx: Pick<Context, 'testing' | 'output' | 'window'>,
+	msg: string,
+	fn: () => T | Promise<T>,
+) => {
 	try {
 		return await fn();
 	} catch (error) {
-		reportError(ctx, new Error(`${msg}: ${error}`, { cause: error }));
+		reportError(ctx, msg, error);
 	}
 };
 
-export function reportError(ctx: Pick<Context, 'testing' | 'output'>, error: unknown) {
+export function reportError(
+	ctx: Pick<Context, 'testing' | 'output' | 'window'>,
+	label: string | undefined,
+	error: unknown,
+) {
 	if (ctx.testing) {
 		throw error;
 	} else if (error instanceof Error) {
-		ctx.output.error(`Error: ${error.message}\n${(error.cause as Error)?.stack ?? error.stack}`);
+		ctx.output.error(
+			`${label && `[${label}] `}Error: ${error.message}\n${(error.cause as Error)?.stack ?? error.stack}`,
+		);
 	} else {
 		ctx.output.error(`Error: ${error}`);
+	}
+	if (label && ctx.window) {
+		ctx.window.showErrorMessage(`Error while ${label}`, 'See Output').then((r) => {
+			if (r) ctx.output.show();
+		});
 	}
 }
 

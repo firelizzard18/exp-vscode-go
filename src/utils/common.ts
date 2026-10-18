@@ -10,12 +10,15 @@ export interface Context extends Pick<vscode.ExtensionContext, 'storageUri'> {
 	readonly testing: boolean;
 	readonly go: GoExtensionAPI;
 	readonly output: vscode.LogOutputChannel;
+	readonly window?: VSCodeWindow;
 	readonly workspace: VSCodeWorkspace;
 	readonly state: Memento;
 	readonly commands: Commands;
 	readonly spawn: Spawner;
 	readonly debug: Spawner;
 }
+
+export type VSCodeWindow = Pick<typeof vscode.window, 'showErrorMessage'>;
 
 // The subset of vscode.workspace that is used by the test explorer.
 export type VSCodeWorkspace = Pick<

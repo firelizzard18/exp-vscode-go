@@ -275,6 +275,11 @@
         "category": "Go Companion",
         "title": "Ignore",
         "description": "Ignore the selected function"
+      },
+      {
+        "command": "goExp.debug.dumpDataModel",
+        "category": "Go Companion",
+        "title": "Dump data model [Debug]"
       }
     ],
     "menus": {
@@ -310,6 +315,10 @@
         {
           "command": "goExp.pprof.ignore",
           "when": "false"
+        },
+        {
+          "command": "goExp.debug.dumpDataModel",
+          "when": "isDevelopment"
         }
       ],
       "editor/context": [

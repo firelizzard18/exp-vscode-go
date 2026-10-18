@@ -3,7 +3,7 @@ import { Range, Uri } from 'vscode';
 
 import { type Commands } from '@/utils/common';
 
-import type { ItemEvent, TestFile } from '.';
+import type { DumpedTestCase, ItemEvent, TestFile } from '.';
 
 export abstract class TestCase {
 	readonly kind;
@@ -29,10 +29,10 @@ export abstract class TestCase {
 }
 
 export class StaticTestCase extends TestCase {
-	range?: Range;
+	range: Range;
 	#src;
 
-	constructor(file: TestFile, test: Commands.TestCase) {
+	constructor(file: TestFile, test: Commands.TestCase | DumpedTestCase) {
 		const kind = test.Name.match(/^(Test|Fuzz|Benchmark|Example)/)![1].toLowerCase();
 		super(file, Uri.parse(test.Loc.uri), kind as TestCase['kind'], test.Name);
 		this.#src = test;

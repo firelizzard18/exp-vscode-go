@@ -76,11 +76,11 @@ export const spawnProcess: Spawner = (context, run, loc, log, flags, userFlags, 
 			throw new Error(`Failed to run "go ${mode}" as the "go" binary cannot be found in either GOROOT or PATH`);
 		}
 
-		const outbuf = new LineBuffer((err) => reportError(context, err));
+		const outbuf = new LineBuffer((err) => reportError(context, undefined, err));
 		outbuf.onLine(stdout);
 		outbuf.onDone((x) => x && stdout(x));
 
-		const errbuf = new LineBuffer((err) => reportError(context, err));
+		const errbuf = new LineBuffer((err) => reportError(context, undefined, err));
 		errbuf.onLine(stderr);
 		errbuf.onDone((x) => x && stderr(x));
 
@@ -203,7 +203,7 @@ export const debugProcess: Spawner = async (ctx, run, loc, log, flags, userFlags
 
 		case 'test': {
 			// Run go test2json to parse the output
-			const outbuf = new LineBuffer((err) => reportError(ctx, err));
+			const outbuf = new LineBuffer((err) => reportError(ctx, undefined, err));
 			outbuf.onLine(stdout);
 			outbuf.onDone((x) => x && stdout(x));
 

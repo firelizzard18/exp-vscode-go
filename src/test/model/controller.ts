@@ -190,7 +190,7 @@ export class ModelController extends Disposer {
 			if (pkg) {
 				yield { item: pkg, type: 'modified' };
 			} else {
-				pkg = new Package(root, src, r.Module?.[src.ModulePath as string]);
+				pkg = new Package(root, src);
 				root.packages.add(pkg);
 				yield { item: pkg, type: 'added', to: root };
 			}
@@ -261,7 +261,7 @@ export class ModelController extends Disposer {
 		// Update.
 		const updates = root.packages.update(
 			packages,
-			(src) => new Package(root, src, r.Module?.[src.ModulePath as string]),
+			(src) => new Package(root, src),
 			(src, pkg) => this.#updateFiles(pkg, src.TestFiles),
 		);
 

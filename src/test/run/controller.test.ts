@@ -1,13 +1,18 @@
-import { describe, expect, it } from '@jest/globals';
-import { EventEmitter, Uri } from 'vscode';
+import { describe, expect, it, jest } from '@jest/globals';
+import path from 'node:path';
+import { CancellationTokenSource, EventEmitter, TestRunProfileKind, TestRunRequest, Uri } from 'vscode';
 
-import { type RunEvent, newGoTestRequest, shouldRunBenchmarks } from './controller';
-import { ModelController } from '../model/controller';
-import { Package } from '../model/package';
-import { TestWorkspace } from '../../../test/utils/host';
-import { FakeCommands, moduleResult, modulePackagesResult } from '../../../test/utils/model';
+import lokiDump from '../../../test/testdata/loki.json';
+import { TestHost, TestWorkspace } from '../../../test/utils/host';
+import { FakeCommands, modulePackagesResult, moduleResult } from '../../../test/utils/model';
+import { type Spawner } from '../../utils/spawn';
 import { WorkspaceConfig } from '../config';
-import { TestRunRequest } from 'vscode';
+import { DumpedWorkspace, loadDataModel, ModelController } from '../model';
+import { Package } from '../model/package';
+import { ViewController } from '../view/controller';
+import { ModelViewPresenter } from '../view/presenter';
+import { RunConfig } from './config';
+import { newGoTestRequest, RunController, shouldRunBenchmarks, type RunEvent } from './controller';
 
 const WS_URI = 'file:///workspace';
 const MOD_PATH = 'foo';
@@ -113,9 +118,26 @@ describe('shouldRunBenchmarks', () => {
 
 		// Construct a Package whose files have not been populated (files.size === 0).
 		// This simulates a package discovered by module discovery but not yet lazy-loaded.
-		const workspace = { kind: 'workspace' as const, ws: wsf, uri: wsf.uri, dir: wsf.uri, packages: null as any, modules: null as any, allPackages: null as any, key: WS_URI };
-		const module = { kind: 'module' as const, workspace, path: MOD_PATH, uri: Uri.parse(GO_MOD), dir: Uri.parse(WS_URI), packages: null as any, key: MOD_PATH };
-		const pkg = new Package(module as any, { Path: MOD_PATH, ModulePath: MOD_PATH, TestFiles: [] }, { Path: MOD_PATH, GoMod: GO_MOD });
+		const workspace = {
+			kind: 'workspace' as const,
+			ws: wsf,
+			uri: wsf.uri,
+			dir: wsf.uri,
+			packages: null as any,
+			modules: null as any,
+			allPackages: null as any,
+			key: WS_URI,
+		};
+		const module = {
+			kind: 'module' as const,
+			workspace,
+			path: MOD_PATH,
+			uri: Uri.parse(GO_MOD),
+			dir: Uri.parse(WS_URI),
+			packages: null as any,
+			key: MOD_PATH,
+		};
+		const pkg = new Package(module as any, { Path: MOD_PATH, ModulePath: MOD_PATH, TestFiles: [] });
 
 		// files.size === 0 (never populated)
 		expect(pkg.files.size).toBe(0);
@@ -160,12 +182,7 @@ describe('newGoTestRequest', () => {
 		const file = [...pkg.files][0]!;
 		const testFoo = [...file.tests].find((t) => t.name === 'TestFoo')!;
 
-		const req = newGoTestRequest(
-			new TestRunRequest(),
-			new Set([pkg]),
-			new Set([pkg]),
-			new Set([testFoo]),
-		);
+		const req = newGoTestRequest(new TestRunRequest(), new Set([pkg]), new Set([pkg]), new Set([testFoo]));
 
 		const pkgExclude = req.pkgExclude.get(pkg);
 		expect(pkgExclude).toContain(testFoo);
@@ -180,14 +197,71 @@ describe('newGoTestRequest', () => {
 		]);
 
 		const file = [...pkg.files][0]!;
-		const req = newGoTestRequest(
-			new TestRunRequest(),
-			new Set([pkg]),
-			new Set([file]),
-			new Set(),
-		);
+		const req = newGoTestRequest(new TestRunRequest(), new Set([pkg]), new Set([file]), new Set());
 
 		const pkgInclude = req.pkgInclude.get(pkg);
 		expect(pkgInclude).toHaveLength(2);
+	});
+});
+
+describe('Run controller (loki)', () => {
+	const workspaces = lokiDump.map((x) =>
+		loadDataModel(
+			{
+				workspace: {
+					getWorkspaceFolder(uri) {
+						return {
+							index: 0,
+							name: `${uri}`,
+							uri,
+						};
+					},
+				},
+			},
+			x as unknown as DumpedWorkspace,
+		),
+	);
+
+	const host = TestHost.create();
+	host.workspace.workspaceFolders.push(...workspaces.map((x) => x.ws));
+
+	const spawn = jest.fn<Spawner>(() => Promise.resolve({ code: 0, signal: null }));
+	host.spawn = spawn;
+
+	const runEvents = new EventEmitter<RunEvent>();
+	const config = new WorkspaceConfig(host.workspace);
+	const model = new ModelController(host, config, runEvents.event);
+	for (const ws of workspaces) {
+		model.workspaces.add(ws);
+	}
+
+	const presenter = new ModelViewPresenter(config, model, runEvents.event);
+	const resolver = new ViewController(host, model, presenter, host.controller, runEvents.event);
+	const runConfig = new RunConfig(host, 'Run', TestRunProfileKind.Run);
+	const token = new CancellationTokenSource().token;
+	const runner = new RunController(host, config, host.controller, runConfig, token, resolver, model, runEvents);
+
+	it('runs all tests', async () => {
+		const packages = new Set(workspaces.flatMap((x) => [...x.allPackages()]));
+		await runner.run(newGoTestRequest(new TestRunRequest(), packages, new Set(workspaces), new Set()));
+
+		const ran = spawn.mock.calls.map((x) => './' + path.relative(workspaces[0].dir.fsPath, x[7].cwd!));
+		expect(ran.sort()).toEqual([
+			'./',
+			'./2d/geometry',
+			'./2d/terrain',
+			'./2d/world',
+			'./examples/bunnymark',
+			'./examples/pong',
+			'./internal',
+			'./internal/bitset',
+			'./multiplayer',
+			'./multiplayer/eventlog',
+			'./query',
+			'./store',
+			'./store/ops',
+			'./store/v0',
+			'./store/v1',
+		]);
 	});
 });

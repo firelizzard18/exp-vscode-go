@@ -2,7 +2,7 @@ import { Uri } from 'vscode';
 
 import { type Commands } from '@/utils/common';
 
-import type { Package, TestCase } from '.';
+import type { DumpedTestFile, Package, TestCase } from '.';
 import { ItemSet } from './set';
 
 export class TestFile {
@@ -11,7 +11,7 @@ export class TestFile {
 	readonly uri;
 	readonly tests = new ItemSet<TestCase>();
 
-	constructor(pkg: Package, file: Commands.TestFile) {
+	constructor(pkg: Package, file: Commands.TestFile | DumpedTestFile) {
 		this.package = pkg;
 		this.uri = Uri.parse(file.URI);
 	}
