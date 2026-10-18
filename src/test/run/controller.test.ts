@@ -208,13 +208,12 @@ describe('Run controller (loki)', () => {
 		);
 		const spawns = await captureSpawns(host, new MockTestRunRequest());
 
-		const packages = spawns.map((x) =>
-			path.basename(x.location.fsPath) === 'go.mod' ? path.dirname(x.location.fsPath) : x.location.fsPath,
-		);
+		const [root] = host.model.workspaces;
+		const [mod] = root.modules;
+		const packages = spawns.map((x) => (x.options.cwd === '/' ? mod.path : path.join(mod.path, x.options.cwd)));
 		expect(packages.sort()).toEqual(
-			[...host.model.workspaces]
-				.flatMap((x): Package[] => [...x.packages, ...[...x.modules].flatMap((x) => [...x.packages])])
-				.map((x) => x.uri.fsPath)
+			allPackages(host)
+				.map((x) => x.path)
 				.sort(),
 		);
 	});
@@ -226,13 +225,20 @@ describe('Run controller (loki)', () => {
 		);
 		const spawns = await captureSpawns(host, new MockTestRunRequest());
 
-		const packages = spawns.map((x) =>
-			path.basename(x.location.fsPath) === 'go.mod' ? path.dirname(x.location.fsPath) : x.location.fsPath,
-		);
+		// console.table(
+		// 	spawns.map((x) => ({
+		// 		location: `${x.location}`,
+		// 		args: x.args,
+		// 		cwd: x.options.cwd,
+		// 	})),
+		// );
+
+		const [root] = host.model.workspaces;
+		const [mod] = root.modules;
+		const packages = spawns.map((x) => (x.options.cwd === '/' ? mod.path : path.join(mod.path, x.options.cwd)));
 		expect(packages.sort()).toEqual(
-			[...host.model.workspaces]
-				.flatMap((x): Package[] => [...x.packages, ...[...x.modules].flatMap((x) => [...x.packages])])
-				.map((x) => x.uri.fsPath)
+			allPackages(host)
+				.map((x) => x.path)
 				.sort(),
 		);
 	});
@@ -252,4 +258,11 @@ async function captureSpawns(host: TestHost, rq: MockTestRunRequest) {
 		args,
 		options,
 	}));
+}
+
+function allPackages(host: TestHost) {
+	return [...host.model.workspaces].flatMap((x) => [
+		...x.packages,
+		...[...x.modules].flatMap((x) => [...x.packages]),
+	]);
 }
